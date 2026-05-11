@@ -1,0 +1,254 @@
+import { Email, SentEmail, ManualTask, HomePlanItem, WeekDataItem, WeekHistoryItem } from './types';
+
+export const CAT = {
+  URGENT: 'Urgent clinical',
+  UNSAFE: 'Unsafe to answer by email',
+  PROF: 'Professional — high priority',
+  REVIEW: 'Needs clinician review',
+  MEETING: 'Meeting / event deadline',
+  ADMIN: 'Admin only',
+  NONE: 'No action required',
+  LEGAL: 'Medico-legal',
+  LOW: 'Low priority',
+  DONE: 'Completed'
+} as const;
+
+export const emails: Email[] = [
+  {
+    id: 1,
+    from: 'Sarah Chen (parent)',
+    subject: "Mia hasn't eaten/self-harm ideation",
+    preview: "I'm very worried about Mia, she hasn't eaten properly for 2 days and...",
+    body: "I'm very worried about Mia, she hasn't eaten properly for 2 days and is talking about self-harm again. Please can you advise what we should do?",
+    date: 'Today, 08:45',
+    risk: 'high',
+    cat: CAT.UNSAFE,
+    deadline: 1,
+    estMin: 15
+  },
+  {
+    id: 2,
+    from: 'Dr. Martinez (GP)',
+    subject: 'James Okafor urgent clinical',
+    preview: "Urgent clinical update regarding James Okafor following his recent...",
+    body: "Urgent clinical update regarding James Okafor following his recent crisis assessment. He requires an immediate medication review.",
+    date: 'Today, 09:12',
+    risk: 'high',
+    cat: CAT.URGENT,
+    deadline: 2,
+    estMin: 20
+  },
+  {
+    id: 3,
+    from: 'Dr. K. Osei — Clinical Psychology',
+    subject: 'Priya Sharma formulation meeting Thu 2pm',
+    preview: "Hi Dr Patterson, are you able to join the formulation meeting for Priya...",
+    body: "Hi Dr Patterson, are you able to join the formulation meeting for Priya Sharma this Thursday at 2pm? Your input would be invaluable.",
+    date: 'Yesterday',
+    risk: 'medium',
+    cat: CAT.PROF,
+    deadline: 3,
+    estMin: 10
+  },
+  {
+    id: 4,
+    from: 'CHYMS Training Team',
+    subject: 'conference registration closes Friday',
+    preview: "Final reminder that registration for the annual CHYMS conference...",
+    body: "Final reminder that registration for the annual CHYMS conference closes this Friday. Please ensure you have registered if you wish to attend.",
+    date: 'Yesterday',
+    risk: 'none',
+    cat: CAT.MEETING,
+    deadline: 4,
+    estMin: 5
+  },
+  {
+    id: 5,
+    from: 'Patricia Okafor (parent)',
+    subject: 'Ritalin 54mg early script',
+    preview: "James is running low on his Ritalin 54mg and we are going away...",
+    body: "James is running low on his Ritalin 54mg and we are going away on Friday. Could we please have an early script for his next month's supply?",
+    date: '2 days ago',
+    risk: 'medium',
+    cat: CAT.REVIEW,
+    deadline: 3,
+    estMin: 12
+  },
+  {
+    id: 6,
+    from: 'Mrs. Davies — SENCO',
+    subject: 'Lucas Thompson EHCP review 24th May',
+    preview: "We are preparing for Lucas Thompson's EHCP review on the 24th May...",
+    body: "We are preparing for Lucas Thompson's EHCP review on the 24th May and would appreciate your clinical contribution to his social and emotional needs section.",
+    date: '3 days ago',
+    risk: 'low',
+    cat: CAT.REVIEW,
+    deadline: 9,
+    estMin: 30
+  },
+  {
+    id: 7,
+    from: 'NHS Training Admin',
+    subject: 'MCA mandatory training renewal',
+    preview: "Our records show your Mental Capacity Act mandatory training...",
+    body: "Our records show your Mental Capacity Act mandatory training is due for renewal in 35 days. Please book a slot via the ESR portal.",
+    date: '1 week ago',
+    risk: 'none',
+    cat: CAT.ADMIN,
+    deadline: 35,
+    estMin: 5
+  },
+  {
+    id: 8,
+    from: 'Linda Foster (parent)',
+    subject: 'appointment letter query',
+    preview: "We received an appointment letter for Tuesday but the time doesn't...",
+    body: "We received an appointment letter for Tuesday but the time doesn't work for us as Linda has a school trip. Can we move it to the afternoon?",
+    date: '1 week ago',
+    risk: 'none',
+    cat: CAT.ADMIN,
+    deadline: 10,
+    estMin: 5
+  },
+  {
+    id: 9,
+    from: 'MDT Coordinator',
+    subject: 'MDT rescheduled Thu 10am',
+    preview: "Please note the MDT meeting on Thursday has been rescheduled...",
+    body: "Please note the MDT meeting on Thursday has been rescheduled to 10am. Calendar invites have been updated.",
+    date: '2 weeks ago',
+    risk: 'none',
+    cat: CAT.NONE,
+    deadline: null,
+    estMin: 2
+  }
+];
+
+export const sentEmails: SentEmail[] = [
+  {
+    to: 'Linda Foster (parent)',
+    toLabel: 'Parent',
+    toName: 'Linda Foster',
+    subject: 'appointment clarification',
+    body: "Dear Mrs. Foster, thank you for your email. I have asked the admin team to reschedule the appointment for Tuesday afternoon as requested."
+  },
+  {
+    to: 'Dr. K. Osei (colleague)',
+    toLabel: 'Colleague',
+    toName: 'Dr. K. Osei',
+    subject: 'joint formulation Thu 2pm',
+    body: "Hi Kwame, yes I'll be there for the 2pm formulation for Priya Sharma. Looking forward to it."
+  },
+  {
+    to: 'Dr. Martinez (GP)',
+    toLabel: 'GP',
+    toName: 'Dr. Martinez',
+    subject: 'James Okafor clinical update',
+    body: "Dear Dr. Martinez, regarding James Okafor, I have reviewed the crisis report and will be seeing him for a medication review this week."
+  },
+  {
+    to: 'Mrs. Davies (school/SENCO)',
+    toLabel: 'School',
+    toName: 'Mrs. Davies',
+    subject: 'EHCP contribution',
+    body: "Dear Mrs. Davies, please find attached my clinical contribution for Lucas Thompson's EHCP review."
+  },
+  {
+    to: 'NHS Resolution (formal/legal)',
+    toLabel: 'Legal',
+    toName: 'NHS Resolution',
+    subject: 'SAR',
+    body: "To whom it may concern, please find the requested documentation regarding the SAR for case ref: 22849."
+  },
+  {
+    to: 'MDT Team (admin)',
+    toLabel: 'Admin',
+    toName: 'MDT Team',
+    subject: 'scheduling',
+    body: "Hi team, confirming I can attend the rescheduled MDT on Thursday at 10am."
+  }
+];
+
+export const manualTasks: ManualTask[] = [
+  {
+    id: 'm1',
+    title: 'ADHD assessment report Zara Ali',
+    cat: CAT.REVIEW,
+    deadline: 12,
+    risk: 'low',
+    type: 'Report',
+    estMin: 60
+  },
+  {
+    id: 'm2',
+    title: 'Phone callback Dr. Osei re case formulation',
+    cat: CAT.PROF,
+    deadline: 2,
+    risk: 'medium',
+    type: 'Phone call',
+    estMin: 10
+  },
+  {
+    id: 'm3',
+    title: 'Sign off discharge letter Thomas Wright',
+    cat: CAT.ADMIN,
+    deadline: 7,
+    risk: 'none',
+    type: 'Letter',
+    estMin: 10
+  },
+  {
+    id: 'm4',
+    title: 'Governance meeting agenda response',
+    cat: CAT.MEETING,
+    deadline: 5,
+    risk: 'none',
+    type: 'Meeting',
+    estMin: 8
+  }
+];
+
+export const homePlan: HomePlanItem[] = [
+  { id: 1, title: 'Review Mia Chen safeguarding', why: 'High risk clinical', time: '15min', done: false },
+  { id: 2, title: 'Send 2 urgent clinical drafts', why: 'Approaching deadline', time: '25min', done: false },
+  { id: 3, title: 'Reply to Dr. Osei case formulation', why: 'Professional collaboration', time: '10min', done: false },
+  { id: 4, title: 'Review Ritalin script request James Okafor', why: 'Clinical review', time: '12min', done: false },
+  { id: 5, title: 'Review 2 non-urgent emails approaching 14 days', why: 'KPI management', time: '18min', done: false }
+];
+
+export const weekData: WeekDataItem[] = [
+  { day: 'Tue', planned: 90, recommended: 90 },
+  { day: 'Wed', planned: 90, recommended: 150, addExtra: 60 },
+  { day: 'Thu', planned: 60, recommended: 70 }
+];
+
+export const weekHistory: WeekHistoryItem[] = [
+  { week: 'W-6', high: 20, medium: 30, low: 40, admin: 50 },
+  { week: 'W-5', high: 15, medium: 35, low: 45, admin: 55 },
+  { week: 'W-4', high: 25, medium: 25, low: 50, admin: 40 },
+  { week: 'W-3', high: 30, medium: 40, low: 30, admin: 45 },
+  { week: 'W-2', high: 10, medium: 45, low: 55, admin: 60 },
+  { week: 'W-1', high: 22, medium: 38, low: 42, admin: 48 },
+  { week: 'Current', high: 35, medium: 25, low: 30, admin: 50 }
+];
+
+export const histEmails: Email[] = Array.from({ length: 10 }, (_, i) => ({
+  id: 101 + i,
+  from: `Past Sender ${i + 1}`,
+  subject: `Unresolved past item ${i + 1}`,
+  preview: "This is a past unresolved item that needs review...",
+  body: "This is a past unresolved item that needs review from several weeks ago.",
+  date: `${21 + i * 7} days ago`,
+  risk: i % 3 === 0 ? 'medium' : 'none',
+  cat: CAT.REVIEW,
+  deadline: null,
+  estMin: 10
+}));
+
+export const scanSteps = [
+  "Checking main inbox...",
+  "Scanning clinical subfolders...",
+  "Identifying high-risk keywords...",
+  "Calculating response deadlines...",
+  "Building catch-up recommendations..."
+];
