@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock } from 'lucide-react';
+import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock, Settings2 } from 'lucide-react';
 import { homePlan, weekData, emails } from '@/lib/data';
 import { HomePlanItem, SidebarTask } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { WeekSetup } from '@/pages/ClinAdmin';
 
 interface Props {
   sidebarTasks: SidebarTask[];
   onToggleSidebarTask: (id: string) => void;
+  weekSetup: WeekSetup | null;
+  onOpenWeeklySetup: () => void;
 }
 
 function fmtMins(min: number) {
@@ -17,15 +20,17 @@ function fmtMins(min: number) {
   return `${m}min`;
 }
 
-const totalPlanned = weekData.reduce((a, d) => a + d.planned, 0);
-const totalRecommended = weekData.reduce((a, d) => a + d.recommended, 0);
-const diff = totalRecommended - totalPlanned;
+// Recommendation constants (same as WeeklySetupModal)
+const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
+const taskMins = 88;
+const projectedExtra = 45;
+const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
 
 type PlanEntry =
   | { kind: 'base'; item: HomePlanItem }
   | { kind: 'manual'; task: SidebarTask };
 
-export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
+export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup }: Props) {
   const [plan, setPlan] = useState(homePlan);
   const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
   const [copied, setCopied] = useState(false);
@@ -56,7 +61,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
 
   const sourceEmail = openItem?.emailId ? emails.find(e => e.id === openItem.emailId) : null;
 
-  // Build merged plan: base items first, then pending manual tasks (high priority first)
+  // Build merged plan
   const highManual = sidebarTasks.filter(t => !t.done && t.priority === 'high');
   const normalManual = sidebarTasks.filter(t => !t.done && t.priority === 'normal');
   const doneManual = sidebarTasks.filter(t => t.done);
@@ -76,44 +81,89 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
   const totalItems = plan.length + sidebarTasks.length;
   const totalDone = completedBase + completedManual;
 
+  // Week display — use weekSetup if available, else hardcoded weekData
+  const allocatedMins = weekSetup ? Math.round(weekSetup.hours * 60) : weekData.reduce((a, d) => a + d.planned, 0);
+  const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
+  const perDayMins = activeDays.length > 0 ? Math.round(allocatedMins / activeDays.length) : 0;
+  const perDayRecommended = activeDays.length > 0 ? Math.round(recommendedMins / activeDays.length) : 0;
+  const isAtRisk = allocatedMins < recommendedMins;
+  const shortfall = recommendedMins - allocatedMins;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
 
-      {/* Risk Banner */}
+      {/* Risk / Status Banner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
           <div className="p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={24} className="text-amber-500" />
+            <div className={cn(
+              "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0",
+              isAtRisk ? "bg-amber-100" : "bg-green-100"
+            )}>
+              {isAtRisk
+                ? <AlertTriangle size={24} className="text-amber-500" />
+                : <CheckCircle2 size={24} className="text-green-600" />
+              }
             </div>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground font-medium">You are currently:</p>
-              <p className="text-xl font-bold text-amber-600">At risk</p>
-              <p className="text-sm text-foreground mt-1">You have 4h admin booked this week.</p>
-              <p className="text-sm font-semibold text-amber-600">Current workload requires 5h 10min.</p>
-              <p className="text-sm text-muted-foreground mt-1">Add 1h this week to avoid 2 emails breaching the 14-day rule.</p>
+              <p className={cn("text-xl font-bold", isAtRisk ? "text-amber-600" : "text-green-600")}>
+                {isAtRisk ? 'At risk' : 'On track'}
+              </p>
+              <p className="text-sm text-foreground mt-1">
+                You have <strong>{fmtMins(allocatedMins)}</strong> admin booked this week
+                {activeDays.length > 0 && <> across <strong>{activeDays.join(', ')}</strong></>}.
+              </p>
+              {isAtRisk ? (
+                <p className="text-sm font-semibold text-amber-600">
+                  Current workload requires {fmtMins(recommendedMins)}.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Your allocation covers this week's workload.</p>
+              )}
+              {isAtRisk && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  Add {fmtMins(shortfall)} this week to avoid 2 emails breaching the 14-day rule.
+                </p>
+              )}
             </div>
           </div>
+
           <div className="p-6 bg-slate-50/60 border-l border-border">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">AI recommendation</p>
-            <p className="text-lg font-bold text-foreground leading-tight mb-1">Add 1 extra hour this week</p>
-            <div className="flex items-center gap-2 mb-4">
-              <p className="text-sm text-muted-foreground">Best option: Add 1h Wednesday afternoon.</p>
-              <span className="text-amber-500 text-lg">↓</span>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-3">
-              <button className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
-                Add 1h Wednesday
-              </button>
-              <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
-                Add 1h Thursday
-              </button>
-              <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
-                Rebalance my week
-              </button>
-            </div>
-            <button className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline">
-              See why this is recommended <ChevronRight size={12} />
+            {isAtRisk ? (
+              <>
+                <p className="text-lg font-bold text-foreground leading-tight mb-1">Add {fmtMins(shortfall)} extra this week</p>
+                <div className="flex items-center gap-2 mb-4">
+                  <p className="text-sm text-muted-foreground">Best option: Add {fmtMins(Math.ceil(shortfall / 60) * 60)} Wednesday afternoon.</p>
+                  <span className="text-amber-500 text-lg">↓</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                    Add 1h Wednesday
+                  </button>
+                  <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
+                    Add 1h Thursday
+                  </button>
+                  <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
+                    Rebalance my week
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-foreground leading-tight mb-1">You're well-planned for this week</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Your {fmtMins(allocatedMins)} allocation covers all current and projected workload.
+                </p>
+              </>
+            )}
+            <button
+              onClick={onOpenWeeklySetup}
+              className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+            >
+              <Settings2 size={11} />
+              {weekSetup ? 'Adjust my weekly availability' : 'Set up my weekly availability'}
             </button>
           </div>
         </div>
@@ -208,15 +258,11 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
                 );
               }
 
-              // Manual task row
               const task = entry.task;
               return (
                 <li
                   key={`manual-${task.id}`}
-                  className={cn(
-                    "flex items-start gap-4 px-6 py-4 bg-slate-50/40",
-                    task.done && "opacity-50"
-                  )}
+                  className={cn("flex items-start gap-4 px-6 py-4 bg-slate-50/40", task.done && "opacity-50")}
                 >
                   <span className={cn(
                     "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
@@ -270,60 +316,74 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
               <h3 className="text-base font-bold">This Week</h3>
             </div>
             <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-1 rounded-full uppercase tracking-wide">
-              Planned workload
+              {weekSetup ? 'Your allocation' : 'Planned workload'}
             </span>
           </div>
 
-          <div className="px-6 py-5 space-y-5">
-            {weekData.map((day) => {
-              const maxBar = 180;
-              const plannedPct = Math.min((day.planned / maxBar) * 100, 100);
-              const extraPct = day.addExtra ? Math.min((day.addExtra / maxBar) * 100, 30) : 0;
+          <div className="px-6 py-5 space-y-4">
+            {activeDays.map(day => {
+              const maxBar = Math.max(perDayMins, perDayRecommended, 90);
+              const plannedPct = Math.min((perDayMins / maxBar) * 100, 100);
+              const recPct = Math.min((perDayRecommended / maxBar) * 100, 100);
+              const isOver = perDayMins >= perDayRecommended;
               return (
-                <div key={day.day}>
+                <div key={day}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-bold text-foreground">{day.day}</span>
-                    <span className="text-xs text-muted-foreground">{fmtMins(day.planned)} planned</span>
+                    <span className="text-sm font-bold text-foreground">{day}</span>
+                    <span className="text-xs text-muted-foreground">{fmtMins(perDayMins)} planned</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden flex">
                       <div
-                        className="h-full bg-primary rounded-full transition-all"
+                        className={cn("h-full rounded-full transition-all", isOver ? "bg-primary" : "bg-primary")}
                         style={{ width: `${plannedPct}%` }}
                       />
-                      {day.addExtra && (
+                      {!isOver && (
                         <div
-                          className="h-full bg-primary/20 border-l-2 border-dashed border-primary/40"
-                          style={{ width: `${extraPct}%` }}
+                          className="h-full bg-primary/15 border-l-2 border-dashed border-primary/30"
+                          style={{ width: `${recPct - plannedPct}%` }}
                         />
                       )}
                     </div>
-                    {day.addExtra && (
+                    {!isOver && (
                       <span className="text-[10px] font-bold text-amber-600 whitespace-nowrap">
-                        +{fmtMins(day.addExtra)}
+                        +{fmtMins(perDayRecommended - perDayMins)}
                       </span>
                     )}
                   </div>
                 </div>
               );
             })}
+            {activeDays.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No admin days set —{' '}
+                <button onClick={onOpenWeeklySetup} className="text-primary font-semibold hover:underline">
+                  set up your week
+                </button>
+              </p>
+            )}
           </div>
 
           <div className="px-6 py-4 border-t border-border space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Total planned</span>
-              <span className="font-semibold">{fmtMins(totalPlanned)}</span>
+              <span className="text-muted-foreground">Total allocated</span>
+              <span className="font-semibold">{fmtMins(allocatedMins)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Recommended</span>
-              <span className="font-semibold text-amber-600">{fmtMins(totalRecommended)}</span>
+              <span className={cn("font-semibold", isAtRisk ? "text-amber-600" : "text-green-600")}>{fmtMins(recommendedMins)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Difference</span>
-              <span className="font-semibold text-amber-600">+{fmtMins(diff)}</span>
+              <span className={cn("font-semibold", isAtRisk ? "text-amber-600" : "text-green-600")}>
+                {isAtRisk ? `–${fmtMins(shortfall)}` : `+${fmtMins(allocatedMins - recommendedMins)}`}
+              </span>
             </div>
-            <button className="mt-2 text-xs text-primary font-semibold flex items-center gap-1 hover:underline">
-              See full weekly plan <ChevronRight size={12} />
+            <button
+              onClick={onOpenWeeklySetup}
+              className="mt-2 text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+            >
+              {weekSetup ? 'Adjust availability' : 'Set up weekly availability'} <ChevronRight size={12} />
             </button>
           </div>
         </div>
@@ -382,7 +442,6 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
                 <X size={18} />
               </button>
             </div>
-
             <div className="flex-1 overflow-y-auto">
               {sourceEmail && (
                 <div className="mx-6 mt-5 p-4 bg-slate-50 border border-border rounded-xl">
@@ -404,7 +463,6 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
                   <p className="text-sm text-foreground leading-relaxed">{sourceEmail.body}</p>
                 </div>
               )}
-
               <div className="mx-6 mt-4 mb-6">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">AI Draft Response</p>
                 <div className="p-4 bg-primary/4 border border-primary/20 rounded-xl">
@@ -424,7 +482,6 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
                 </div>
               </div>
             </div>
-
             <div className="px-6 py-4 border-t border-border flex items-center gap-3">
               <button
                 onClick={handleCopy}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Home, Calendar, Mail, AlertTriangle, Clock, CalendarDays, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HomeTab from '../tabs/HomeTab';
@@ -9,7 +9,13 @@ import TimelineTab from '../tabs/TimelineTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
+import WeeklySetupModal from '../components/WeeklySetupModal';
 import { TabType, SidebarTask } from '@/lib/types';
+
+export interface WeekSetup {
+  hours: number;
+  days: string[];
+}
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
@@ -28,6 +34,13 @@ const defaultSidebarTasks: SidebarTask[] = [
   { id: 's3', title: 'Sign off discharge letter — Thomas Wright', estMin: 10, priority: 'normal', done: false },
 ];
 
+function getWeekKey() {
+  const d = new Date();
+  const jan1 = new Date(d.getFullYear(), 0, 1);
+  const weekNum = Math.ceil((((d.getTime() - jan1.getTime()) / 86400000) + jan1.getDay() + 1) / 7);
+  return `clinadmin-week-${d.getFullYear()}-${weekNum}`;
+}
+
 export default function ClinAdmin() {
   const [activeTab, setActiveTab] = useState<TabType>('Home');
   const [sidebarTasks, setSidebarTasks] = useState<SidebarTask[]>(defaultSidebarTasks);
@@ -35,6 +48,31 @@ export default function ClinAdmin() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskMins, setNewTaskMins] = useState('15');
   const [newTaskPriority, setNewTaskPriority] = useState<'high' | 'normal'>('normal');
+  const [showWeeklySetup, setShowWeeklySetup] = useState(false);
+  const [weekSetup, setWeekSetup] = useState<WeekSetup | null>(null);
+
+  // Show weekly setup modal on first visit of the week
+  useEffect(() => {
+    const key = getWeekKey();
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      try { setWeekSetup(JSON.parse(stored)); } catch { setShowWeeklySetup(true); }
+      return;
+    }
+    const t = setTimeout(() => setShowWeeklySetup(true), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleWeeklySetupComplete = (hours: number, days: string[]) => {
+    const setup: WeekSetup = { hours, days };
+    setWeekSetup(setup);
+    setShowWeeklySetup(false);
+    localStorage.setItem(getWeekKey(), JSON.stringify(setup));
+  };
+
+  const handleWeeklySetupDismiss = () => {
+    setShowWeeklySetup(false);
+  };
 
   const addTask = () => {
     const title = newTaskTitle.trim();
@@ -63,7 +101,7 @@ export default function ClinAdmin() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} />;
+      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Today': return <TodayTab />;
       case 'Inbox': return <InboxTab />;
       case 'High Risk': return <HighRiskTab />;
@@ -71,12 +109,21 @@ export default function ClinAdmin() {
       case 'Weekly Plan': return <WeeklyPlanTab />;
       case 'My Style': return <StyleTab />;
       case 'Catch-up': return <CatchUpTab />;
-      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} />;
+      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
     }
   };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
+
+      {/* Weekly Setup Modal */}
+      {showWeeklySetup && (
+        <WeeklySetupModal
+          onComplete={handleWeeklySetupComplete}
+          onDismiss={handleWeeklySetupDismiss}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className="w-64 border-r border-sidebar-border bg-sidebar flex flex-col">
         {/* Logo */}
@@ -126,9 +173,7 @@ export default function ClinAdmin() {
                 onClick={() => setAddingTask(v => !v)}
                 className={cn(
                   "w-5 h-5 rounded flex items-center justify-center transition-colors",
-                  addingTask
-                    ? "bg-primary text-white"
-                    : "hover:bg-sidebar-accent text-muted-foreground"
+                  addingTask ? "bg-primary text-white" : "hover:bg-sidebar-accent text-muted-foreground"
                 )}
                 title="Add task"
               >
@@ -136,7 +181,6 @@ export default function ClinAdmin() {
               </button>
             </div>
 
-            {/* Add task form */}
             {addingTask && (
               <div className="mb-2 bg-sidebar-accent/40 rounded-lg p-2 space-y-1.5">
                 <input
@@ -177,7 +221,6 @@ export default function ClinAdmin() {
               </div>
             )}
 
-            {/* Task list */}
             <ul className="space-y-0.5">
               {sidebarTasks.length === 0 && (
                 <li className="text-[11px] text-muted-foreground text-center py-3 italic">No tasks yet</li>
