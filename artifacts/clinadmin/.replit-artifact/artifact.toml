@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "ClinAdmin"
+version = "1.0.0"
+id = "artifacts/clinadmin"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24038
+
+[services.development]
+run = "pnpm --filter @workspace/clinadmin run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/clinadmin", "run", "build" ]
+publicDir = "artifacts/clinadmin/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24038"
+BASE_PATH = "/"

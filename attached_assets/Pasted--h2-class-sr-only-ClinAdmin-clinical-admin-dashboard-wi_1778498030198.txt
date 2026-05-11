@@ -1,0 +1,987 @@
+<h2 class="sr-only">ClinAdmin — clinical admin dashboard with simplified Home view, detailed Today dashboard, timeline, workload prediction, writing style learning, and onboarding.</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+.wrap{padding:0 0 48px;font-size:14px;color:var(--color-text-primary);font-family:var(--font-sans);}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 0 12px;border-bottom:0.5px solid var(--color-border-tertiary);}
+.logo{font-size:15px;font-weight:500;}
+.connected{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--color-text-success);background:var(--color-background-success);padding:3px 8px;border-radius:99px;margin-left:8px;}
+.connected-dot{width:6px;height:6px;border-radius:50%;background:#639922;}
+.nav{display:flex;border-bottom:0.5px solid var(--color-border-tertiary);margin-bottom:20px;gap:2px;overflow-x:auto;}
+.ntab{padding:9px 12px;font-size:13px;border:none;background:none;cursor:pointer;color:var(--color-text-secondary);border-bottom:2px solid transparent;margin-bottom:-1px;font-family:var(--font-sans);white-space:nowrap;display:flex;align-items:center;gap:5px;}
+.ntab:hover{color:var(--color-text-primary);}
+.ntab.active{color:var(--color-text-primary);border-bottom-color:var(--color-text-primary);font-weight:500;}
+.tab{display:none;}.tab.show{display:block;}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--border-radius-md);font-size:11px;font-weight:500;}
+.b-red{background:var(--color-background-danger);color:var(--color-text-danger);}
+.b-amber{background:var(--color-background-warning);color:var(--color-text-warning);}
+.b-green{background:var(--color-background-success);color:var(--color-text-success);}
+.b-gray{background:var(--color-background-secondary);color:var(--color-text-secondary);border:0.5px solid var(--color-border-secondary);}
+.b-blue{background:var(--color-background-info);color:var(--color-text-info);}
+.b-purple{background:#EEEDFE;color:#3C3489;}
+.b-teal{background:#E1F5EE;color:#0F6E56;}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.d-red{background:#E24B4A;}.d-amber{background:#EF9F27;}.d-green{background:#639922;}.d-gray{background:#888780;}.d-teal{background:#1D9E75;}.d-blue{background:#378ADD;}
+
+/* ─── HOME (simplified) ─── */
+.home-greet{display:flex;align-items:center;gap:14px;margin-bottom:18px;}
+.home-greet-icon{font-size:34px;color:#EF9F27;line-height:1;}
+.home-greet-title{font-size:22px;font-weight:500;line-height:1.2;}
+.home-greet-sub{font-size:13px;color:var(--color-text-secondary);margin-top:4px;}
+
+.status-banner{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 20px;margin-bottom:18px;background:#FAEEDA;}
+.status-banner.ok{background:#EAF3DE;}
+.status-banner.crit{background:var(--color-background-danger);}
+.status-row{display:grid;grid-template-columns:1fr 1px 1fr;gap:20px;align-items:stretch;}
+.status-divider{background:var(--color-border-tertiary);width:1px;}
+@media (max-width:680px){.status-row{grid-template-columns:1fr;}.status-divider{display:none;}}
+.status-left{display:flex;gap:14px;}
+.status-icon-big{width:42px;height:42px;border-radius:50%;background:#FAC775;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#633806;}
+.status-banner.ok .status-icon-big{background:#C0DD97;color:#27500A;}
+.status-title-row{font-size:15px;font-weight:500;margin-bottom:5px;}
+.at-risk-text{color:#854F0B;font-weight:500;}
+.on-track-text{color:#27500A;font-weight:500;}
+.status-meta{font-size:13px;line-height:1.7;color:#412402;}
+.status-banner.ok .status-meta{color:#173404;}
+.status-meta strong{font-weight:500;}
+.warn-text{color:#854F0B;font-weight:500;}
+.rec-block{padding-left:0;}
+.rec-label{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:#854F0B;margin-bottom:3px;}
+.status-banner.ok .rec-label{color:#27500A;}
+.rec-title{font-size:14px;font-weight:500;margin-bottom:3px;color:#412402;}
+.status-banner.ok .rec-title{color:#173404;}
+.rec-sub{font-size:12px;color:#633806;margin-bottom:12px;}
+.status-banner.ok .rec-sub{color:#27500A;}
+.rec-buttons{display:flex;gap:6px;flex-wrap:wrap;}
+.rec-buttons button{font-size:12px;padding:6px 12px;background:transparent;border:0.5px solid #854F0B;color:#412402;}
+.rec-buttons button:hover{background:rgba(133,79,11,0.1);}
+.rec-buttons button.primary{background:#854F0B;color:white;border-color:#854F0B;}
+.rec-buttons button.primary:hover{background:#633806;}
+.status-banner.ok .rec-buttons button{border-color:#27500A;color:#173404;}
+.status-banner.ok .rec-buttons button.primary{background:#27500A;color:white;}
+.rec-explain{font-size:12px;color:#854F0B;margin-top:10px;cursor:pointer;display:inline-block;}
+
+.home-row{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:18px;}
+@media (max-width:680px){.home-row{grid-template-columns:1fr;}}
+.h-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:18px;background:var(--color-background-primary);}
+.h-card-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;}
+.h-card-title{font-size:15px;font-weight:500;display:flex;align-items:center;gap:8px;}
+.h-card-title-icon{width:30px;height:30px;border-radius:50%;background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);font-size:14px;}
+.h-card-badge{font-size:11px;padding:3px 8px;border-radius:var(--border-radius-md);background:var(--color-background-success);color:var(--color-text-success);font-weight:500;}
+.h-card-link{margin-left:auto;font-size:12px;color:#378ADD;cursor:pointer;background:none;border:none;font-family:var(--font-sans);padding:0;}
+.h-card-link:hover{text-decoration:underline;}
+.h-card-sub{font-size:12px;color:var(--color-text-secondary);margin-bottom:12px;}
+
+.plan-num-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:0.5px solid var(--color-border-tertiary);}
+.plan-num-row:last-child{border-bottom:none;}
+.plan-num-row.done{opacity:0.5;}
+.plan-num-row.done .plan-row-title{text-decoration:line-through;}
+.plan-num-circle{width:22px;height:22px;border-radius:50%;border:0.5px solid var(--color-border-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;color:var(--color-text-secondary);}
+.plan-num-row.done .plan-num-circle{background:var(--color-background-success);border-color:#C0DD97;color:#27500A;}
+.plan-content{flex:1;min-width:0;}
+.plan-row-title{font-size:13px;font-weight:500;}
+.plan-why{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
+.plan-time-tag{font-size:11px;color:var(--color-text-secondary);white-space:nowrap;}
+.plan-check{width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:#639922;}
+.plan-success{background:#EAF3DE;border-radius:var(--border-radius-md);padding:12px 14px;margin-top:14px;display:flex;align-items:center;gap:10px;color:#27500A;font-size:13px;font-weight:500;}
+.plan-pending{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 14px;margin-top:14px;display:flex;align-items:center;gap:10px;color:var(--color-text-secondary);font-size:13px;}
+
+.week-day-row{display:grid;grid-template-columns:38px 1fr auto;gap:10px;align-items:center;padding:7px 0;}
+.week-day-label{font-size:12px;color:var(--color-text-secondary);font-weight:500;}
+.week-day-track{height:14px;background:var(--color-background-secondary);border-radius:4px;position:relative;overflow:visible;}
+.week-day-fill{height:100%;background:#534AB7;border-radius:4px;}
+.week-day-extra{position:absolute;top:0;height:14px;border:1.5px dashed #534AB7;border-radius:4px;background:rgba(83,74,183,0.08);}
+.week-day-extra-label{position:absolute;top:-2px;font-size:10px;color:#534AB7;white-space:nowrap;font-weight:500;}
+.week-day-time{font-size:11px;color:var(--color-text-secondary);white-space:nowrap;}
+.week-totals{margin-top:14px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary);font-size:12px;line-height:1.8;}
+.week-total-row{display:flex;justify-content:space-between;}
+.week-total-row.warn{color:#854F0B;font-weight:500;}
+
+.home-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+@media (max-width:680px){.home-stats{grid-template-columns:1fr;}}
+.home-stat-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;background:var(--color-background-primary);display:flex;align-items:center;gap:12px;}
+.home-stat-icon{width:36px;height:36px;border-radius:50%;background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--color-text-secondary);flex-shrink:0;}
+.home-stat-icon.success{background:#EAF3DE;color:#27500A;}
+.home-stat-icon.info{background:var(--color-background-info);color:var(--color-text-info);}
+.home-stat-num{font-size:22px;font-weight:500;line-height:1;}
+.home-stat-label{font-size:13px;font-weight:500;margin-top:2px;}
+.home-stat-sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
+
+/* ─── DETAILED (Today) ─── */
+.safety-bar{border-radius:var(--border-radius-lg);border:0.5px solid var(--color-border-tertiary);padding:15px 20px;margin-bottom:16px;background:var(--color-background-primary);display:flex;justify-content:space-between;align-items:center;}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:16px;}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px;}
+.mlabel{font-size:12px;color:var(--color-text-secondary);margin-bottom:5px;}
+.mval{font-size:22px;font-weight:500;}
+.mval.red{color:var(--color-text-danger);}.mval.amber{color:var(--color-text-warning);}
+.sec-head{font-size:12px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+.task-list{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);overflow:hidden;margin-bottom:18px;}
+.task-row{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:0.5px solid var(--color-border-tertiary);}
+.task-row:last-child{border-bottom:none;}
+.task-txt{flex:1;}.task-title{font-size:14px;}.task-desc{font-size:12px;color:var(--color-text-secondary);margin-top:2px;line-height:1.5;}
+.task-right{font-size:12px;color:var(--color-text-secondary);text-align:right;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+.avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;}
+
+/* Drafts ready */
+.drafts-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);padding:14px 18px;margin-bottom:18px;}
+.draft-row-mini{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:13px;}
+.draft-row-mini:last-child{border-bottom:none;}
+.draft-name{font-weight:500;}
+.draft-meta{color:var(--color-text-secondary);font-size:12px;margin-left:auto;}
+
+/* Backlog progress */
+.backlog-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);padding:14px 18px;display:flex;align-items:center;gap:16px;margin-bottom:18px;}
+.backlog-circle{width:64px;height:64px;flex-shrink:0;position:relative;}
+.backlog-circle svg{transform:rotate(-90deg);}
+.backlog-pct{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;}
+.backlog-info{flex:1;}
+.backlog-title{font-size:13px;font-weight:500;margin-bottom:3px;}
+.backlog-sub{font-size:12px;color:var(--color-text-secondary);}
+
+/* Existing styles */
+.email-list{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);overflow:hidden;margin-bottom:16px;}
+.email-row{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:0.5px solid var(--color-border-tertiary);cursor:pointer;}
+.email-row:last-child{border-bottom:none;}
+.email-row:hover,.email-row.sel{background:var(--color-background-secondary);}
+.detail{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:20px;background:var(--color-background-primary);}
+.detail-body-box{font-size:13px;line-height:1.7;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:14px;white-space:pre-wrap;margin-bottom:14px;}
+.btn-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+button.sm{font-size:12px;padding:6px 12px;}
+.ai-panel{border:0.5px solid var(--color-border-info);background:var(--color-background-info);border-radius:var(--border-radius-md);padding:14px;margin-top:10px;}
+.ai-label{font-size:11px;font-weight:500;color:var(--color-text-info);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.ai-content{font-size:13px;line-height:1.7;white-space:pre-wrap;}
+.draft-panel{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:14px;margin-top:10px;background:var(--color-background-primary);}
+.draft-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.draft-warn{font-size:11px;color:var(--color-text-warning);margin-left:auto;}
+.draft-content{font-size:13px;line-height:1.7;white-space:pre-wrap;}
+.risk-item{border-left:3px solid #E24B4A;border-top:0.5px solid var(--color-border-tertiary);border-right:0.5px solid var(--color-border-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;padding:14px 16px;margin-bottom:10px;background:var(--color-background-primary);}
+.risk-flags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.plan-form{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.plan-form label{font-size:13px;color:var(--color-text-secondary);white-space:nowrap;}
+.plan-form input[type=number]{width:65px;}.plan-form input[type=text]{width:160px;}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--color-border-tertiary);border-top-color:var(--color-text-info);border-radius:50%;animation:rot 0.8s linear infinite;vertical-align:middle;}
+@keyframes rot{to{transform:rotate(360deg);}}
+.err-box{border:0.5px solid var(--color-border-tertiary);background:var(--color-background-danger);border-radius:var(--border-radius-md);padding:14px;margin-top:10px;font-size:13px;}
+.err-msg{color:var(--color-text-danger);margin-bottom:8px;}.err-detail{font-size:11px;color:var(--color-text-danger);font-family:var(--font-mono);margin-bottom:8px;opacity:0.8;}
+
+/* Workload chart */
+.wl-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);padding:16px 18px;margin-bottom:18px;}
+.wl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.wl-title{font-size:13px;font-weight:500;}
+.wl-chart{display:flex;gap:5px;align-items:flex-end;height:80px;margin-bottom:8px;}
+.wl-col{flex:1;display:flex;flex-direction:column;align-items:center;}
+.wl-num{font-size:10px;color:var(--color-text-secondary);margin-bottom:2px;text-align:center;}
+.wl-bar-wrap{width:100%;height:70px;display:flex;flex-direction:column;justify-content:flex-end;}
+.wl-bar{width:100%;display:flex;flex-direction:column;overflow:hidden;border-radius:3px 3px 0 0;}
+.wl-lbl{font-size:9px;color:var(--color-text-secondary);margin-top:4px;text-align:center;white-space:nowrap;}
+.wl-legend{display:flex;gap:10px;font-size:10px;color:var(--color-text-secondary);flex-wrap:wrap;margin-bottom:12px;}
+.wl-swatch{display:inline-block;width:8px;height:8px;border-radius:1px;}
+.wl-insight{font-size:13px;line-height:1.7;color:var(--color-text-secondary);}
+
+/* Timeline */
+.tl-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.filter-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{padding:5px 12px;border-radius:99px;border:0.5px solid var(--color-border-secondary);font-size:12px;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);font-family:var(--font-sans);white-space:nowrap;}
+.chip.active{background:var(--color-text-primary);color:var(--color-background-primary);border-color:var(--color-text-primary);}
+.chip:hover:not(.active){background:var(--color-background-secondary);}
+.cal-strip-wrap{overflow-x:auto;margin-bottom:4px;padding-bottom:4px;}
+.cal-strip{display:flex;gap:3px;min-width:max-content;}
+.cal-day{width:46px;flex-shrink:0;text-align:center;padding:6px 4px 8px;border-radius:var(--border-radius-md);border:0.5px solid transparent;}
+.cal-day.today{border-color:#378ADD;background:var(--color-background-info);}
+.cal-day.past{opacity:0.35;}
+.cal-dayname{font-size:10px;color:var(--color-text-secondary);margin-bottom:3px;}
+.cal-datenum{font-size:14px;font-weight:500;margin-bottom:5px;line-height:1;}
+.cal-day.today .cal-datenum{color:#185FA5;}
+.cal-dots{display:flex;justify-content:center;gap:2px;flex-wrap:wrap;min-height:8px;}
+.cal-dot{width:6px;height:6px;border-radius:50%;}
+.tl-summary{display:flex;gap:16px;padding:12px 16px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);margin-bottom:20px;font-size:13px;flex-wrap:wrap;}
+.tl-sum-item{display:flex;align-items:center;gap:6px;}
+.tl-sum-val{font-weight:500;}.tl-sum-val.red{color:var(--color-text-danger);}.tl-sum-val.amber{color:var(--color-text-warning);}
+.period-section{margin-bottom:20px;}
+.period-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.period-label{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-secondary);}
+.period-line{flex:1;height:0.5px;background:var(--color-border-tertiary);}
+.tl-item{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);margin-bottom:6px;}
+.tl-item.overdue{border-left:3px solid #E24B4A;border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;}
+.tl-item-main{flex:1;min-width:0;}
+.tl-item-title{font-size:13px;font-weight:500;margin-bottom:3px;}
+.tl-item-right{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+.tl-deadline{font-size:12px;font-weight:500;}
+.tl-deadline.red{color:var(--color-text-danger);}.tl-deadline.amber{color:var(--color-text-warning);}.tl-deadline.green{color:var(--color-text-success);}
+.tl-bar-wrap{margin:5px 0 2px;height:4px;background:var(--color-background-secondary);border-radius:2px;overflow:hidden;}
+.tl-bar{height:100%;border-radius:2px;}
+.add-task-form{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px;background:var(--color-background-primary);margin-bottom:20px;display:none;}
+.add-task-form.open{display:block;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.form-field label{display:block;font-size:12px;color:var(--color-text-secondary);margin-bottom:5px;}
+.form-field input,.form-field select{width:100%;}
+.form-field select{padding:7px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans);font-size:14px;}
+.form-field.full{grid-column:1/-1;}
+
+/* Style tab */
+.style-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:16px;}
+.style-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;background:var(--color-background-primary);}
+.style-card-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.style-row{display:flex;gap:6px;font-size:12px;padding:4px 0;border-bottom:0.5px solid var(--color-border-tertiary);}
+.style-row:last-child{border-bottom:none;}
+.style-key{color:var(--color-text-secondary);width:72px;flex-shrink:0;}
+.sent-email{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px;margin-bottom:8px;font-size:13px;background:var(--color-background-primary);}
+.sent-email-meta{font-size:11px;color:var(--color-text-secondary);margin-bottom:6px;}
+.sent-email-body{font-size:12px;line-height:1.6;color:var(--color-text-secondary);white-space:pre-wrap;}
+
+/* Onboarding */
+.ob-step{display:none;}.ob-step.show{display:block;}
+.ob-welcome{text-align:center;padding:32px 16px;}
+.ob-welcome-icon{font-size:40px;margin-bottom:16px;color:var(--color-text-secondary);}
+.ob-title{font-size:20px;font-weight:500;margin-bottom:8px;}
+.ob-sub{font-size:14px;color:var(--color-text-secondary);line-height:1.6;max-width:480px;margin:0 auto 28px;}
+.ob-form{max-width:420px;margin:0 auto;text-align:left;}
+.ob-field{margin-bottom:16px;}
+.ob-field label{display:block;font-size:13px;color:var(--color-text-secondary);margin-bottom:6px;}
+.ob-field select{width:100%;padding:8px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans);font-size:14px;cursor:pointer;}
+.ob-row{display:flex;gap:12px;}.ob-row .ob-field{flex:1;}
+.scan-box{text-align:center;padding:40px 16px;}
+.scan-title{font-size:16px;font-weight:500;margin-bottom:6px;}
+.scan-msg{font-size:13px;color:var(--color-text-secondary);margin-bottom:24px;min-height:20px;}
+.progress-track{height:4px;background:var(--color-background-secondary);border-radius:2px;overflow:hidden;max-width:360px;margin:0 auto 24px;}
+.progress-bar{height:100%;background:#378ADD;border-radius:2px;transition:width 0.4s ease;}
+.scan-items{text-align:left;max-width:360px;margin:0 auto;}
+.scan-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;color:var(--color-text-secondary);}
+.scan-item.done{color:var(--color-text-primary);}
+.spin-sm{display:inline-block;width:10px;height:10px;border:2px solid var(--color-border-tertiary);border-top-color:var(--color-text-info);border-radius:50%;animation:rot 0.8s linear infinite;}
+.ob-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:22px;}
+.ob-stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px;text-align:center;}
+.ob-stat-val{font-size:26px;font-weight:500;}
+.ob-stat-label{font-size:11px;color:var(--color-text-secondary);margin-top:4px;}
+.ob-stat-val.red{color:var(--color-text-danger);}.ob-stat-val.amber{color:var(--color-text-warning);}
+.backlog-row{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:0.5px solid var(--color-border-tertiary);}
+.backlog-row:last-child{border-bottom:none;}
+.cruising-bar{background:var(--color-background-success);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:14px 16px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;}
+</style>
+
+<div class="wrap">
+  <div class="topbar">
+    <div><div class="logo">ClinAdmin <span class="connected"><span class="connected-dot"></span> Connected · Gmail</span></div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">Clinical admin assistant · CAMHS Outpatient</div></div>
+    <div><div style="font-size:13px;font-weight:500;text-align:right;">Dr. A. Patterson</div><div style="font-size:12px;color:var(--color-text-secondary);text-align:right;">Mon 11 May 2026 · Week 20</div></div>
+  </div>
+  <nav class="nav">
+    <button class="ntab active" onclick="showTab('home',this)"><i class="ti ti-home" aria-hidden="true"></i> Home</button>
+    <button class="ntab" onclick="showTab('today',this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Today (detailed)</button>
+    <button class="ntab" onclick="showTab('inbox',this)"><i class="ti ti-mail" aria-hidden="true"></i> Inbox <span class="badge b-red" style="font-size:10px;">9</span></button>
+    <button class="ntab" onclick="showTab('risk',this)"><i class="ti ti-alert-triangle" aria-hidden="true"></i> High risk <span class="badge b-red" style="font-size:10px;">2</span></button>
+    <button class="ntab" onclick="showTab('timeline',this)"><i class="ti ti-calendar-event" aria-hidden="true"></i> Timeline</button>
+    <button class="ntab" onclick="showTab('planner',this)"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly plan</button>
+    <button class="ntab" onclick="showTab('style',this)"><i class="ti ti-writing" aria-hidden="true"></i> My style</button>
+    <button class="ntab" onclick="showTab('onboarding',this)"><i class="ti ti-rocket" aria-hidden="true"></i> Catch-up</button>
+  </nav>
+
+  <!-- HOME (simplified) -->
+  <div id="tab-home" class="tab show">
+    <div class="home-greet">
+      <span class="home-greet-icon"><i class="ti ti-sun" aria-hidden="true"></i></span>
+      <div>
+        <div class="home-greet-title">Good morning, Dr. Patterson</div>
+        <div class="home-greet-sub">Here's your plan. Follow it and you're on top of your admin.</div>
+      </div>
+    </div>
+
+    <div id="home-status-banner"></div>
+
+    <div class="home-row">
+      <div class="h-card">
+        <div class="h-card-head">
+          <div class="h-card-title"><div class="h-card-title-icon"><i class="ti ti-calendar-check" aria-hidden="true"></i></div> Today's plan</div>
+          <span class="h-card-badge" id="today-badge">1h 20min admin</span>
+          <button class="h-card-link" onclick="document.querySelectorAll('.ntab')[1].click()">View detailed →</button>
+        </div>
+        <div class="h-card-sub">Do these in order.</div>
+        <div id="today-plan-list"></div>
+        <div id="today-plan-status"></div>
+      </div>
+
+      <div class="h-card">
+        <div class="h-card-head">
+          <div class="h-card-title"><div class="h-card-title-icon"><i class="ti ti-calendar-week" aria-hidden="true"></i></div> This week</div>
+          <span class="h-card-badge" style="background:var(--color-background-info);color:var(--color-text-info);">Planned workload</span>
+        </div>
+        <div id="week-day-list"></div>
+        <div class="week-totals">
+          <div class="week-total-row"><div>Total planned</div><div class="week-total-value" id="wk-planned">4h 00min</div></div>
+          <div class="week-total-row warn"><div>Recommended</div><div class="week-total-value warn" id="wk-rec">5h 10min</div></div>
+          <div class="week-total-row warn"><div>Difference</div><div class="week-total-value warn" id="wk-diff">1h 10min</div></div>
+        </div>
+        <button class="h-card-link" style="margin-top:10px;display:block;" onclick="document.querySelectorAll('.ntab')[5].click()">See full weekly plan →</button>
+      </div>
+    </div>
+
+    <div class="home-stats">
+      <div class="home-stat-card">
+        <div class="home-stat-icon"><i class="ti ti-archive" aria-hidden="true"></i></div>
+        <div><div style="display:flex;align-items:baseline;gap:6px;"><div class="home-stat-num">7</div><div class="home-stat-label">Emails safely deferred</div></div><div class="home-stat-sub">Scheduled for next week or later.</div></div>
+      </div>
+      <div class="home-stat-card">
+        <div class="home-stat-icon info"><i class="ti ti-clipboard-check" aria-hidden="true"></i></div>
+        <div><div style="display:flex;align-items:baseline;gap:6px;"><div class="home-stat-num">4</div><div class="home-stat-label">Tasks scheduled</div></div><div class="home-stat-sub">Reports, letters, calls.</div></div>
+      </div>
+      <div class="home-stat-card">
+        <div class="home-stat-icon success"><i class="ti ti-shield-check" aria-hidden="true"></i></div>
+        <div><div style="display:flex;align-items:baseline;gap:6px;"><div class="home-stat-num">0</div><div class="home-stat-label">Unsafe deferrals</div></div><div class="home-stat-sub">You're safe if you follow the plan.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TODAY (detailed) -->
+  <div id="tab-today" class="tab">
+    <div class="safety-bar"><div><div style="font-size:18px;font-weight:500;">⚠ Admin needs attention today</div><div style="font-size:13px;color:var(--color-text-secondary);margin-top:3px;">2 urgent clinical · 1 professional request · 1 meeting deadline · 3 due this week</div></div><span class="badge b-amber" style="font-size:13px;padding:6px 14px;">Amber</span></div>
+
+    <div class="metrics">
+      <div class="metric"><div class="mlabel">High-risk correspondence</div><div class="mval red">2</div></div>
+      <div class="metric"><div class="mlabel">Urgent clinical</div><div class="mval red">2</div></div>
+      <div class="metric"><div class="mlabel">Approaching deadline</div><div class="mval amber">3</div></div>
+      <div class="metric"><div class="mlabel">Tasks due this week</div><div class="mval">4</div></div>
+    </div>
+
+    <!-- Backlog Recovery -->
+    <div class="backlog-card">
+      <div class="backlog-circle">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="26" fill="none" stroke="var(--color-background-secondary)" stroke-width="6"/>
+          <circle cx="32" cy="32" r="26" fill="none" stroke="#534AB7" stroke-width="6" stroke-dasharray="163.4" stroke-dashoffset="62" stroke-linecap="round"/>
+        </svg>
+        <div class="backlog-pct">62%</div>
+      </div>
+      <div class="backlog-info">
+        <div class="backlog-title"><i class="ti ti-rocket" style="font-size:13px;" aria-hidden="true"></i> Catch-up mode · Week 1 of 3</div>
+        <div class="backlog-sub">7 backlog items remaining · Estimated cruising mode: 1 June 2026</div>
+      </div>
+      <button class="sm" onclick="document.querySelectorAll('.ntab')[7].click()">Continue plan →</button>
+    </div>
+
+    <!-- Workload forecast -->
+    <div class="wl-card">
+      <div class="wl-head">
+        <div class="wl-title"><i class="ti ti-chart-bar" style="font-size:13px;" aria-hidden="true"></i> Workload forecast</div>
+        <button class="sm" onclick="refreshWorkloadPrediction()"><i class="ti ti-sparkles" aria-hidden="true"></i> AI insight ↗</button>
+      </div>
+      <div class="wl-chart" id="wl-chart"></div>
+      <div class="wl-legend">
+        <span style="display:flex;align-items:center;gap:3px;"><div class="wl-swatch" style="background:#E24B4A;"></div>Urgent</span>
+        <span style="display:flex;align-items:center;gap:3px;"><div class="wl-swatch" style="background:#EF9F27;"></div>Medium</span>
+        <span style="display:flex;align-items:center;gap:3px;"><div class="wl-swatch" style="background:#97C459;"></div>Low</span>
+        <span style="display:flex;align-items:center;gap:3px;"><div class="wl-swatch" style="background:#B4B2A9;"></div>Admin</span>
+        <span style="margin-left:4px;">· · · Predicted</span>
+      </div>
+      <div id="wl-insight" class="wl-insight"><i class="ti ti-info-circle" style="font-size:13px;vertical-align:-1px;" aria-hidden="true"></i> Avg 11.5 emails/week over 4 weeks · 2 urgent/week. Predicted next week: 11. Click "AI insight" for a personalised analysis.</div>
+    </div>
+
+    <div class="sec-head">Today's plan</div>
+    <div class="task-list" id="today-detailed-list"></div>
+
+    <!-- Drafts ready -->
+    <div class="drafts-card">
+      <div class="sec-head" style="margin-bottom:8px;"><span><i class="ti ti-edit" aria-hidden="true"></i> Drafts ready for review</span><span class="badge b-blue">3 drafts</span></div>
+      <div class="draft-row-mini"><div class="avatar" style="background:#FBEAF0;color:#72243E;">PO</div><div><div class="draft-name">Patricia Okafor</div><div style="font-size:12px;color:var(--color-text-secondary);">Re: Ritalin repeat — pre-holiday</div></div><div class="draft-meta">Modified 10:15am</div></div>
+      <div class="draft-row-mini"><div class="avatar" style="background:#E1F5EE;color:#0F6E56;">KO</div><div><div class="draft-name">Dr. K. Osei (psychology)</div><div style="font-size:12px;color:var(--color-text-secondary);">Re: Case formulation Thursday</div></div><div class="draft-meta">Modified 9:40am</div></div>
+      <div class="draft-row-mini"><div class="avatar" style="background:#FAEEDA;color:#633806;">MD</div><div><div class="draft-name">Mrs. Davies (SENCO)</div><div style="font-size:12px;color:var(--color-text-secondary);">Re: Lucas Thompson EHCP contribution</div></div><div class="draft-meta">Modified 9:20am</div></div>
+    </div>
+
+    <div class="sec-head">This week</div>
+    <div class="task-list">
+      <div class="task-row"><div class="avatar" style="background:#FAEEDA;color:#633806;">LT</div><div class="task-txt"><div class="task-title">Lucas Thompson — EHCP report for St Joseph's</div><div class="task-desc">Due 20 May. Written contribution or Teams attendance.</div></div><div class="task-right" style="color:var(--color-text-warning);">Due in 9 days</div></div>
+      <div class="task-row"><div class="avatar" style="background:#F1EFE8;color:#444441;">LF</div><div class="task-txt"><div class="task-title">Linda Foster — appointment letter query re Ella</div><div class="task-desc">Scheduling discrepancy. Brief admin response.</div></div><div class="task-right">Due in 10 days</div></div>
+      <div class="task-row"><div class="avatar" style="background:#F1EFE8;color:#444441;">MC</div><div class="task-txt"><div class="task-title">Mandatory training — Mental Capacity Act (ESR)</div><div class="task-desc">Due 15 June. No urgent action this week.</div></div><div class="task-right" style="color:var(--color-text-success);">Safe · 35 days</div></div>
+    </div>
+  </div>
+
+  <!-- INBOX -->
+  <div id="tab-inbox" class="tab">
+    <div class="email-list" id="email-list"></div>
+    <div id="email-detail"></div>
+  </div>
+
+  <!-- HIGH RISK -->
+  <div id="tab-risk" class="tab">
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;"><i class="ti ti-shield" style="font-size:15px;vertical-align:-2px;" aria-hidden="true"></i> Patients with high-risk correspondence in the last 30 days. Review before any routine admin.</div>
+    <div class="risk-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;"><div style="display:flex;gap:10px;"><div class="avatar" style="background:#FCEBEB;color:#791F1F;">MC</div><div><div style="font-size:14px;font-weight:500;margin-bottom:3px;">Mia Chen</div><div style="font-size:12px;color:var(--color-text-secondary);">Parent: Sarah Chen · Today 8:42am</div></div></div><span class="badge b-red">Critical</span></div><div class="risk-flags"><span class="badge b-red">Self-harm ideation</span><span class="badge b-red">Food refusal — 3 weeks</span><span class="badge b-red">Social withdrawal</span><span class="badge b-purple">Safeguarding review needed</span></div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:10px;">Do not respond by email. Escalate clinically today.</div></div>
+    <div class="risk-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;"><div style="display:flex;gap:10px;"><div class="avatar" style="background:#FCEBEB;color:#791F1F;">JO</div><div><div style="font-size:14px;font-weight:500;margin-bottom:3px;">James Okafor</div><div style="font-size:12px;color:var(--color-text-secondary);">DOB 14/03/2012 · GP: Dr. Elena Martinez</div></div></div><span class="badge b-red">High risk</span></div><div class="risk-flags"><span class="badge b-red">Medication stopped</span><span class="badge b-amber">School exclusion ×2</span><span class="badge b-amber">Police call-out</span><span class="badge b-purple">GP escalation</span><span class="badge b-amber">Script pending</span></div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:10px;">Script must not be actioned before medication history reviewed.</div></div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="tab-timeline" class="tab">
+    <div class="tl-topbar">
+      <div class="filter-chips">
+        <button class="chip active" onclick="setFilter('all',this)">All</button>
+        <button class="chip" onclick="setFilter('clinical',this)">Clinical</button>
+        <button class="chip" onclick="setFilter('professional',this)">Professional</button>
+        <button class="chip" onclick="setFilter('meeting',this)">Meetings</button>
+        <button class="chip" onclick="setFilter('admin',this)">Admin</button>
+        <button class="chip" onclick="setFilter('manual',this)">Manual tasks</button>
+      </div>
+      <button class="sm" onclick="toggleAddForm()" id="add-task-btn" style="margin-left:12px;white-space:nowrap;"><i class="ti ti-plus" aria-hidden="true"></i> Add task</button>
+    </div>
+    <div class="add-task-form" id="add-task-form">
+      <div style="font-size:13px;font-weight:500;margin-bottom:12px;">Add manual task</div>
+      <div class="form-grid">
+        <div class="form-field full"><label>Task name</label><input type="text" id="nt-title" placeholder="e.g. Write discharge letter — Thomas Wright"></div>
+        <div class="form-field"><label>Type</label><select id="nt-type"><option>Report</option><option>Phone call</option><option>Letter</option><option>Meeting</option><option>Form</option><option>Result review</option><option>Other</option></select></div>
+        <div class="form-field"><label>Priority</label><select id="nt-cat"><option value="Urgent clinical">Urgent clinical</option><option value="Professional — high priority">Professional</option><option value="Needs clinician review" selected>Needs clinician review</option><option value="Meeting / event deadline">Meeting / deadline</option><option value="Admin only">Admin only</option><option value="Low priority">Low priority</option></select></div>
+        <div class="form-field"><label>Due in (days)</label><input type="number" id="nt-days" value="7" min="0" max="365"></div>
+        <div class="form-field"><label>Notes (optional)</label><input type="text" id="nt-note" placeholder="Add context or patient name"></div>
+      </div>
+      <div style="display:flex;gap:8px;"><button onclick="addManualTask()">Add to timeline ↗</button><button onclick="toggleAddForm()">Cancel</button></div>
+    </div>
+    <div id="cal-strip-container"></div>
+    <div class="tl-summary" id="tl-summary"></div>
+    <div id="tl-list"></div>
+  </div>
+
+  <!-- WEEKLY PLAN -->
+  <div id="tab-planner" class="tab">
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;line-height:1.6;">Enter your available admin time and get a realistic, prioritised weekly plan.</div>
+    <div class="plan-form">
+      <label>Hours available:</label><input type="number" id="plan-hours" value="4" min="0.5" max="20" step="0.5">
+      <label>Across:</label><input type="text" id="plan-days" value="Tue, Wed, Thu">
+      <button onclick="generatePlan()">Generate plan ↗</button>
+    </div>
+    <div id="plan-output"></div>
+  </div>
+
+  <!-- STYLE -->
+  <div id="tab-style" class="tab">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:18px;font-weight:500;margin-bottom:4px;">My writing style</div>
+        <div style="font-size:13px;color:var(--color-text-secondary);line-height:1.6;max-width:500px;">ClinAdmin learns from your sent emails so drafts sound like you. Style adjusts automatically by recipient type — parents, colleagues, GPs, schools, and legal stakeholders each get an appropriately tuned tone.</div>
+      </div>
+      <button onclick="buildStyleProfile()"><i class="ti ti-sparkles" aria-hidden="true"></i> Build style profile ↗</button>
+    </div>
+    <div id="style-profile-output"></div>
+    <div class="sec-head" style="margin-bottom:10px;"><span>Sample sent emails <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--color-text-secondary);font-size:12px;">— used to train your style profile</span></span></div>
+    <div id="sent-emails-list"></div>
+  </div>
+
+  <!-- ONBOARDING -->
+  <div id="tab-onboarding" class="tab">
+    <div id="ob-0" class="ob-step show">
+      <div class="ob-welcome">
+        <div class="ob-welcome-icon"><i class="ti ti-inbox" aria-hidden="true"></i></div>
+        <div class="ob-title">Welcome to ClinAdmin</div>
+        <div class="ob-sub">Scan your inbox history to identify overdue items, high-risk patient correspondence, unresolved professional threads, and missed deadlines — then build a staged catch-up plan.</div>
+        <div class="ob-form">
+          <div class="ob-field"><label>Your name</label><input type="text" id="ob-name" value="Dr. A. Patterson"></div>
+          <div class="ob-row">
+            <div class="ob-field"><label>Scan period</label><select id="ob-months"><option value="1">Last 1 month</option><option value="2">Last 2 months</option><option value="3" selected>Last 3 months</option></select></div>
+            <div class="ob-field"><label>Hours/week for catch-up</label><input type="number" id="ob-hours" value="4" min="1" max="20" step="0.5"></div>
+          </div>
+          <div class="ob-field"><label>Admin days available</label><input type="text" id="ob-days" value="Tue, Wed, Thu"></div>
+          <button onclick="startScan()" style="width:100%;margin-top:8px;">Start catch-up scan ↗</button>
+        </div>
+      </div>
+    </div>
+    <div id="ob-1" class="ob-step">
+      <div class="scan-box">
+        <div class="scan-title">Scanning your inbox history…</div>
+        <div class="scan-msg" id="scan-msg">Connecting to inbox…</div>
+        <div class="progress-track"><div class="progress-bar" id="scan-bar" style="width:0%"></div></div>
+        <div class="scan-items" id="scan-items"></div>
+      </div>
+    </div>
+    <div id="ob-2" class="ob-step">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div><div style="font-size:18px;font-weight:500;margin-bottom:3px;">Catch-up scan complete</div><div style="font-size:13px;color:var(--color-text-secondary);" id="ob-scan-summary"></div></div>
+        <button class="sm" onclick="resetOnboarding()"><i class="ti ti-refresh" aria-hidden="true"></i> Rescan</button>
+      </div>
+      <div class="ob-stats" id="ob-stats"></div>
+      <div class="sec-head" style="margin-bottom:10px;">Requires immediate attention</div>
+      <div class="task-list" id="ob-urgent-list" style="margin-bottom:22px;"></div>
+      <div class="sec-head" style="margin-bottom:10px;">Overdue — no response on record</div>
+      <div class="task-list" id="ob-overdue-list" style="margin-bottom:22px;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-head" style="margin-bottom:0;">AI catch-up plan</div>
+        <button class="sm" id="ob-plan-btn" onclick="triggerCatchupPlan()"><i class="ti ti-sparkles" aria-hidden="true"></i> Generate plan ↗</button>
+      </div>
+      <div id="ob-plan-output"><div style="font-size:13px;color:var(--color-text-secondary);padding:8px 0;">Click "Generate plan" to build your staged weekly catch-up schedule.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CAT={URGENT:'Urgent clinical',UNSAFE:'Unsafe to answer by email',PROF:'Professional — high priority',REVIEW:'Needs clinician review',MEETING:'Meeting / event deadline',ADMIN:'Admin only',NONE:'No action required',LEGAL:'Medico-legal',LOW:'Low priority',DONE:'Completed'};
+
+const emails=[
+  {id:1,from:"Sarah Chen (parent)",subject:"Very worried about Mia — urgent please",preview:"I'm so scared. Mia hasn't eaten properly in 3 weeks and last night she said she didn't want to be here anymore...",body:"Dear Dr. Patterson,\n\nI'm so scared and don't know what to do. Mia hasn't eaten properly in 3 weeks and has lost a lot of weight. Last night she said she didn't want to be here anymore and I'm terrified. She won't talk to me.\n\nPlease can you call me as soon as possible.\n\nSarah Chen (Mia's mum)",date:"Today 8:42am",risk:"high",cat:CAT.UNSAFE,deadline:1,estMin:15},
+  {id:2,from:"Dr. Martinez (GP)",subject:"Re: James Okafor — urgent clinical concern",preview:"Further to our phone call, I'm increasingly concerned about James. His mother reports he has stopped all medication...",body:"Dear Dr. Patterson,\n\nFurther to our phone call last week, I am increasingly concerned about James Okafor (DOB 14/03/2012). His mother reports he has stopped all medication without consultation and his behaviour has escalated significantly at home. He was excluded from school twice last week and there was a police call-out on Thursday evening.\n\nI would appreciate an urgent review.\n\nKind regards,\nDr. Elena Martinez",date:"Yesterday 4:15pm",risk:"high",cat:CAT.URGENT,deadline:2,estMin:20},
+  {id:3,from:"Dr. K. Osei — Clinical Psychology",subject:"Urgent: case formulation meeting — Priya Sharma (Thu 2pm)",preview:"Hi, hoping to arrange an urgent case formulation meeting about Priya Sharma. Could you join us Thursday 2pm?",body:"Hi Dr. Patterson,\n\nI'm hoping to arrange an urgent case formulation meeting about Priya Sharma (DOB 08/11/2015) with the wider CAMHS team. Things have escalated and I think we need a joint view before her next appointment.\n\nCould you join us Thursday 2pm in the MDT room?\n\nThanks,\nDr. Kwame Osei\nClinical Psychologist, CAMHS",date:"Today 10:05am",risk:"medium",cat:CAT.PROF,deadline:3,estMin:10},
+  {id:4,from:"CHYMS Training Team",subject:"CHYMS Annual Conference 2026 — registration closes Friday",preview:"Spaces are filling fast for the CHYMS Annual Conference on 20 June. CPD points available. Registration closes Friday.",body:"Dear Colleague,\n\nSpaces are filling fast for the CHYMS Annual Conference 2026 on 20 June at the Whitmore Centre. Theme: 'Transitions and Crisis in Youth Mental Health'.\n\nCPD: 6 hours · Early bird expires Friday 5pm · 40 places remaining\n\nRegister at: chyms.org.uk/conference2026",date:"2 days ago",risk:"none",cat:CAT.MEETING,deadline:4,estMin:5},
+  {id:5,from:"Patricia Okafor (parent)",subject:"Early repeat prescription needed — very urgent",preview:"We are going on holiday next week and James has run out of his Ritalin 54mg early. We need a script before Friday.",body:"Hi,\n\nWe are going on holiday to Spain next week starting Saturday and James has run out of his Ritalin 54mg early. We need a prescription before Friday please. Also, can we get 3 months supply?\n\nPatricia",date:"Today 7:18am",risk:"medium",cat:CAT.REVIEW,deadline:3,estMin:12},
+  {id:6,from:"Mrs. Davies — SENCO",subject:"Lucas Thompson — EHCP review 24th May",preview:"We are holding Lucas's annual EHCP review on the 24th and would value a clinical update from you...",body:"Dear Dr. Patterson,\n\nWe are holding Lucas Thompson's (DOB 22/07/2013) annual EHCP review on Thursday 24th. Could you provide a brief report or attend via Teams?\n\nContributions needed by 20th May.\n\nMrs. A. Davies, SENCO",date:"2 days ago",risk:"low",cat:CAT.REVIEW,deadline:9,estMin:30},
+  {id:7,from:"NHS Training Admin",subject:"Mandatory training renewal — Mental Capacity Act",preview:"Your Mental Capacity Act training is due for renewal. Please complete via the ESR portal by 15th June.",body:"Dear Clinician,\n\nYour Mental Capacity Act mandatory training is due for renewal on 15th June. Please log into the ESR portal.\n\nNHS Training Team",date:"3 days ago",risk:"none",cat:CAT.ADMIN,deadline:35,estMin:5},
+  {id:8,from:"Linda Foster (parent)",subject:"Appointment letter — can you clarify?",preview:"We got a letter saying Ella's next appointment is in March but we were told it would be in 6 weeks...",body:"Hi,\n\nWe received a letter saying Ella's next appointment is in March 2026 but we were told it would be in 6 weeks. Can someone clarify?\n\nLinda",date:"4 days ago",risk:"none",cat:CAT.ADMIN,deadline:10,estMin:5},
+  {id:9,from:"MDT Coordinator",subject:"MDT meeting — rescheduled to Thursday 10am",preview:"Please note the MDT meeting this week has moved from Wednesday 2pm to Thursday 10am. Venue unchanged.",body:"Hi all,\n\nMDT meeting has moved from Wednesday 2pm to Thursday 10am. Same venue — Conference Room 2.\n\nMDT Coordinator",date:"Today 9:01am",risk:"none",cat:CAT.NONE,deadline:null,estMin:2}
+];
+
+const sentEmails=[
+  {to:"parent",toLabel:"Parent / family",toName:"Linda Foster",subject:"Re: Appointment query",body:"Dear Linda,\n\nThank you so much for getting in touch — I'm really sorry about the confusion with Ella's appointment. I've looked into this and it seems there was an admin error with the letter. Her next appointment is scheduled for 20 June.\n\nPlease don't hesitate to get in touch if anything else comes up.\n\nWith kind regards,\nDr. A. Patterson"},
+  {to:"colleague",toLabel:"Clinical colleague",toName:"Dr. K. Osei",subject:"Re: Joint formulation — Priya Sharma",body:"Hi Kwame,\n\nThanks for this — I think a joint formulation would be really valuable given how things have been escalating. I can do Thursday 2pm. I'll bring my last clinical summary.\n\nBest,\nAlex"},
+  {to:"gp",toLabel:"GP",toName:"Dr. Martinez",subject:"Re: James Okafor — clinical update",body:"Dear Dr. Martinez,\n\nMany thanks for your letter regarding James. I have reviewed the clinical picture and agree this warrants urgent review. I have arranged an urgent appointment for Thursday 15th.\n\nKind regards,\nDr. A. Patterson\nConsultant Child Psychiatrist | CAMHS Outpatient"},
+  {to:"school",toLabel:"School / SENCO",toName:"Mrs. Davies",subject:"Re: Lucas Thompson — EHCP contribution",body:"Dear Mrs. Davies,\n\nThank you for including me in Lucas's annual review. I'm happy to provide a written contribution by 18th May.\n\nMany thanks,\nDr. A. Patterson"},
+  {to:"formal",toLabel:"Formal / legal",toName:"NHS Resolution",subject:"Re: Subject Access Request",body:"Dear Sir/Madam,\n\nI write in response to your Subject Access Request dated 3rd March 2026.\n\nPlease find enclosed the requested records, redacted in accordance with the Data Protection Act 2018.\n\nYours sincerely,\nDr. A. Patterson"},
+  {to:"admin",toLabel:"Admin staff",toName:"MDT Team",subject:"Re: MDT scheduling",body:"Hi all,\n\nThursday 10am works fine for me. I'll add it to the calendar now.\n\nThanks,\nAlex"}
+];
+
+let manualTasks=[
+  {id:'m1',title:'ADHD assessment report — Zara Ali',from:'Manual task',cat:CAT.REVIEW,deadline:12,risk:'low',type:'Report',note:'For SEND tribunal.',source:'manual',estMin:60},
+  {id:'m2',title:'Phone callback — Dr. Osei re case formulation',from:'Manual task',cat:CAT.PROF,deadline:2,risk:'medium',type:'Phone call',note:'Confirm Thu 2pm attendance.',source:'manual',estMin:10},
+  {id:'m3',title:'Sign off discharge letter — Thomas Wright',from:'Manual task',cat:CAT.ADMIN,deadline:7,risk:'none',type:'Letter',note:'Drafted by admin, needs sign-off.',source:'manual',estMin:10},
+  {id:'m4',title:'Governance meeting — agenda response',from:'Manual task',cat:CAT.MEETING,deadline:5,risk:'none',type:'Meeting',note:'Confirm attendance and submit items.',source:'manual',estMin:8},
+];
+
+/* ── Home today plan ── */
+let homePlan=[
+  {id:1, title:"Review Mia Chen — safeguarding (high risk)", why:"Self-harm ideation flagged. Phone parent, do not email.", time:15, done:false},
+  {id:2, title:"Send 2 urgent clinical drafts", why:"Dr. Martinez (James Okafor) + GP escalation response.", time:25, done:false},
+  {id:3, title:"Reply to Dr. Osei — case formulation", why:"Professional colleague, meeting Thursday 2pm.", time:10, done:false},
+  {id:4, title:"Review Ritalin script request — James Okafor", why:"Controlled drug — check medication history first.", time:12, done:false},
+  {id:5, title:"Review 2 non-urgent emails approaching 14 days", why:"Will breach if left until next week.", time:18, done:false},
+];
+
+const weekData=[
+  {day:'Tue', planned:90, recommended:90},
+  {day:'Wed', planned:90, recommended:150, addExtra:60},
+  {day:'Thu', planned:60, recommended:70},
+];
+
+let nextMId=10, activeFilter='all', selId=null, aiCache={}, draftCache={}, obCfg={}, styleProfile=null;
+
+const weekHistory=[
+  {lbl:'4w ago',u:2,m:4,l:3,a:3,total:12},
+  {lbl:'3w ago',u:1,m:3,l:3,a:2,total:9},
+  {lbl:'2w ago',u:3,m:5,l:4,a:3,total:15},
+  {lbl:'Last wk',u:2,m:4,l:3,a:2,total:11},
+  {lbl:'This wk',u:2,m:3,l:2,a:2,total:9,curr:true},
+  {lbl:'Next wk',u:2,m:4,l:3,a:2,total:11,pred:true},
+  {lbl:'+2 wks',u:1,m:3,l:3,a:2,total:9,pred:true},
+];
+
+function showTab(name,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('show'));
+  document.querySelectorAll('.ntab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('show');
+  if(btn) btn.classList.add('active');
+  if(name==='inbox') renderInbox();
+  if(name==='timeline') renderTimeline();
+  if(name==='style') renderSentEmails();
+  if(name==='today') renderTodayDetailed();
+}
+
+function riskDot(r){return r==='high'?'d-red':r==='medium'?'d-amber':r==='low'?'d-green':'d-gray';}
+function catBadge(cat){
+  if(!cat) return '<span class="badge b-gray">Unclassified</span>';
+  const m={[CAT.URGENT]:'b-red',[CAT.UNSAFE]:'b-red',[CAT.LEGAL]:'b-red',[CAT.PROF]:'b-teal',[CAT.REVIEW]:'b-amber',[CAT.MEETING]:'b-blue',[CAT.ADMIN]:'b-gray',[CAT.NONE]:'b-gray',[CAT.LOW]:'b-green',[CAT.DONE]:'b-green'};
+  return `<span class="badge ${m[cat]||'b-blue'}">${cat}</span>`;
+}
+function dlLabel(d){
+  if(d==null) return '';
+  if(d<=1) return '<span style="color:var(--color-text-danger);font-size:11px;">Today</span>';
+  if(d<=2) return '<span style="color:var(--color-text-danger);font-size:11px;">By tomorrow</span>';
+  if(d<=4) return '<span style="color:var(--color-text-warning);font-size:11px;">By Fri</span>';
+  if(d<=7) return '<span style="color:var(--color-text-warning);font-size:11px;">This week</span>';
+  return `<span style="color:var(--color-text-secondary);font-size:11px;">Due in ${d}d</span>`;
+}
+
+function fmtTime(min){
+  if(min<60) return `${min}min`;
+  const h=Math.floor(min/60), m=min%60;
+  return m?`${h}h ${m}min`:`${h}h`;
+}
+
+function initials(name){
+  const parts=name.replace(/\(.+\)/,'').trim().split(/\s+/).filter(p=>!['Dr.','Mrs.','Mr.','Ms.','Miss'].includes(p));
+  return parts.slice(0,2).map(p=>p[0]).join('').toUpperCase();
+}
+function avatarColor(name){
+  const colors=[['#FCEBEB','#791F1F'],['#FAEEDA','#633806'],['#EAF3DE','#27500A'],['#E6F1FB','#0C447C'],['#EEEDFE','#3C3489'],['#E1F5EE','#0F6E56'],['#FBEAF0','#72243E'],['#F1EFE8','#444441']];
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))%colors.length;
+  return colors[h];
+}
+function avatar(name,extra=''){
+  const[bg,fg]=avatarColor(name);
+  return `<div class="avatar" style="background:${bg};color:${fg};${extra}">${initials(name)}</div>`;
+}
+
+/* ── HOME render ── */
+function renderHome(){
+  const totalMin=homePlan.reduce((s,p)=>s+p.time,0);
+  const doneMin=homePlan.filter(p=>p.done).reduce((s,p)=>s+p.time,0);
+  document.getElementById('today-badge').textContent=`${fmtTime(totalMin)} admin`;
+
+  document.getElementById('today-plan-list').innerHTML=homePlan.map((p,i)=>`
+    <div class="plan-num-row${p.done?' done':''}">
+      <div class="plan-num-circle">${p.done?'<i class="ti ti-check" style="font-size:13px;" aria-hidden="true"></i>':(i+1)}</div>
+      <div class="plan-content">
+        <div class="plan-row-title">${p.title}</div>
+        <div class="plan-why">Why: ${p.why}</div>
+      </div>
+      <div class="plan-time-tag">${p.time} min</div>
+      <input type="checkbox" class="plan-check" ${p.done?'checked':''} onchange="togglePlanItem(${p.id})">
+    </div>`).join('');
+
+  const allDone=homePlan.every(p=>p.done);
+  document.getElementById('today-plan-status').innerHTML=allDone
+    ?`<div class="plan-success"><i class="ti ti-circle-check" style="font-size:16px;" aria-hidden="true"></i> All done — you're safe for today. Switch off with confidence.</div>`
+    :`<div class="plan-pending"><i class="ti ti-clock" style="font-size:14px;" aria-hidden="true"></i> ${homePlan.filter(p=>!p.done).length} remaining · ${fmtTime(totalMin-doneMin)} left. Finish this list and you're safe for today.</div>`;
+
+  // Week
+  const maxBar=Math.max(...weekData.map(d=>d.recommended));
+  document.getElementById('week-day-list').innerHTML=weekData.map(d=>{
+    const w=Math.round((d.planned/maxBar)*100);
+    const extra=d.addExtra?`<div class="week-day-extra" style="left:${w}%;width:${Math.round((d.addExtra/maxBar)*100)}%;"><span class="week-day-extra-label" style="right:0;top:-14px;">+${fmtTime(d.addExtra)} recommended</span></div>`:'';
+    return `<div class="week-day-row">
+      <div class="week-day-label">${d.day}</div>
+      <div class="week-day-track"><div class="week-day-fill" style="width:${w}%;"></div>${extra}</div>
+      <div class="week-day-time">${fmtTime(d.planned)} planned</div>
+    </div>`;
+  }).join('');
+
+  // Status banner
+  const totalPlanned=weekData.reduce((s,d)=>s+d.planned,0);
+  const totalRec=weekData.reduce((s,d)=>s+d.recommended,0);
+  const diff=totalRec-totalPlanned;
+  document.getElementById('wk-planned').textContent=fmtTime(totalPlanned);
+  document.getElementById('wk-rec').textContent=fmtTime(totalRec);
+  document.getElementById('wk-diff').textContent=fmtTime(diff);
+
+  const atRisk=diff>0;
+  const wkRec=document.getElementById('wk-rec'),wkDiff=document.getElementById('wk-diff');
+  document.querySelectorAll('.week-total-row.warn').forEach(r=>{if(!atRisk)r.classList.remove('warn');});
+
+  document.getElementById('home-status-banner').innerHTML=atRisk?`
+    <div class="status-banner">
+      <div class="status-row">
+        <div class="status-left">
+          <div class="status-icon-big"><i class="ti ti-alert-triangle" style="font-size:22px;" aria-hidden="true"></i></div>
+          <div>
+            <div class="status-title-row">You are currently: <span class="at-risk-text">At risk</span></div>
+            <div class="status-meta">You have <strong>${fmtTime(totalPlanned)} booked</strong> this week.<br><span class="warn-text">Current workload requires ${fmtTime(totalRec)}.</span><br>Add ${fmtTime(diff)} this week to avoid 2 emails breaching the 14-day rule.</div>
+          </div>
+        </div>
+        <div class="status-divider"></div>
+        <div class="rec-block">
+          <div class="rec-label">AI recommendation</div>
+          <div class="rec-title">Add ${fmtTime(diff)} extra this week</div>
+          <div class="rec-sub">Best option: Add 1h Wednesday afternoon.</div>
+          <div class="rec-buttons">
+            <button class="primary" onclick="applyAddHour('Wed')">Add 1h Wednesday</button>
+            <button onclick="applyAddHour('Thu')">Add 1h Thursday</button>
+            <button onclick="rebalanceWeek()">Rebalance my week ↗</button>
+          </div>
+        </div>
+      </div>
+    </div>`:`
+    <div class="status-banner ok">
+      <div class="status-row">
+        <div class="status-left">
+          <div class="status-icon-big"><i class="ti ti-circle-check" style="font-size:22px;" aria-hidden="true"></i></div>
+          <div>
+            <div class="status-title-row">You are currently: <span class="on-track-text">On track</span></div>
+            <div class="status-meta">You have <strong>${fmtTime(totalPlanned)} booked</strong> this week, which covers your current workload of <strong>${fmtTime(totalRec)}</strong>. No emails at risk of breaching deadlines.</div>
+          </div>
+        </div>
+        <div class="status-divider"></div>
+        <div class="rec-block">
+          <div class="rec-label">AI recommendation</div>
+          <div class="rec-title">You're set up for a calm week</div>
+          <div class="rec-sub">Follow today's plan and switch off with confidence.</div>
+          <div class="rec-buttons">
+            <button onclick="rebalanceWeek()">Rebalance my week ↗</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function togglePlanItem(id){
+  const p=homePlan.find(x=>x.id===id);
+  if(p){p.done=!p.done;renderHome();}
+}
+
+function applyAddHour(day){
+  const d=weekData.find(x=>x.day===day);
+  if(d){d.planned+=60;d.addExtra=0;renderHome();}
+}
+
+async function rebalanceWeek(){
+  const banner=document.getElementById('home-status-banner');
+  banner.innerHTML=`<div class="status-banner"><div style="display:flex;align-items:center;gap:10px;padding:8px 4px;"><span class="spin"></span> <span style="font-size:13px;">Asking AI to rebalance your week…</span></div></div>`;
+  try{
+    const items=[...emails.filter(e=>e.deadline).map(e=>`- [${e.cat}] ${e.from}: "${e.subject}" (${e.estMin}min, due ${e.deadline}d)`),...manualTasks.map(t=>`- [${t.cat}] ${t.title} (${t.estMin}min, due ${t.deadline}d)`)].join('\n');
+    const t=await apiCall(`Rebalance Dr. Patterson's week (Tue/Wed/Thu, 4h total).\nItems:\n${items}\n\nReturn 3 lines, one per day, exactly this format:\nTue: [hours] — [brief focus]\nWed: [hours] — [brief focus]\nThu: [hours] — [brief focus]\n\nThen one line starting "Recommendation:" with one specific change.`,300);
+    alert('AI suggested plan:\n\n'+t);
+  }catch(err){alert('Could not rebalance: '+err.message);}
+  finally{renderHome();}
+}
+
+/* ── TODAY detailed render ── */
+function renderTodayDetailed(){
+  const items=[
+    {av:'Sarah Chen',title:'Sarah Chen — Mia: safeguarding concern',desc:'Self-harm ideation, food refusal. Do not reply by email. Same-day clinical escalation required.',badge:'<span class="badge b-red">Urgent</span>',right:'Today'},
+    {av:'Elena Martinez',title:'Dr. Martinez (GP) — James Okafor: medication stopped',desc:'GP escalation. School exclusion ×2, police involvement. Urgent clinical review.',badge:'<span class="badge b-red">Urgent</span>',right:'By tomorrow'},
+    {av:'Kwame Osei',title:'Dr. Osei (Clinical Psychology) — case formulation, Priya Sharma',desc:'Professional colleague. Meeting Thursday 2pm. Confirm attendance or send clinical summary.',badge:'<span class="badge b-teal">Professional</span>',right:'By Wed'},
+    {av:'CHYMS Training',title:'CHYMS Annual Conference 2026 — registration closes Friday',desc:'Limited places. Decide and register before Friday 5pm.',badge:'<span class="badge b-blue">Deadline</span>',right:'4 days'},
+    {av:'Patricia Okafor',title:'Patricia Okafor — Ritalin 54mg repeat (pre-holiday)',desc:'Controlled drug request. Check prescription history before actioning.',badge:'<span class="badge b-amber">Review</span>',right:'By Fri'},
+  ];
+  document.getElementById('today-detailed-list').innerHTML=items.map(it=>`
+    <div class="task-row">
+      ${avatar(it.av)}
+      <div class="task-txt"><div class="task-title">${it.title}</div><div class="task-desc">${it.desc}</div></div>
+      <div class="task-right">${it.badge}<span>${it.right}</span></div>
+    </div>`).join('');
+}
+
+/* ── Workload chart ── */
+function renderWorkloadChart(){
+  const max=Math.max(...weekHistory.map(w=>w.total)),CH=70;
+  document.getElementById('wl-chart').innerHTML=weekHistory.map(w=>{
+    const h=Math.round((w.total/max)*CH);
+    const uH=Math.round((w.u/w.total)*h),mH=Math.round((w.m/w.total)*h),lH=Math.round((w.l/w.total)*h),aH=h-uH-mH-lH;
+    const outline=w.curr?'outline:2px solid #378ADD;outline-offset:2px;':'';
+    const opacity=w.pred?'opacity:0.65;':'';
+    const border=w.pred?'border:1.5px dashed var(--color-border-secondary);':'';
+    return `<div class="wl-col"><div class="wl-num" style="color:${w.pred?'var(--color-text-info)':'var(--color-text-secondary)'};">${w.total}${w.pred?'*':''}</div><div class="wl-bar-wrap"><div class="wl-bar" style="height:${h}px;${outline}${opacity}${border}"><div style="height:${uH}px;background:#E24B4A;flex-shrink:0;"></div><div style="height:${mH}px;background:#EF9F27;flex-shrink:0;"></div><div style="height:${lH}px;background:#97C459;flex-shrink:0;"></div><div style="height:${aH}px;background:#B4B2A9;flex-shrink:0;"></div></div></div><div class="wl-lbl">${w.lbl}</div></div>`;
+  }).join('');
+}
+
+async function refreshWorkloadPrediction(){
+  const ins=document.getElementById('wl-insight');
+  ins.innerHTML=`<span class="spin"></span> Analysing your workload pattern…`;
+  const history=weekHistory.map(w=>`${w.lbl}: ${w.total} (${w.u}u, ${w.m}m, ${w.l}l, ${w.a}a)${w.pred?' predicted':''}`).join('; ');
+  try{const t=await apiCall(`Analyse NHS CAMHS clinician workload: ${history}. Available: 4h/week.\nReturn exactly 3 short bullets:\n• Volume trend + next week expectation\n• Whether 4h is enough — recommend hours if not\n• One specific pattern (report-writing, urgent clustering, etc)\nMax 80 words total.`);
+  ins.innerHTML=t.replace(/^[•·-]\s*/gm,'<span style="color:var(--color-text-info);">▸</span> ').replace(/\n/g,'<br>');}
+  catch(err){ins.innerHTML=`<span style="color:var(--color-text-danger);font-size:12px;">Could not generate: ${err.message}</span>`;}
+}
+
+/* ── Inbox ── */
+function renderInbox(){
+  document.getElementById('email-list').innerHTML=emails.map(e=>`
+    <div class="email-row${selId===e.id?' sel':''}" onclick="selectEmail(${e.id})">
+      <div class="dot ${riskDot(e.risk)}" style="margin-top:5px;"></div>
+      ${avatar(e.from,'margin-top:2px;')}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;">${e.from}</div>
+        <div style="font-size:13px;margin:2px 0;">${e.subject}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px;">${e.preview}</div>
+        <div style="margin-top:5px;">${catBadge(e.cat)}</div>
+      </div>
+      <div style="flex-shrink:0;text-align:right;"><div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;">${e.date}</div>${dlLabel(e.deadline)}</div>
+    </div>`).join('');
+}
+function selectEmail(id){
+  selId=id; renderInbox();
+  const e=emails.find(x=>x.id===id);
+  document.getElementById('email-detail').innerHTML=`<div class="detail">
+    <div style="font-size:16px;font-weight:500;margin-bottom:4px;">${e.subject}</div>
+    <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><i class="ti ti-user" aria-hidden="true"></i>${e.from} · ${e.date} ${catBadge(e.cat)} ${dlLabel(e.deadline)}</div>
+    <div class="detail-body-box">${e.body}</div>
+    <div class="btn-row">
+      <button class="sm" onclick="classifyEmail(${e.id})"><i class="ti ti-sparkles" aria-hidden="true"></i> AI classify ↗</button>
+      <button class="sm" onclick="draftReply(${e.id})"><i class="ti ti-edit" aria-hidden="true"></i> Draft reply${styleProfile?' (styled)':''} ↗</button>
+    </div>
+    <div id="ai-box-${e.id}">${aiCache[id]?renderAIBox(id):''}</div>
+    <div id="draft-box-${e.id}">${draftCache[id]?renderDraftBox(id):''}</div>
+  </div>`;
+}
+function renderAIBox(id){return `<div class="ai-panel"><div class="ai-label"><i class="ti ti-sparkles" aria-hidden="true"></i> AI classification</div><div class="ai-content">${aiCache[id]}</div></div>`;}
+function renderDraftBox(id){return `<div class="draft-panel"><div class="draft-label"><i class="ti ti-edit" aria-hidden="true"></i> Draft reply ${styleProfile?'<span style="color:var(--color-text-success);margin-left:4px;font-size:10px;"><i class=\"ti ti-check\" aria-hidden=\"true\"></i> style applied</span>':''}<span class="draft-warn">— review before sending</span></div><div class="draft-content">${draftCache[id]}</div></div>`;}
+
+/* ── Timeline ── */
+const TODAY=new Date('2026-05-11');
+const DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MNAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function addDays(n){const d=new Date(TODAY);d.setDate(d.getDate()+n);return d;}
+function fmtDate(d){return `${DNAMES[d.getDay()]} ${d.getDate()} ${MNAMES[d.getMonth()]}`;}
+function dotColor(cat,risk){
+  if(cat===CAT.UNSAFE||risk==='high'||cat===CAT.URGENT||cat===CAT.LEGAL) return '#E24B4A';
+  if(cat===CAT.PROF) return '#1D9E75';
+  if(cat===CAT.MEETING) return '#378ADD';
+  if(cat===CAT.REVIEW||risk==='medium') return '#EF9F27';
+  return '#888780';
+}
+function dlClass(d){if(d==null)return '';if(d<0||d<=2)return 'red';if(d<=7)return 'amber';return 'green';}
+function dlText(d){if(d==null)return 'No deadline';if(d<0)return `${Math.abs(d)}d overdue`;if(d===0)return 'Today';if(d===1)return 'Tomorrow';return fmtDate(addDays(d));}
+function getAllItems(){return [...emails.filter(e=>e.deadline!=null).map(e=>({id:'e'+e.id,title:e.subject,from:e.from,cat:e.cat,risk:e.risk,deadline:e.deadline,source:'email',note:null,type:null})),...manualTasks];}
+function filterItems(items){
+  if(activeFilter==='all') return items;
+  if(activeFilter==='clinical') return items.filter(i=>i.cat===CAT.URGENT||i.cat===CAT.UNSAFE||i.risk==='high'||i.risk==='medium');
+  if(activeFilter==='professional') return items.filter(i=>i.cat===CAT.PROF);
+  if(activeFilter==='meeting') return items.filter(i=>i.cat===CAT.MEETING);
+  if(activeFilter==='admin') return items.filter(i=>i.cat===CAT.ADMIN||i.cat===CAT.NONE||i.cat===CAT.LOW);
+  if(activeFilter==='manual') return items.filter(i=>i.source==='manual');
+  return items;
+}
+function setFilter(f,btn){activeFilter=f;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));btn.classList.add('active');renderTimeline();}
+function renderTimeline(){renderCalStrip(getAllItems());renderTLSummary(getAllItems());renderItemList(filterItems(getAllItems()));}
+function renderCalStrip(items){
+  const byDay={};items.forEach(it=>{if(it.deadline==null)return;if(!byDay[it.deadline])byDay[it.deadline]=[];byDay[it.deadline].push(it);});
+  let html='<div class="cal-strip-wrap"><div class="cal-strip">';
+  for(let i=-1;i<=27;i++){
+    const d=addDays(i),dow=d.getDay(),isT=i===0,isP=i<0;
+    const cls=['cal-day',isT?'today':'',isP?'past':''].filter(Boolean).join(' ');
+    const di=byDay[i]||[];let dots=di.slice(0,3).map(it=>`<div class="cal-dot" style="background:${dotColor(it.cat,it.risk)};"></div>`).join('');
+    if(di.length>3)dots+=`<span style="font-size:9px;color:var(--color-text-secondary);">+${di.length-3}</span>`;
+    html+=`<div class="${cls}"><div class="cal-dayname">${DNAMES[dow].slice(0,3).toUpperCase()}</div><div class="cal-datenum">${d.getDate()}</div><div class="cal-dots">${dots||'&nbsp;'}</div></div>`;
+  }
+  html+='</div></div>';
+  html+=`<div style="display:flex;gap:12px;margin:8px 0 16px;font-size:11px;color:var(--color-text-secondary);flex-wrap:wrap;">${[['#E24B4A','Urgent / high risk'],['#1D9E75','Professional'],['#378ADD','Meeting / deadline'],['#EF9F27','Review needed'],['#888780','Admin']].map(([c,l])=>`<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:4px;vertical-align:middle;"></span>${l}</span>`).join('')}</div>`;
+  document.getElementById('cal-strip-container').innerHTML=html;
+}
+function renderTLSummary(items){
+  const ov=items.filter(i=>i.deadline<0).length,td=items.filter(i=>i.deadline===0).length,wk=items.filter(i=>i.deadline>0&&i.deadline<=7).length,tot=items.filter(i=>i.deadline!=null).length;
+  document.getElementById('tl-summary').innerHTML=`<div class="tl-sum-item"><div class="tl-sum-val red">${ov}</div><div>overdue</div></div><div class="tl-sum-item"><div class="tl-sum-val red">${td}</div><div>due today</div></div><div class="tl-sum-item"><div class="tl-sum-val amber">${wk}</div><div>due this week</div></div><div class="tl-sum-item"><div class="tl-sum-val">${tot}</div><div>total tracked</div></div><div class="tl-sum-item" style="margin-left:auto;"><div class="tl-sum-val">${manualTasks.length}</div><div>manual tasks</div></div>`;
+}
+function renderItemList(items){
+  const groups=[{label:'Overdue',f:i=>i.deadline<0},{label:'Today',f:i=>i.deadline===0},{label:'Tomorrow',f:i=>i.deadline===1},{label:'This week',f:i=>i.deadline>=2&&i.deadline<=7},{label:'Next 2 weeks',f:i=>i.deadline>7&&i.deadline<=14},{label:'Later',f:i=>i.deadline>14},{label:'No deadline',f:i=>i.deadline==null}];
+  let html='';
+  groups.forEach(g=>{
+    const gi=items.filter(g.f).sort((a,b)=>((a.deadline??999)-(b.deadline??999)));
+    if(!gi.length)return;
+    html+=`<div class="period-section"><div class="period-head"><div class="period-label">${g.label}</div><div style="font-size:11px;color:var(--color-text-secondary);">${gi.length} item${gi.length>1?'s':''}</div><div class="period-line"></div></div>`;
+    gi.forEach(it=>{
+      const ov=it.deadline<0,cls=dlClass(it.deadline),pct=it.deadline!=null?Math.max(0,Math.min(100,Math.round((it.deadline/35)*100))):0;
+      const bc=cls==='red'?'#E24B4A':cls==='amber'?'#EF9F27':'#639922';
+      html+=`<div class="tl-item${ov?' overdue':''}">
+        <div class="dot ${riskDot(it.risk)}" style="margin-top:4px;flex-shrink:0;"></div>
+        <div class="tl-item-main">
+          <div class="tl-item-title">${it.title}</div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap;">${catBadge(it.cat)}${it.type?`<span class="badge b-gray">${it.type}</span>`:''}${it.source==='manual'?'<span class="badge b-gray" style="font-size:10px;"><i class="ti ti-pencil" aria-hidden="true"></i> manual</span>':''}</div>
+          ${it.note?`<div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">${it.note}</div>`:''}
+          ${it.deadline!=null&&!ov?`<div class="tl-bar-wrap"><div class="tl-bar" style="width:${100-pct}%;background:${bc};"></div></div>`:''}
+        </div>
+        <div class="tl-item-right">
+          <div class="tl-deadline ${cls}">${dlText(it.deadline)}</div>
+          <div style="font-size:11px;color:var(--color-text-secondary);">${it.from||''}</div>
+          ${it.source==='manual'?`<button class="sm" style="font-size:11px;padding:3px 8px;color:var(--color-text-danger);" onclick="removeTask('${it.id}')">Remove</button>`:''}
+        </div>
+      </div>`;
+    });
+    html+='</div>';
+  });
+  document.getElementById('tl-list').innerHTML=html||'<div style="font-size:13px;color:var(--color-text-secondary);padding:20px 0;text-align:center;">No items match this filter.</div>';
+}
+function toggleAddForm(){const f=document.getElementById('add-task-form'),o=f.classList.toggle('open');document.getElementById('add-task-btn').innerHTML=o?'Cancel':'<i class="ti ti-plus" aria-hidden="true"></i> Add task';}
+function addManualTask(){
+  const title=document.getElementById('nt-title').value.trim();if(!title)return;
+  const days=parseInt(document.getElementById('nt-days').value)||7,cat=document.getElementById('nt-cat').value,type=document.getElementById('nt-type').value,note=document.getElementById('nt-note').value.trim();
+  manualTasks.push({id:'m'+nextMId++,title,from:'Manual task',cat,deadline:days,risk:cat===CAT.URGENT?'high':cat===CAT.PROF||cat===CAT.REVIEW?'medium':'none',type,note:note||null,source:'manual',estMin:15});
+  document.getElementById('nt-title').value='';document.getElementById('nt-note').value='';
+  document.getElementById('add-task-form').classList.remove('open');document.getElementById('add-task-btn').innerHTML='<i class="ti ti-plus" aria-hidden="true"></i> Add task';
+  renderTimeline();
+}
+function removeTask(id){manualTasks=manualTasks.filter(t=>t.id!==id);renderTimeline();}
+
+/* ── Style ── */
+function renderSentEmails(){
+  document.getElementById('sent-emails-list').innerHTML=sentEmails.map(e=>`<div class="sent-email"><div class="sent-email-meta"><span class="badge b-gray" style="margin-right:6px;">${e.toLabel}</span>To: ${e.toName} · Subject: ${e.subject}</div><div class="sent-email-body">${e.body}</div></div>`).join('');
+  if(styleProfile) renderStyleProfile(styleProfile);
+}
+async function buildStyleProfile(){
+  const out=document.getElementById('style-profile-output');
+  out.innerHTML=`<div class="ai-panel" style="margin-bottom:16px;"><div class="ai-label"><span class="spin"></span> Analysing your writing style…</div></div>`;
+  const sample=sentEmails.map(e=>`--- ${e.toLabel} (to: ${e.toName}) ---\n${e.body}`).join('\n\n');
+  try{const t=await apiCall(`Analyse this clinician's writing style. Return EXACTLY this format (no intro):\n\nOVERALL: [2-sentence voice summary]\n\nPARENTS/FAMILIES\nGreeting: [typical]\nTone: [3 descriptors]\nSign-off: [typical]\nKey phrases: [2-3 examples]\n\nCLINICAL COLLEAGUES\nGreeting: [typical]\nTone: [3 descriptors]\nSign-off: [typical]\nKey phrases: [2-3 examples]\n\nGPs\nGreeting: [typical]\nTone: [3 descriptors]\nSign-off: [typical]\nKey phrases: [2-3 examples]\n\nSCHOOLS / SENCOs\nGreeting: [typical]\nTone: [3 descriptors]\nSign-off: [typical]\nKey phrases: [2-3 examples]\n\nFORMAL / LEGAL\nGreeting: [typical]\nTone: [3 descriptors]\nSign-off: [typical]\nKey phrases: [2-3 examples]\n\nEmails:\n${sample}`,800);
+  styleProfile=t;renderStyleProfile(t);}
+  catch(err){out.innerHTML=errBox(err.message,buildStyleProfile);}
+}
+function renderStyleProfile(raw){
+  const out=document.getElementById('style-profile-output');
+  const overall=raw.match(/OVERALL:\s*(.+?)(?=\n[A-Z])/s)?.[1]?.trim()||'';
+  const sections=['PARENTS/FAMILIES','CLINICAL COLLEAGUES','GPs','SCHOOLS / SENCOs','FORMAL / LEGAL'];
+  const colors={'PARENTS/FAMILIES':'b-teal','CLINICAL COLLEAGUES':'b-blue','GPs':'b-purple','SCHOOLS / SENCOs':'b-amber','FORMAL / LEGAL':'b-gray'};
+  function parse(n){const re=new RegExp(`${n}\\n([\\s\\S]*?)(?=\\n[A-Z][A-Z /]+\\n|$)`);const m=raw.match(re);if(!m)return null;const b=m[1];const g=k=>{const r=new RegExp(`${k}:\\s*(.+)`);return b.match(r)?.[1]?.trim()||'—';};return {greeting:g('Greeting'),tone:g('Tone'),signoff:g('Sign-off'),phrases:g('Key phrases')};}
+  let html=`<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;"><i class="ti ti-user-check" aria-hidden="true"></i> Style summary</div><div style="font-size:13px;line-height:1.7;">${overall}</div><div style="margin-top:8px;font-size:12px;color:var(--color-text-success);"><i class="ti ti-check" aria-hidden="true"></i> Style profile active — drafts will match your voice</div></div><div class="style-grid">`;
+  sections.forEach(n=>{const s=parse(n);if(!s)return;html+=`<div class="style-card"><div class="style-card-head"><span class="badge ${colors[n]||'b-gray'}">${n}</span></div><div class="style-row"><div class="style-key">Greeting</div><div>${s.greeting}</div></div><div class="style-row"><div class="style-key">Tone</div><div>${s.tone}</div></div><div class="style-row"><div class="style-key">Sign-off</div><div>${s.signoff}</div></div><div class="style-row"><div class="style-key">Phrases</div><div>${s.phrases}</div></div></div>`;});
+  html+='</div>';out.innerHTML=html;
+}
+
+/* ── AI helpers ── */
+const SYS=`You are a clinical admin AI for an NHS CAMHS outpatient clinician. PRIORITY CATEGORIES: Urgent clinical, Unsafe to answer by email, Professional — high priority (any clinical colleague: psychologist, psychiatrist, GP, paediatrician, nurse, OT, CAMHS/CHYMS/CYPMHS team, social worker, LAC team), Needs clinician review, Meeting / event deadline, Medico-legal, Admin only, No action required, Low priority.`;
+async function apiCall(prompt,maxTok=400){
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:maxTok,system:SYS,messages:[{role:'user',content:prompt}]})});
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(`API ${res.status}: ${e.error?.message||res.statusText}`);}
+  return (await res.json()).content?.[0]?.text||'';
+}
+function errBox(msg,fn){return `<div class="err-box"><div class="err-msg"><i class="ti ti-alert-circle" aria-hidden="true"></i> Request failed</div><div class="err-detail">${msg}</div><button class="sm" onclick="(${fn.toString()})()">Retry ↗</button></div>`;}
+
+async function classifyEmail(id){
+  const e=emails.find(x=>x.id===id),box=document.getElementById(`ai-box-${id}`);
+  box.innerHTML=`<div class="ai-panel"><div class="ai-label"><span class="spin"></span> Analysing…</div></div>`;
+  try{const t=await apiCall(`Analyse:\nCLASSIFICATION: [category]\nRISK FLAGS: [or "None"]\nRECOMMENDED ACTION: [what and when]\nSAFE TO DRAFT BY EMAIL: [Yes/No + reason]\nMax 110 words.\n\nFrom: ${e.from}\nSubject: ${e.subject}\n---\n${e.body}`);aiCache[id]=t.replace(/\n/g,'<br>');box.innerHTML=renderAIBox(id);}
+  catch(err){box.innerHTML=errBox(err.message,()=>classifyEmail(id));}
+}
+async function draftReply(id){
+  const e=emails.find(x=>x.id===id),box=document.getElementById(`draft-box-${id}`);
+  box.innerHTML=`<div class="draft-panel"><div class="draft-label"><span class="spin"></span> Drafting…</div></div>`;
+  const si=styleProfile?`\n\nWRITING STYLE — match exactly:\n${styleProfile}`:'';
+  try{const t=await apiCall(`Draft reply for Dr. A. Patterson, NHS CAMHS consultant.${si}\n\nRULES:\n- Risk to life/safeguarding/unsafe: do NOT draft. Explain required action instead.\n- Controlled drugs: acknowledge only.\n- Professional colleagues: collegial, direct.\n- Meeting/events: brief, decisive.\n- British English. Sign off: Dr. A. Patterson | Consultant Child Psychiatrist | CAMHS Outpatient\n\nFrom: ${e.from}\nSubject: ${e.subject}\n---\n${e.body}`,500);draftCache[id]=t;box.innerHTML=renderDraftBox(id);}
+  catch(err){box.innerHTML=errBox(err.message,()=>draftReply(id));}
+}
+async function generatePlan(){
+  const hrs=parseFloat(document.getElementById('plan-hours').value)||4,days=document.getElementById('plan-days').value||'Tue, Wed, Thu',out=document.getElementById('plan-output');
+  out.innerHTML=`<div class="ai-panel"><div class="ai-label"><span class="spin"></span> Building plan…</div></div>`;
+  const items=[...emails,...manualTasks].map(e=>`- [${e.cat}] ${e.from||''} — "${e.subject||e.title}" | Risk: ${e.risk} | Due: ${e.deadline?e.deadline+'d':'none'} | Est: ${e.estMin||10}min`).join('\n');
+  try{const t=await apiCall(`Weekly admin plan for Dr. A. Patterson.\nAvailable: ${hrs}h across ${days}.\nPriority: (1) Clinical/safeguarding — action not email. (2) Professional colleagues — 24-48h. (3) Meeting deadlines. (4) Review. (5) Admin. Reserve 30% for unexpected urgent items.\nItems:\n${items}\nFormat: [Day] — [Task] — [Time] — [Notes]. End 2-sentence safety summary. Max 220 words.`,600);
+  out.innerHTML=`<div class="ai-panel"><div class="ai-label"><i class="ti ti-calendar-check" aria-hidden="true"></i> Weekly plan — ${hrs}h across ${days}</div><div class="ai-content">${t.replace(/\n/g,'<br>')}</div></div>`;}
+  catch(err){out.innerHTML=errBox(err.message,generatePlan);}
+}
+
+/* ── Onboarding ── */
+const histEmails=[
+  {id:101,from:"Mrs. Patel (parent)",subject:"Emergency — Aryan tried to hurt himself last night",daysAgo:89,resolved:false,risk:"high",cat:CAT.UNSAFE,note:"Self-harm incident. No response. 3 follow-up emails."},
+  {id:102,from:"Dr. Obi (CAMHS duty)",subject:"Re: Fatima Al-Hassan — safeguarding referral",daysAgo:61,resolved:false,risk:"high",cat:CAT.URGENT,note:"Safeguarding referral. No reply on record."},
+  {id:103,from:"NHS Resolution — Legal",subject:"Subject Access Request (SAR-2026-0441)",daysAgo:49,resolved:false,risk:"none",cat:CAT.LEGAL,note:"SAR request. 30-day legal deadline breached."},
+  {id:104,from:"Dr. Nair — Child Psychiatry",subject:"Re: Joint case review — Tyler Brennan",daysAgo:38,resolved:false,risk:"medium",cat:CAT.PROF,note:"Colleague psychiatrist requesting joint review. 5 weeks no reply."},
+  {id:105,from:"CYPMHS Liaison Team",subject:"Transition planning — Aisha Mensah (turns 18 in July)",daysAgo:30,resolved:false,risk:"medium",cat:CAT.PROF,note:"CYPMHS transition. Time-sensitive."},
+  {id:106,from:"Greenfield SENCO",subject:"Year 6 transition report — Ethan Clarke",daysAgo:42,resolved:false,risk:"low",cat:CAT.REVIEW,note:"Overdue by 6 weeks. 2 chasers sent."},
+  {id:107,from:"Mrs. Thompson (parent)",subject:"Still waiting — March email?",daysAgo:35,resolved:false,risk:"none",cat:CAT.ADMIN,note:"Parent chasing unanswered March email."},
+  {id:108,from:"Pharmacy — Boots City",subject:"Melatonin query — Ahmed Yusuf",daysAgo:21,resolved:false,risk:"medium",cat:CAT.REVIEW,note:"Pharmacy dosing query."},
+  {id:109,from:"Dr. Prentice (paediatrics)",subject:"Re: Referral — Callum Morris",daysAgo:44,resolved:false,risk:"low",cat:CAT.PROF,note:"Cross-referral awaiting acknowledgement."},
+  {id:110,from:"Social Services LAC",subject:"LAC health review — Sophie Brennan",daysAgo:58,resolved:true,risk:"low",cat:CAT.DONE,note:"Completed."}
+];
+const scanSteps=[{msg:"Connecting to inbox…",label:"Connecting"},{msg:"Reading email history…",label:"Reading emails"},{msg:"Identifying unresolved threads…",label:"Finding unresolved threads"},{msg:"Flagging high-risk patient correspondence…",label:"Flagging high-risk items"},{msg:"Checking professional colleague threads…",label:"Checking professional threads"},{msg:"Detecting overdue items…",label:"Checking deadlines"},{msg:"Scanning meeting and event deadlines…",label:"Checking meeting deadlines"},{msg:"Analysing medico-legal correspondence…",label:"Checking medico-legal items"},{msg:"Building catch-up profile…",label:"Building catch-up profile"}];
+function startScan(){
+  obCfg={months:parseInt(document.getElementById('ob-months').value)||3,hrs:parseFloat(document.getElementById('ob-hours').value)||4,days:document.getElementById('ob-days').value||'Tue, Wed, Thu'};
+  document.getElementById('ob-0').classList.remove('show');document.getElementById('ob-1').classList.add('show');
+  const bar=document.getElementById('scan-bar'),msg=document.getElementById('scan-msg'),items=document.getElementById('scan-items');
+  items.innerHTML='';let step=0;
+  const tick=setInterval(()=>{
+    if(step>=scanSteps.length){clearInterval(tick);bar.style.width='100%';msg.textContent='Scan complete.';setTimeout(showResults,600);return;}
+    const s=scanSteps[step];msg.textContent=s.msg;bar.style.width=Math.round(((step+1)/scanSteps.length)*100)+'%';
+    if(step>0){const p=items.children[step-1];if(p){p.innerHTML=`<i class="ti ti-check" style="color:var(--color-text-success);font-size:14px;" aria-hidden="true"></i> ${scanSteps[step-1].label}`;p.classList.add('done');}}
+    const el=document.createElement('div');el.className='scan-item';el.innerHTML=`<span class="spin-sm"></span> ${s.label}`;items.appendChild(el);step++;
+  },520);
+}
+function showResults(){
+  document.getElementById('ob-1').classList.remove('show');document.getElementById('ob-2').classList.add('show');
+  const tot=histEmails.length+emails.length,unres=histEmails.filter(e=>!e.resolved).length,hi=histEmails.filter(e=>e.risk==='high'||e.cat===CAT.LEGAL).length,ov=histEmails.filter(e=>!e.resolved&&e.daysAgo>14).length,pr=histEmails.filter(e=>!e.resolved&&e.cat===CAT.PROF).length;
+  document.getElementById('ob-scan-summary').textContent=`Scanned ${tot} emails from the last ${obCfg.months} month${obCfg.months>1?'s':''}`;
+  document.getElementById('ob-stats').innerHTML=`<div class="ob-stat"><div class="ob-stat-val">${tot}</div><div class="ob-stat-label">Total scanned</div></div><div class="ob-stat"><div class="ob-stat-val amber">${unres}</div><div class="ob-stat-label">Unresolved</div></div><div class="ob-stat"><div class="ob-stat-val red">${hi}</div><div class="ob-stat-label">High risk / legal</div></div><div class="ob-stat"><div class="ob-stat-val red">${ov}</div><div class="ob-stat-label">Overdue</div></div><div class="ob-stat"><div class="ob-stat-val amber">${pr}</div><div class="ob-stat-label">Prof. unanswered</div></div>`;
+  const urg=histEmails.filter(e=>e.risk==='high'||e.cat===CAT.LEGAL||e.cat===CAT.UNSAFE);
+  document.getElementById('ob-urgent-list').innerHTML=urg.map(e=>`<div class="backlog-row"><div class="dot ${riskDot(e.risk)}" style="margin-top:5px;"></div><div style="flex:1;"><div style="font-size:13px;font-weight:500;">${e.from}</div><div style="font-size:13px;">${e.subject}</div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">${e.note}</div><div style="margin-top:5px;">${catBadge(e.cat)}</div></div><div style="text-align:right;flex-shrink:0;font-size:11px;color:var(--color-text-danger);">${e.daysAgo}d ago</div></div>`).join('');
+  const od=histEmails.filter(e=>!e.resolved&&e.risk!=='high'&&e.cat!==CAT.LEGAL&&e.cat!==CAT.UNSAFE&&e.daysAgo>14).sort((a,b)=>b.daysAgo-a.daysAgo);
+  document.getElementById('ob-overdue-list').innerHTML=od.map(e=>`<div class="backlog-row"><div class="dot ${e.cat===CAT.PROF?'d-teal':riskDot(e.risk)}" style="margin-top:5px;"></div><div style="flex:1;"><div style="font-size:13px;font-weight:500;">${e.from}</div><div style="font-size:13px;">${e.subject}</div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px;">${e.note}</div><div style="margin-top:5px;">${catBadge(e.cat)}</div></div><div style="text-align:right;flex-shrink:0;font-size:11px;color:var(--color-text-secondary);">${e.daysAgo}d ago</div></div>`).join('');
+}
+function triggerCatchupPlan(){const btn=document.getElementById('ob-plan-btn');btn.disabled=true;btn.textContent='Generating…';genCatchupPlan().finally(()=>{btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh" aria-hidden="true"></i> Regenerate ↗';});}
+async function genCatchupPlan(){
+  const out=document.getElementById('ob-plan-output');
+  out.innerHTML=`<div class="ai-panel"><div class="ai-label"><span class="spin"></span> Generating staged plan…</div></div>`;
+  const{hrs,days,months}=obCfg;
+  const bl=histEmails.filter(e=>!e.resolved).map(e=>`- [${e.cat}][${e.daysAgo}d] ${e.from} — "${e.subject}" (${e.risk})`).join('\n');
+  const cur=emails.map(e=>`- [${e.cat}] ${e.from} — "${e.subject}" (${e.risk},${e.deadline?e.deadline+'d':'none'})`).join('\n');
+  try{const t=await apiCall(`Staged catch-up plan for Dr. A. Patterson.\nAvailable: ${hrs}h/week across ${days}.\nBacklog (${months}mo):\n${bl}\nCurrent inbox:\n${cur}\nPriority: (1) Safeguarding/self-harm — clinical action. (2) Medico-legal. (3) Professional colleagues. (4) Meetings. (5) Reviews. (6) Admin. Reserve ${Math.round(hrs*0.3*10)/10}h/week for new urgent.\n3-week plan. Format: WEEK [N] — [focus]\n[Day] | [Task] | [time] | [note]\nEnd: "Estimated cruising mode: Week [X]" + safety note. Max 260 words.`,700);
+  out.innerHTML=`<div class="ai-panel"><div class="ai-label"><i class="ti ti-calendar-check" aria-hidden="true"></i> Catch-up plan — ${hrs}h/week across ${days}</div><div class="ai-content">${t.replace(/\n/g,'<br>')}</div></div><div class="cruising-bar"><div><div style="font-size:14px;font-weight:500;color:var(--color-text-success);"><i class="ti ti-check" aria-hidden="true"></i> Cruising mode target: Week 3</div><div style="font-size:12px;color:var(--color-text-success);margin-top:2px;">Complete today's plan, then switch off with confidence.</div></div><span class="badge b-green" style="font-size:12px;">On track</span></div>`;}
+  catch(err){out.innerHTML=errBox(err.message,triggerCatchupPlan);}
+}
+function resetOnboarding(){document.getElementById('ob-2').classList.remove('show');document.getElementById('ob-1').classList.remove('show');document.getElementById('ob-0').classList.add('show');const btn=document.getElementById('ob-plan-btn');btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles" aria-hidden="true"></i> Generate plan ↗';document.getElementById('scan-bar').style.width='0%';document.getElementById('scan-items').innerHTML='';}
+
+renderHome();
+renderWorkloadChart();
+renderInbox();
+</script>
