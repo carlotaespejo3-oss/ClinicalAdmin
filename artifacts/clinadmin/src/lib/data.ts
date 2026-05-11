@@ -209,11 +209,96 @@ export const manualTasks: ManualTask[] = [
 ];
 
 export const homePlan: HomePlanItem[] = [
-  { id: 1, title: 'Review Mia Chen safeguarding', why: 'High risk clinical', time: '15min', done: false },
-  { id: 2, title: 'Send 2 urgent clinical drafts', why: 'Approaching deadline', time: '25min', done: false },
-  { id: 3, title: 'Reply to Dr. Osei case formulation', why: 'Professional collaboration', time: '10min', done: false },
-  { id: 4, title: 'Review Ritalin script request James Okafor', why: 'Clinical review', time: '12min', done: false },
-  { id: 5, title: 'Review 2 non-urgent emails approaching 14 days', why: 'KPI management', time: '18min', done: false }
+  {
+    id: 1,
+    title: 'Review Poppy K. high-risk email',
+    why: 'Complex patient, unanswered since Thursday.',
+    time: '15 min',
+    done: false,
+    emailId: 1,
+    draftTo: 'Sarah Chen (parent)',
+    draftSubject: 'Re: Mia — urgent safeguarding response',
+    draftReply: `Dear Mrs. Chen,
+
+Thank you for getting in touch. I take what you have shared about Mia very seriously.
+
+Given what you have described, I would strongly advise you to contact our Crisis Team today on 0800 123 4567. If you are concerned for Mia's immediate safety, please call 999 or take her to your nearest A&E.
+
+I am flagging this to our safeguarding lead today and will be in direct contact with you before end of day.
+
+Please do not hesitate to call the CAMHS duty line in the meantime.
+
+Kind regards,
+Dr. A. Patterson
+CAMHS Consultant, St. Jude's Hospital`
+  },
+  {
+    id: 2,
+    title: 'Send/edit 3 urgent clinical drafts',
+    why: 'Due today/tomorrow.',
+    time: '25 min',
+    done: false,
+    emailId: 2,
+    draftTo: 'Dr. Martinez (GP)',
+    draftSubject: 'Re: James Okafor — urgent clinical update',
+    draftReply: `Dear Dr. Martinez,
+
+Thank you for this urgent update regarding James Okafor.
+
+I have reviewed the crisis assessment report and agree that an immediate medication review is warranted. I have prioritised James for a review appointment this week and will be in contact with his family directly.
+
+In the interim, if there are further concerns about his safety, please do not hesitate to contact our duty clinician on the CAMHS urgent line.
+
+Kind regards,
+Dr. A. Patterson
+CAMHS Consultant, St. Jude's Hospital`
+  },
+  {
+    id: 3,
+    title: 'Complete school support plan reply',
+    why: 'Due tomorrow.',
+    time: '12 min',
+    done: false,
+    emailId: 3,
+    draftTo: 'Dr. K. Osei — Clinical Psychology',
+    draftSubject: 'Re: Priya Sharma formulation meeting Thu 2pm',
+    draftReply: `Hi Kwame,
+
+Thanks for the invite — yes, I'll be there for the 2pm formulation for Priya Sharma.
+
+I have reviewed her most recent assessment and will bring my updated clinical summary. Looking forward to the discussion.
+
+Best,
+Anna`
+  },
+  {
+    id: 4,
+    title: 'Review medication side effect response',
+    why: 'Parent waiting for advice.',
+    time: '10 min',
+    done: false,
+    emailId: 5,
+    draftTo: 'Patricia Okafor (parent)',
+    draftSubject: 'Re: Ritalin 54mg early script',
+    draftReply: `Dear Mrs. Okafor,
+
+Thank you for getting in touch regarding James's Ritalin prescription.
+
+I have reviewed his notes and am happy to authorise an early repeat prescription given your forthcoming trip. I will arrange this with our prescribing team today and ask them to send the prescription directly to your preferred pharmacy.
+
+Please do let me know if you need anything further.
+
+Kind regards,
+Dr. A. Patterson
+CAMHS Consultant, St. Jude's Hospital`
+  },
+  {
+    id: 5,
+    title: 'Review 2 non-urgent emails approaching 14 days',
+    why: 'Will breach if left until next week.',
+    time: '20 min',
+    done: false
+  }
 ];
 
 export const weekData: WeekDataItem[] = [

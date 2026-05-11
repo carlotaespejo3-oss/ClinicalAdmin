@@ -35,6 +35,10 @@ export interface HomePlanItem {
   why: string;
   time: string;
   done: boolean;
+  emailId?: number;
+  draftReply?: string;
+  draftSubject?: string;
+  draftTo?: string;
 }
 
 export interface WeekDataItem {
