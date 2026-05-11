@@ -48,19 +48,21 @@ export const emails: Email[] = [
     risk: 'medium',
     cat: CAT.PROF,
     deadline: 3,
-    estMin: 10
+    estMin: 10,
+    isProfessional: true
   },
   {
     id: 4,
     from: 'CHYMS Training Team',
-    subject: 'conference registration closes Friday',
-    preview: "Final reminder that registration for the annual CHYMS conference...",
-    body: "Final reminder that registration for the annual CHYMS conference closes this Friday. Please ensure you have registered if you wish to attend.",
+    subject: 'CHYMS Annual Conference — registration closes Friday',
+    preview: "Final reminder that registration for the annual CHYMS conference closes this Friday...",
+    body: "Final reminder that registration for the annual CHYMS conference closes this Friday. Please ensure you have registered if you wish to attend. Early registration secures your CPD certificate.",
     date: 'Yesterday',
-    risk: 'none',
+    risk: 'medium',
     cat: CAT.MEETING,
-    deadline: 4,
-    estMin: 5
+    deadline: 3,
+    estMin: 5,
+    isMeeting: true
   },
   {
     id: 5,
@@ -255,10 +257,11 @@ CAMHS Consultant, St. Jude's Hospital`
   },
   {
     id: 3,
-    title: 'Complete school support plan reply',
-    why: 'Due tomorrow.',
-    time: '12 min',
+    title: 'Reply to Dr. Osei — Priya Sharma formulation',
+    why: 'Clinical colleague — professional response required by Thu.',
+    time: '10 min',
     done: false,
+    badge: 'professional',
     emailId: 3,
     draftTo: 'Dr. K. Osei — Clinical Psychology',
     draftSubject: 'Re: Priya Sharma formulation meeting Thu 2pm',
@@ -273,6 +276,27 @@ Anna`
   },
   {
     id: 4,
+    title: 'Register for CHYMS Annual Conference',
+    why: 'Registration closes Friday — CPD opportunity, 3 days left.',
+    time: '5 min',
+    done: false,
+    badge: 'meeting',
+    emailId: 4,
+    draftTo: 'CHYMS Training Team',
+    draftSubject: 'Re: CHYMS Annual Conference — registration',
+    draftReply: `Dear CHYMS Training Team,
+
+Please confirm my registration for the CHYMS Annual Conference.
+
+Name: Dr. A. Patterson
+Role: CAMHS Consultant
+Trust: St. Jude's Hospital
+
+Kind regards,
+Dr. A. Patterson`
+  },
+  {
+    id: 5,
     title: 'Review medication side effect response',
     why: 'Parent waiting for advice.',
     time: '10 min',
@@ -293,7 +317,7 @@ Dr. A. Patterson
 CAMHS Consultant, St. Jude's Hospital`
   },
   {
-    id: 5,
+    id: 6,
     title: 'Review 2 non-urgent emails approaching 14 days',
     why: 'Will breach if left until next week.',
     time: '20 min',

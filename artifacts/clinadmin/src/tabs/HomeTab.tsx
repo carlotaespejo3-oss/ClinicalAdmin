@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check } from 'lucide-react';
+import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock } from 'lucide-react';
 import { homePlan, weekData, emails } from '@/lib/data';
-import { HomePlanItem } from '@/lib/types';
+import { HomePlanItem, SidebarTask } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+interface Props {
+  sidebarTasks: SidebarTask[];
+  onToggleSidebarTask: (id: string) => void;
+}
 
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
@@ -16,13 +21,16 @@ const totalPlanned = weekData.reduce((a, d) => a + d.planned, 0);
 const totalRecommended = weekData.reduce((a, d) => a + d.recommended, 0);
 const diff = totalRecommended - totalPlanned;
 
-export default function HomeTab() {
+type PlanEntry =
+  | { kind: 'base'; item: HomePlanItem }
+  | { kind: 'manual'; task: SidebarTask };
+
+export default function HomeTab({ sidebarTasks, onToggleSidebarTask }: Props) {
   const [plan, setPlan] = useState(homePlan);
   const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
   const [copied, setCopied] = useState(false);
-  const [sent, setSent] = useState<number[]>([]);
 
-  const toggleTask = (id: number, e: React.MouseEvent) => {
+  const toggleBase = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setPlan(plan.map(item => item.id === id ? { ...item, done: !item.done } : item));
   };
@@ -41,7 +49,6 @@ export default function HomeTab() {
 
   const handleSend = () => {
     if (openItem) {
-      setSent(prev => [...prev, openItem.id]);
       setPlan(plan.map(item => item.id === openItem.id ? { ...item, done: true } : item));
       setOpenItem(null);
     }
@@ -49,13 +56,32 @@ export default function HomeTab() {
 
   const sourceEmail = openItem?.emailId ? emails.find(e => e.id === openItem.emailId) : null;
 
+  // Build merged plan: base items first, then pending manual tasks (high priority first)
+  const highManual = sidebarTasks.filter(t => !t.done && t.priority === 'high');
+  const normalManual = sidebarTasks.filter(t => !t.done && t.priority === 'normal');
+  const doneManual = sidebarTasks.filter(t => t.done);
+
+  const entries: PlanEntry[] = [
+    ...plan.map(item => ({ kind: 'base' as const, item })),
+    ...highManual.map(task => ({ kind: 'manual' as const, task })),
+    ...normalManual.map(task => ({ kind: 'manual' as const, task })),
+    ...doneManual.map(task => ({ kind: 'manual' as const, task })),
+  ];
+
+  const totalMins = plan.reduce((a, i) => a + parseInt(i.time), 0) +
+    sidebarTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
+
+  const completedBase = plan.filter(t => t.done).length;
+  const completedManual = sidebarTasks.filter(t => t.done).length;
+  const totalItems = plan.length + sidebarTasks.length;
+  const totalDone = completedBase + completedManual;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
 
       {/* Risk Banner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
-          {/* Left — status */}
           <div className="p-6 flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
               <AlertTriangle size={24} className="text-amber-500" />
@@ -68,8 +94,6 @@ export default function HomeTab() {
               <p className="text-sm text-muted-foreground mt-1">Add 1h this week to avoid 2 emails breaching the 14-day rule.</p>
             </div>
           </div>
-
-          {/* Right — AI recommendation */}
           <div className="p-6 bg-slate-50/60 border-l border-border">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">AI recommendation</p>
             <p className="text-lg font-bold text-foreground leading-tight mb-1">Add 1 extra hour this week</p>
@@ -89,8 +113,7 @@ export default function HomeTab() {
               </button>
             </div>
             <button className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline">
-              See why this is recommended
-              <ChevronRight size={12} />
+              See why this is recommended <ChevronRight size={12} />
             </button>
           </div>
         </div>
@@ -99,7 +122,7 @@ export default function HomeTab() {
       {/* Middle grid */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
-        {/* Today's Plan — 3/5 */}
+        {/* Today's Plan */}
         <div className="lg:col-span-3 bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 pt-5 pb-4 border-b border-border">
             <div className="flex items-center justify-between">
@@ -111,7 +134,10 @@ export default function HomeTab() {
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold">Today's Plan</h3>
                     <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      1h 30min admin
+                      {fmtMins(totalMins)} admin
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      {totalDone}/{totalItems} done
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">Do these in order</p>
@@ -124,47 +150,108 @@ export default function HomeTab() {
           </div>
 
           <ul className="divide-y divide-border">
-            {plan.map((item, idx) => (
-              <li
-                key={item.id}
-                onClick={() => openEmail(item)}
-                className={cn(
-                  "flex items-start gap-4 px-6 py-4 transition-colors",
-                  item.emailId && !item.done && "cursor-pointer hover:bg-slate-50",
-                  item.done && "opacity-50"
-                )}
-              >
-                <span className={cn(
-                  "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
-                  item.done ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
-                )}>
-                  {item.done ? <Check size={12} /> : idx + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className={cn("text-sm font-semibold", item.done && "line-through")}>{item.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    <span className="font-medium text-muted-foreground/70">Why:</span> {item.why}
-                  </p>
-                  {item.emailId && !item.done && (
-                    <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-semibold text-primary bg-primary/8 px-2 py-0.5 rounded-full border border-primary/20">
-                      <Mail size={9} /> Draft ready — click to review
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{item.time}</span>
-                  <button
-                    onClick={(e) => toggleTask(item.id, e)}
+            {entries.map((entry, idx) => {
+              if (entry.kind === 'base') {
+                const item = entry.item;
+                return (
+                  <li
+                    key={`base-${item.id}`}
+                    onClick={() => openEmail(item)}
                     className={cn(
-                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0",
-                      item.done ? "bg-green-500 border-green-500" : "border-slate-300 hover:border-primary"
+                      "flex items-start gap-4 px-6 py-4 transition-colors",
+                      item.emailId && !item.done ? "cursor-pointer hover:bg-slate-50" : "",
+                      item.done && "opacity-50"
                     )}
                   >
-                    {item.done && <Check size={11} className="text-white" />}
-                  </button>
-                </div>
-              </li>
-            ))}
+                    <span className={cn(
+                      "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
+                      item.done ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
+                    )}>
+                      {item.done ? <Check size={12} /> : idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn("text-sm font-semibold", item.done && "line-through")}>{item.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        <span className="font-medium text-muted-foreground/70">Why:</span> {item.why}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {item.badge === 'professional' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                            <Users size={9} /> Professional colleague
+                          </span>
+                        )}
+                        {item.badge === 'meeting' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                            <CalendarClock size={9} /> Deadline approaching
+                          </span>
+                        )}
+                        {item.emailId && !item.done && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
+                            <Mail size={9} /> Draft ready — click to review
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{item.time}</span>
+                      <button
+                        onClick={(e) => toggleBase(item.id, e)}
+                        className={cn(
+                          "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0",
+                          item.done ? "bg-green-500 border-green-500" : "border-slate-300 hover:border-primary"
+                        )}
+                      >
+                        {item.done && <Check size={11} className="text-white" />}
+                      </button>
+                    </div>
+                  </li>
+                );
+              }
+
+              // Manual task row
+              const task = entry.task;
+              return (
+                <li
+                  key={`manual-${task.id}`}
+                  className={cn(
+                    "flex items-start gap-4 px-6 py-4 bg-slate-50/40",
+                    task.done && "opacity-50"
+                  )}
+                >
+                  <span className={cn(
+                    "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
+                    task.done ? "bg-green-100 text-green-600" : "bg-slate-200 text-slate-500"
+                  )}>
+                    {task.done ? <Check size={12} /> : idx + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className={cn("text-sm font-semibold", task.done && "line-through")}>{task.title}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                        <ClipboardList size={9} /> Manual task
+                      </span>
+                      {task.priority === 'high' && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                          High priority
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{task.estMin}min</span>
+                    <button
+                      onClick={() => onToggleSidebarTask(task.id)}
+                      className={cn(
+                        "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0",
+                        task.done ? "bg-green-500 border-green-500" : "border-slate-300 hover:border-primary"
+                      )}
+                    >
+                      {task.done && <Check size={11} className="text-white" />}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
 
           <div className="px-6 py-4 border-t border-border bg-green-50/60 flex items-center gap-3">
@@ -173,7 +260,7 @@ export default function HomeTab() {
           </div>
         </div>
 
-        {/* This Week — 2/5 */}
+        {/* This Week */}
         <div className="lg:col-span-2 bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 pt-5 pb-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -259,8 +346,8 @@ export default function HomeTab() {
             <ClipboardList size={20} className="text-green-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold">2</p>
-            <p className="text-sm font-semibold text-foreground">Tasks scheduled</p>
+            <p className="text-2xl font-bold">{sidebarTasks.filter(t => !t.done).length}</p>
+            <p className="text-sm font-semibold text-foreground">Manual tasks in plan</p>
             <p className="text-xs text-muted-foreground">Reports / letters / admin tasks.</p>
           </div>
         </div>
@@ -284,50 +371,51 @@ export default function HomeTab() {
       {/* Email Draft Slide-over */}
       {openItem && (
         <div className="fixed inset-0 z-50 flex">
-          <div
-            className="flex-1 bg-black/40 backdrop-blur-sm"
-            onClick={() => setOpenItem(null)}
-          />
+          <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setOpenItem(null)} />
           <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Draft Reply</p>
                 <h3 className="text-base font-bold">{openItem.title}</h3>
               </div>
-              <button
-                onClick={() => setOpenItem(null)}
-                className="p-2 rounded-full hover:bg-slate-100 text-muted-foreground transition-colors"
-              >
+              <button onClick={() => setOpenItem(null)} className="p-2 rounded-full hover:bg-slate-100 text-muted-foreground transition-colors">
                 <X size={18} />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {/* Original email */}
               {sourceEmail && (
                 <div className="mx-6 mt-5 p-4 bg-slate-50 border border-border rounded-xl">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Original email</p>
-                  <p className="text-xs font-bold text-foreground">{sourceEmail.from}</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs font-bold text-foreground">{sourceEmail.from}</p>
+                    {sourceEmail.isProfessional && (
+                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                        <Users size={8} /> Professional
+                      </span>
+                    )}
+                    {sourceEmail.isMeeting && (
+                      <span className="text-[9px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                        <CalendarClock size={8} /> Meeting
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mb-2">{sourceEmail.date} · {sourceEmail.subject}</p>
                   <p className="text-sm text-foreground leading-relaxed">{sourceEmail.body}</p>
                 </div>
               )}
 
-              {/* Draft */}
               <div className="mx-6 mt-4 mb-6">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">AI Draft Response</p>
                 <div className="p-4 bg-primary/4 border border-primary/20 rounded-xl">
-                  <div className="flex items-center gap-2 mb-3 pb-3 border-b border-primary/15">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground font-medium w-6">To:</span>
-                        <span className="font-semibold text-foreground">{openItem.draftTo}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground font-medium w-6">Re:</span>
-                        <span className="text-foreground">{openItem.draftSubject}</span>
-                      </div>
+                  <div className="space-y-1 mb-3 pb-3 border-b border-primary/15">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground font-medium w-6">To:</span>
+                      <span className="font-semibold text-foreground">{openItem.draftTo}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground font-medium w-6">Re:</span>
+                      <span className="text-foreground">{openItem.draftSubject}</span>
                     </div>
                   </div>
                   <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
@@ -337,7 +425,6 @@ export default function HomeTab() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="px-6 py-4 border-t border-border flex items-center gap-3">
               <button
                 onClick={handleCopy}

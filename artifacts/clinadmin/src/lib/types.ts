@@ -9,6 +9,8 @@ export interface Email {
   cat: string;
   deadline: number | null;
   estMin: number;
+  isProfessional?: boolean;
+  isMeeting?: boolean;
 }
 
 export interface SentEmail {
@@ -29,6 +31,14 @@ export interface ManualTask {
   estMin: number;
 }
 
+export interface SidebarTask {
+  id: string;
+  title: string;
+  estMin: number;
+  priority: 'high' | 'normal';
+  done: boolean;
+}
+
 export interface HomePlanItem {
   id: number;
   title: string;
@@ -39,6 +49,7 @@ export interface HomePlanItem {
   draftReply?: string;
   draftSubject?: string;
   draftTo?: string;
+  badge?: 'professional' | 'meeting' | 'manual';
 }
 
 export interface WeekDataItem {
