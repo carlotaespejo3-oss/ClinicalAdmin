@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { emails as allEmails } from '@/lib/data';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
@@ -204,10 +205,10 @@ export default function ClinAdmin() {
               <tab.icon size={16} />
               {tab.label}
               {tab.id === 'Emails' && (
-                <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">9</span>
+                <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">{allEmails.length}</span>
               )}
-              {tab.id === 'High-Risk Patients' && (
-                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">2</span>
+              {tab.id === 'High-Risk Patients' && allEmails.filter(e => e.risk === 'high').length > 0 && (
+                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{allEmails.filter(e => e.risk === 'high').length}</span>
               )}
             </button>
           ))}

@@ -1,26 +1,38 @@
 import { cn } from '@/lib/utils';
 import { AlertTriangle, Clock, Inbox, FileText, BarChart3, TrendingDown, CheckCircle, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { weekHistory } from '@/lib/data';
+import { weekHistory, emails, CAT } from '@/lib/data';
 import { fmtTime } from '@/lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 export default function TodayTab() {
+  const inboxCount = emails.length;
+  const highRiskCount = emails.filter(e => e.risk === 'high').length;
+  const pendingDraftCount = emails.filter(e => e.cat === CAT.UNSAFE || e.cat === CAT.REVIEW).length;
+  const clearMinutes = emails.reduce((a, e) => a + e.estMin, 0);
+  const clearLabel = clearMinutes >= 60
+    ? `${Math.floor(clearMinutes / 60)}h ${clearMinutes % 60}m`
+    : `${clearMinutes}m`;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Safety Bar */}
-      <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-center gap-3">
-        <AlertTriangle className="text-destructive" size={20} />
-        <p className="text-sm font-bold text-destructive">SAFETY ALERT: 2 items require immediate clinical oversight to maintain patient safety.</p>
-      </div>
+      {highRiskCount > 0 && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="text-destructive" size={20} />
+          <p className="text-sm font-bold text-destructive">
+            SAFETY ALERT: {highRiskCount} {highRiskCount === 1 ? 'item requires' : 'items require'} immediate clinical oversight to maintain patient safety.
+          </p>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Today's Inbox", val: "9", icon: Inbox, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "High Risk", val: "2", icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50" },
-          { label: "Pending Drafts", val: "2", icon: FileText, color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Time to Clear", val: "1h 20m", icon: Clock, color: "text-green-600", bg: "bg-green-50" },
+          { label: "Today's Inbox", val: String(inboxCount), icon: Inbox, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "High Risk", val: String(highRiskCount), icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50" },
+          { label: "Pending Drafts", val: String(pendingDraftCount), icon: FileText, color: "text-amber-600", bg: "bg-amber-50" },
+          { label: "Time to Clear", val: clearLabel, icon: Clock, color: "text-green-600", bg: "bg-green-50" },
           { label: "Admin Days", val: "Tue/Wed/Thu", icon: CalendarDays, color: "text-purple-600", bg: "bg-purple-50" },
         ].map((m, i) => (
           <Card key={i} className="border-border/50 shadow-sm">
