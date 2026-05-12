@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useState, useEffect, useRef } from 'react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut } from 'lucide-react';
+import { cn, getEmailPriority, PRIORITY_PILL } from '@/lib/utils';
+import { emails as allEmails } from '@/lib/data';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
@@ -341,13 +342,13 @@ export default function ClinAdmin() {
               <LayoutList size={15} />
               Detailed view
             </button>
-            <button className="relative p-2 hover:bg-accent rounded-full text-muted-foreground transition-colors">
-              <Bell size={18} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border-2 border-card"></span>
-            </button>
-            <div className="w-8 h-8 rounded-full bg-primary/10 border border-border flex items-center justify-center text-primary">
-              <User size={16} />
-            </div>
+            <NotificationsBell
+              onOpenEmail={(id) => {
+                setOpenEmailId(id);
+                setActiveTab('Emails');
+              }}
+            />
+            <ProfileMenu onOpenSettings={() => setActiveTab('Settings')} />
           </div>
         </header>
 
@@ -357,6 +358,143 @@ export default function ClinAdmin() {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+function NotificationsBell({ onOpenEmail }: { onOpenEmail: (id: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const items = allEmails
+    .map((e) => ({ email: e, priority: getEmailPriority(e) }))
+    .filter((x) => x.priority === 'High' || x.priority === 'Medium')
+    .sort((a, b) => (a.priority === 'High' && b.priority !== 'High' ? -1 : 1))
+    .slice(0, 6);
+
+  const highCount = items.filter((x) => x.priority === 'High').length;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="relative p-2 hover:bg-accent rounded-full text-muted-foreground transition-colors"
+        data-testid="button-notifications"
+        aria-label="Notifications"
+      >
+        <Bell size={18} />
+        {items.length > 0 && (
+          <span className={cn(
+            "absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-card",
+            highCount > 0 ? "bg-destructive" : "bg-amber-500"
+          )} />
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-96 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="px-4 py-3 border-b border-border bg-muted/30">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Needs your attention</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {items.length === 0 ? 'Inbox is clear.' : `${items.length} item${items.length === 1 ? '' : 's'} flagged`}
+            </p>
+          </div>
+          <div className="max-h-96 overflow-y-auto divide-y divide-border">
+            {items.length === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                Nothing high or medium priority right now.
+              </div>
+            ) : (
+              items.map(({ email, priority }) => (
+                <button
+                  key={email.id}
+                  onClick={() => {
+                    onOpenEmail(email.id);
+                    setOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors"
+                  data-testid={`notification-${email.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <p className="text-sm font-bold truncate">{email.from}</p>
+                    <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider flex-shrink-0", PRIORITY_PILL[priority])}>
+                      {priority}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold truncate">{email.subject}</p>
+                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{email.preview}</p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfileMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-8 h-8 rounded-full bg-primary/10 border border-border flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
+        data-testid="button-profile"
+        aria-label="Profile menu"
+      >
+        <User size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="px-4 py-3 border-b border-border bg-muted/30">
+            <p className="text-sm font-bold">Dr. A. Patterson</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Consultant Child Psychiatrist · CAMHS Outpatient</p>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => {
+                onOpenSettings();
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors text-left"
+              data-testid="profile-settings"
+            >
+              <Settings size={15} className="text-muted-foreground" />
+              Settings
+            </button>
+            <button
+              disabled
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground/60 cursor-not-allowed text-left"
+              title="Connect your Microsoft account first"
+              data-testid="profile-signout"
+            >
+              <LogOut size={15} />
+              <span className="flex-1">Sign out</span>
+              <span className="text-[9px] uppercase tracking-wider bg-muted text-muted-foreground/70 px-1.5 py-0.5 rounded">Soon</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
