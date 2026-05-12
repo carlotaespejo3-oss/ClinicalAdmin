@@ -1,0 +1,44 @@
+Update category time estimates
+
+What & Why
+
+Replace the current ad-hoc per-email estMin values with a single, rules-based time estimator driven by the AI classification (category, priority, sub-type, escalation, and email content). This gives the clinician realistic, consistent "time to action" numbers everywhere they appear.
+
+Done looks like
+
+Each email's displayed "min to action" reflects the new category table:
+SAFEGUARDING 20, LEGAL 30, URGENT_CLINICAL 15 (20 if complex), CLINICAL 10 (15 if complex), PROFESSIONAL 5 (10 if waiting on clinical opinion / document), ADMIN 2, NONE 1, CPD 2, UNCLEAR 5 (10 pending classification).
+Complexity rule applied for URGENT_CLINICAL and CLINICAL: if the email body is more than 150 words OR contains multiple questions/concerns, use the higher estimate.
+Sub-type rule applied for PROFESSIONAL: if the colleague is waiting on a clinical opinion or a document (sub-type clinical_input or document_request), use the higher estimate.
+Escalation rule: if the email's priority has been escalated above the category default due to content (e.g. CLINICAL classified as URGENT), add 5 minutes on top of whatever the category estimate already is.
+Until an email is classified, it shows the UNCLEAR "pending classification" estimate (10 min).
+Inbox list, email detail ("X min to action"), Today / WeeklyPlan / Forecast totals, and Weekly Setup catch-up totals all reflect the new numbers.
+Existing seeded estMin values in src/lib/data.ts are removed or overridden so the rules-based estimate is the single source of truth at runtime.
+Out of scope
+
+Changing the categories themselves, the priority taxonomy, or the classification prompt.
+Changing manual task estimates (sidebar tasks the clinician types in by hand) — those keep their user-entered minutes.
+Persisting estimates to a database.
+Steps
+
+Add a category time-estimate helper. Create a small module (next to aiCategory.ts / classifyEmail.ts) that exports the category → base/upper minutes table from the spec, plus an estimateMinutes(email, classification) function that applies the complexity rule (CLINICAL / URGENT_CLINICAL with >150 words or multiple questions/concerns), the PROFESSIONAL sub-type rule (clinical_input / document_request → upper), and the +5 minute content-escalation bump (priority bumped above the category's natural priority).
+Detect "multiple questions or concerns". Implement a lightweight heuristic in the helper (e.g. count of ? in the body, plus simple connector cues like "also", "another thing", "and can you") and document the threshold in a code comment so it stays tweakable.
+Define each category's natural priority in one place inside the helper so the escalation bump (+5) can be computed by comparing the AI's chosen priority against the category default (e.g. CLINICAL natural = MEDIUM; if classified URGENT, add 5).
+Wire the helper into the email pipeline. Whenever an email's classification is produced or updated (initial seed, classifyQueue results, manual re-classification), recompute its estMin via the helper and update the in-memory email so all consumers (InboxTab, TodayTab, WeeklyPlanTab, ForecastTab, HomeTab, WeeklySetupModal, HighRiskTab) read the new value without per-screen changes.
+Handle unclassified emails. Until classification lands for an email, its estMin should be the UNCLEAR "pending classification" value (10 min). Once classified as UNCLEAR proper, it drops to 5.
+Remove the hard-coded seed estMin values in src/lib/data.ts (or have them overwritten on load) so the rules-based estimator is the only source of truth for email estimates at runtime. Keep estMin on manual tasks (SidebarTask, Task) untouched.
+Sanity-check the affected UI surfaces. Verify the totals shown in TodayTab's "clear" header, WeeklyPlanTab's per-day allocation, ForecastTab's "current average" line, WeeklySetupModal's catch-up total, and the InboxTab "X min to action" line all reflect the new numbers and still render correctly when an email is mid-classification.
+Relevant files
+
+artifacts/clinadmin/src/lib/types.ts:1-130
+artifacts/clinadmin/src/lib/aiCategory.ts
+artifacts/clinadmin/src/lib/classifyEmail.ts
+artifacts/clinadmin/src/lib/data.ts
+artifacts/clinadmin/src/tabs/InboxTab.tsx:560-610
+artifacts/clinadmin/src/tabs/TodayTab.tsx:10-140
+artifacts/clinadmin/src/tabs/WeeklyPlanTab.tsx
+artifacts/clinadmin/src/tabs/ForecastTab.tsx:60-390
+artifacts/clinadmin/src/tabs/HomeTab.tsx
+artifacts/clinadmin/src/tabs/HighRiskTab.tsx:40-80
+artifacts/clinadmin/src/components/WeeklySetupModal.tsx:50-160
+artifacts/clinadmin/src/pages/ClinAdmin.tsx

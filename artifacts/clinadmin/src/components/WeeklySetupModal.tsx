@@ -57,23 +57,32 @@ function getWeekLabel() {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
-const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);
+// Static aggregates that don't depend on per-email estMin (which is now
+// mutated at runtime by the rules-based estimator) stay at module scope.
 const highRiskEmails = emails.filter(e => e.risk === 'high').length;
 const mediumEmails = emails.filter(e => e.risk === 'medium').length;
 const projectedExtra = 45;
-const totalRecommendedMins = emailMins + taskMins + projectedExtra;
 
 const last4 = weekHistory.slice(-4);
 const histAvgMins = Math.round(
   last4.reduce((a, w) => a + w.high + w.medium + w.low + w.admin, 0) / last4.length
 );
-const recommendedMins = Math.round(Math.max(totalRecommendedMins, histAvgMins) * 1.1 / 10) * 10;
 
-// Catch-up stats
+// Catch-up stats — histEmails is a separate seeded backlog dataset (not
+// classified by the AI), so its risk-based counts are still safe to
+// pre-compute at module scope.
 const catchupHighRisk = histEmails.filter(e => e.risk === 'high').length;
 const catchupMedRisk  = histEmails.filter(e => e.risk === 'medium').length;
 const catchupMins     = histEmails.reduce((a, e) => a + e.estMin, 0);
+
+function computeRecommendedMins(): number {
+  // Recomputed per render so it reflects the rules-based estMin values
+  // applied to `emails` once the AI classifications have streamed in.
+  const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
+  const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);
+  const totalRecommendedMins = emailMins + taskMins + projectedExtra;
+  return Math.round(Math.max(totalRecommendedMins, histAvgMins) * 1.1 / 10) * 10;
+}
 
 const SCAN_STEPS = [
   'Scanning your inbox...',
@@ -98,6 +107,9 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStep, setScanStep] = useState(0);
   const [buildStep, setBuildStep] = useState(0);
+  const recommendedMins = computeRecommendedMins();
+  const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
+  const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);
   const [{ initialHours, initialDays, initialSessionLength }] = useState(() => {
     const saved = loadWeeklyDefaults();
     return {

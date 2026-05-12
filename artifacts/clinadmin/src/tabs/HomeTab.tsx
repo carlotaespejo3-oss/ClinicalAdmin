@@ -26,12 +26,15 @@ function fmtMins(min: number) {
   return `${m}min`;
 }
 
-const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
 const projectedExtra = 45;
 
 
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
   // Derived from live task state so completion in Tasks tab propagates here.
+  // Note: emailMins is computed on every render so the rules-based estimator
+  // (which mutates email.estMin in place when classifications stream in) is
+  // reflected as soon as the surrounding tree re-renders.
+  const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
   const taskMins = manualTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
   const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
   const [showWhyRec, setShowWhyRec] = useState(false);

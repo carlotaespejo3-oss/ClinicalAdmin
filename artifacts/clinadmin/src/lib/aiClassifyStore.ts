@@ -1,9 +1,32 @@
 import { useSyncExternalStore } from 'react';
 import type { AiClassification } from './types';
+import { emails } from './data';
+import { estimateMinutes, PENDING_CLASSIFICATION_MIN } from './estimateMinutes';
 
 const KEY = 'clinadmin-ai-classifications-v1';
 const listeners = new Set<() => void>();
 let cache: Map<number, AiClassification> | null = null;
+let estimatesInitialised = false;
+
+// Mutate the in-memory Email object so every consumer (InboxTab, HomeTab,
+// ForecastTab, WeeklyPlan, HighRiskTab, WeeklySetupModal etc.) reads the
+// rules-based estimate instead of the hand-coded seed value.
+function applyEstimateToEmail(c: AiClassification | undefined, emailId: number) {
+  const email = emails.find((e) => e.id === emailId);
+  if (!email) return;
+  email.estMin = c ? estimateMinutes(email, c) : PENDING_CLASSIFICATION_MIN;
+}
+
+function initialiseEmailEstimates(initial: Map<number, AiClassification>) {
+  if (estimatesInitialised) return;
+  estimatesInitialised = true;
+  // Override every seeded estMin so the rules-based estimator is the
+  // single source of truth at runtime.
+  for (const e of emails) {
+    const c = initial.get(e.id);
+    e.estMin = c ? estimateMinutes(e, c) : PENDING_CLASSIFICATION_MIN;
+  }
+}
 
 function load(): Map<number, AiClassification> {
   if (cache) return cache;
@@ -14,6 +37,7 @@ function load(): Map<number, AiClassification> {
   } catch {
     cache = new Map();
   }
+  initialiseEmailEstimates(cache);
   return cache;
 }
 
@@ -36,6 +60,7 @@ function mutate(fn: (m: Map<number, AiClassification>) => void) {
 
 export function setClassification(c: AiClassification) {
   mutate((m) => m.set(c.emailId, c));
+  applyEstimateToEmail(c, c.emailId);
 }
 
 export function overrideCategory(emailId: number, category: AiClassification['category'], priority: AiClassification['priority']) {
@@ -56,10 +81,13 @@ export function overrideCategory(emailId: number, category: AiClassification['ca
         registrationDeadline: null,
       };
   mutate((m) => m.set(emailId, next));
+  applyEstimateToEmail(next, emailId);
 }
 
 export function clearClassifications() {
   mutate((m) => m.clear());
+  // After clearing, every email reverts to the pending estimate.
+  for (const e of emails) e.estMin = PENDING_CLASSIFICATION_MIN;
 }
 
 export function getClassification(id: number): AiClassification | undefined {

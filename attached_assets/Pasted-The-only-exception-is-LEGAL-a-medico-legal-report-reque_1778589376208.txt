@@ -1,0 +1,36 @@
+The only exception is LEGAL — a medico-legal report request may need the clinician to read carefully before writing. In that case use 30 minutes as the combined total, not 20.
+
+HOW TO SHOW THIS IN THE DAILY PLAN
+Show the email and task together as one block — not as two line items with separate times:
+Correct display:
+1. 📄 EHCP letter — Lucas Thompson              20 min
+   Requested by Mrs Davies (SENCO)
+   Includes: reply to email + write letter
+Not this:
+1. CLINICAL — Mrs Davies re Lucas Thompson       12 min
+   📄 Linked task: EHCP letter — Lucas Thompson  20 min
+   Combined: 32 min
+The clinician should see one task, one time block, one checkbox to mark it done.
+
+MARKING AS DONE
+Because it is one piece of work, there is one completion action:
+
+Show a single checkbox or "Mark as done" button for the combined item
+When clicked, mark both the email and the linked task as complete simultaneously
+No need to prompt "have you also completed the document?" — completing the block means both are done
+The only exception: if the clinician marks the email as done without completing the document, show once: "Did you also complete the document? [Yes] [No — keep task open]"
+
+
+WEEKLY PLANNING ENGINE
+Update the weekly plan calculation:
+
+When an email has a linked document task, count it as 20 minutes total in the weekly plan
+Do not count the email time and the task time separately
+If multiple document requests arrive in one week, each one is 20 minutes — they do not stack or combine unless they are genuinely different documents for different patients
+Show a summary line in the weekly plan: "Includes X documents or letters to write — X min total"
+
+
+Please update the time calculation logic, the daily plan display, and the weekly planning engine to reflect this. The core principle is: one piece of work, one time block, one completion action.
+
+
+This also makes the daily plan much cleaner to look at. One item, one time, one tick. That is what "switch off with confidence" actually feels like in practice.

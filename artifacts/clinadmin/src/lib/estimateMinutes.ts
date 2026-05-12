@@ -1,0 +1,124 @@
+import type { Email, AiClassification, AiCategory, AiPriority } from './types';
+
+// Minutes shown to the user as "time to action" until an email has been
+// classified by the AI. Per spec: UNCLEAR pending classification = 10 min.
+export const PENDING_CLASSIFICATION_MIN = 10;
+
+// Base ("simple") minutes for each category.
+const CATEGORY_BASE: Record<AiCategory, number> = {
+  SAFEGUARDING: 20,
+  LEGAL: 30,
+  URGENT_CLINICAL: 15,
+  CLINICAL: 10,
+  PROFESSIONAL: 5,
+  ADMIN: 2,
+  NONE: 1,
+  CPD: 2,
+  UNCLEAR: 5,
+};
+
+// Upper ("complex" / sub-typed) minutes — only set for categories that
+// have a higher band per spec.
+const CATEGORY_UPPER: Partial<Record<AiCategory, number>> = {
+  URGENT_CLINICAL: 20,
+  CLINICAL: 15,
+  PROFESSIONAL: 10,
+};
+
+// The "natural" priority each category lives at by default. Used to detect
+// content-driven escalation (e.g. CLINICAL is naturally MEDIUM; if the AI
+// classified it URGENT then content has bumped it up — apply +5).
+const CATEGORY_NATURAL_PRIORITY: Record<AiCategory, AiPriority> = {
+  SAFEGUARDING: 'URGENT',
+  URGENT_CLINICAL: 'URGENT',
+  LEGAL: 'MEDIUM',
+  CLINICAL: 'MEDIUM',
+  PROFESSIONAL: 'MEDIUM',
+  ADMIN: 'LOW',
+  NONE: 'LOW',
+  CPD: 'LOW',
+  UNCLEAR: 'UNCLEAR',
+};
+
+// Comparable rank for AiPriority. Higher = more urgent. UNCLEAR is treated
+// as lower than LOW so it never triggers an escalation bump.
+const PRIORITY_RANK: Record<AiPriority, number> = {
+  UNCLEAR: -1,
+  LOW: 0,
+  MEDIUM: 1,
+  URGENT: 2,
+};
+
+// "Complex" content threshold for URGENT_CLINICAL / CLINICAL.
+const COMPLEX_WORD_COUNT = 150;
+
+// Heuristic for "multiple questions or concerns": triggered if the body
+// has >=2 question marks, OR >=1 question mark together with a connector
+// cue. Keep CONNECTORS lowercased and contained to short phrases —
+// tweak the list as new patterns emerge.
+const QUESTION_MARK_THRESHOLD = 2;
+const CONNECTORS = [
+  'also',
+  'another thing',
+  'and can you',
+  'and could you',
+  'one more',
+  'in addition',
+  'as well',
+  'secondly',
+  'furthermore',
+  'follow-up question',
+];
+
+export function hasMultipleQuestionsOrConcerns(body: string): boolean {
+  if (!body) return false;
+  const qMarks = (body.match(/\?/g) ?? []).length;
+  if (qMarks >= QUESTION_MARK_THRESHOLD) return true;
+  if (qMarks >= 1) {
+    const lc = body.toLowerCase();
+    if (CONNECTORS.some((c) => lc.includes(c))) return true;
+  }
+  return false;
+}
+
+function wordCount(s: string): number {
+  if (!s) return 0;
+  return s.trim().split(/\s+/).filter(Boolean).length;
+}
+
+export function isComplex(email: Email): boolean {
+  return wordCount(email.body) > COMPLEX_WORD_COUNT || hasMultipleQuestionsOrConcerns(email.body);
+}
+
+// Single source of truth for an email's estimated minutes-to-action.
+// Returns the PENDING value when no classification is available yet.
+export function estimateMinutes(email: Email, classification: AiClassification | undefined | null): number {
+  if (!classification) return PENDING_CLASSIFICATION_MIN;
+  const { category, priority, professionalSubType } = classification;
+  const base = CATEGORY_BASE[category];
+  const upper = CATEGORY_UPPER[category];
+  let minutes = base;
+
+  // Complexity bump for URGENT_CLINICAL and CLINICAL.
+  if ((category === 'URGENT_CLINICAL' || category === 'CLINICAL') && upper != null && isComplex(email)) {
+    minutes = upper;
+  }
+
+  // PROFESSIONAL sub-type rule: clinical_input or document_request → upper.
+  if (
+    category === 'PROFESSIONAL' &&
+    upper != null &&
+    (professionalSubType === 'clinical_input' || professionalSubType === 'document_request')
+  ) {
+    minutes = upper;
+  }
+
+  // Content-driven escalation: if the AI bumped priority above the
+  // category's natural priority, add 5 minutes on top.
+  const natural = CATEGORY_NATURAL_PRIORITY[category];
+  if (PRIORITY_RANK[priority] > PRIORITY_RANK[natural]) {
+    minutes += 5;
+  }
+
+  return minutes;
+}
