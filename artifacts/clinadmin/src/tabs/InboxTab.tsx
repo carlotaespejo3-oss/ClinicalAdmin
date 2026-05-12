@@ -8,6 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
 import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
+import { manualTasks as seedManualTasks } from '@/lib/data';
+import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
+import { findLinkedTaskForEmail, detectCompletionLanguage } from '@/lib/linkedTaskUtils';
 import { useAiClassifications, setClassification, overrideCategory } from '@/lib/aiClassifyStore';
 import { classifyQueue, classifyEmail } from '@/lib/classifyEmail';
 import { CATEGORY_LABEL, CATEGORY_BADGE, PRIORITY_LABEL, PRIORITY_BADGE } from '@/lib/aiCategory';
@@ -130,11 +133,37 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     setSelectedId(remaining.length > 0 ? remaining[0].id : null);
   };
 
+  // If the current email has an open linked task AND any of the AI drafts
+  // (or the freeform extra draft) contain "please find attached / I have
+  // completed / the report is in the file" style language, queue a
+  // 'reply-language' prompt BEFORE the email is archived. The prompt store
+  // dedupes by emailId, so this beats ClinAdmin's generic 'email-done'
+  // detector to the queue.
+  const maybeQueueReplyLanguagePrompt = (emailId: number, subject: string) => {
+    const linked = findLinkedTaskForEmail(emailId, seedManualTasks, linkedDocTasks);
+    if (!linked || linked.done) return;
+    const drafts = aiDrafts[emailId] ?? {};
+    const extra = extraDraft[emailId] ?? '';
+    const combined = [drafts.single, drafts.family, drafts.admin, extra]
+      .filter(Boolean)
+      .join('\n\n');
+    if (!detectCompletionLanguage(combined)) return;
+    requestLinkedTaskPrompt({
+      mode: 'reply-language',
+      emailId,
+      emailSubject: subject,
+      taskId: linked.id,
+      taskTitle: linked.title,
+      taskSource: linked.source,
+    });
+  };
+
   // Acknowledge: also archive (kind='acknowledged') so it shows in the Archive
   // tab. We keep the legacy acknowledgedStore in sync so Forecast/Today counts
   // continue to subtract the email correctly.
   const handleAcknowledge = () => {
     if (!selectedEmail) return;
+    maybeQueueReplyLanguagePrompt(selectedEmail.id, selectedEmail.subject);
     acknowledgeEmail(selectedEmail.id);
     archiveEmail(selectedEmail.id, 'acknowledged');
     advanceToNextEmail(selectedEmail.id);
@@ -145,6 +174,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // mirrored into acknowledgedStore so downstream counts stay correct.
   const handleMarkDone = () => {
     if (!selectedEmail) return;
+    maybeQueueReplyLanguagePrompt(selectedEmail.id, selectedEmail.subject);
     acknowledgeEmail(selectedEmail.id);
     archiveEmail(selectedEmail.id, 'done');
     advanceToNextEmail(selectedEmail.id);

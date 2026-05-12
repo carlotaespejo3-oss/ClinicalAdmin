@@ -36,6 +36,10 @@ export interface ManualTask {
   linkedEmailId?: number;
   autoCompleteOnReply?: boolean;
   done?: boolean;
+  // Set when the clinician archives the linked email but explicitly chooses
+  // to keep this task open (e.g. "Document still needed — email already
+  // replied to"). Surfaced in the Tasks tab so the orphaned task makes sense.
+  noteAfterEmailDone?: string;
 }
 
 export interface SidebarTask {

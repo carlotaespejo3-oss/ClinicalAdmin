@@ -2,9 +2,19 @@ import { useState, useEffect, useRef } from 'react';
 import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
-import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
-import { useArchivedEmails } from '@/lib/archivedStore';
-import { markLinkedDocTaskDone } from '@/lib/linkedDocTasksStore';
+import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
+import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
+import {
+  setLinkedDocDone,
+  setLinkedDocNote,
+  useLinkedDocTasks,
+} from '@/lib/linkedDocTasksStore';
+import {
+  requestLinkedTaskPrompt,
+  hasPendingPromptForEmail,
+} from '@/lib/linkedTaskPromptStore';
+import { findLinkedTaskForEmail } from '@/lib/linkedTaskUtils';
+import LinkedTaskPromptModal from '../components/LinkedTaskPromptModal';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
@@ -77,17 +87,87 @@ export default function ClinAdmin() {
   const [weekSetup, setWeekSetup] = useState<WeekSetup | null>(null);
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
+  const linkedDocTasks = useLinkedDocTasks();
   // An email is "out of the inbox" if it has been acknowledged OR archived
   // (acknowledged or marked done). Sidebar badges and counts use this.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
 
-  // Document/form detection: when an email is acknowledged or archived, its
-  // auto-created linked document task is also marked done. The email and
-  // task are ONE piece of work — completing one completes the other.
+  // Linked email/task prompt detector. When an email transitions from
+  // open → done (acknowledged or archived) AND has an open linked task,
+  // we ask the clinician whether to also complete the task. The
+  // pre-seen refs ensure we don't fire prompts for state restored from
+  // localStorage on first mount, and the hasPendingPromptForEmail check
+  // means a 'reply-language' prompt already queued by InboxTab wins
+  // (it's the more specific signal).
+  const seenAckRef = useRef<Set<number> | null>(null);
+  const seenArcRef = useRef<Set<number> | null>(null);
   useEffect(() => {
-    for (const id of acknowledged) markLinkedDocTaskDone(id);
-    for (const id of archived.keys()) markLinkedDocTaskDone(id);
-  }, [acknowledged, archived]);
+    if (seenAckRef.current === null) {
+      seenAckRef.current = new Set(acknowledged);
+      seenArcRef.current = new Set(archived.keys());
+      return;
+    }
+    const newlyDone = new Set<number>();
+    for (const id of acknowledged) {
+      if (!seenAckRef.current.has(id)) newlyDone.add(id);
+    }
+    for (const id of archived.keys()) {
+      if (!seenArcRef.current!.has(id)) newlyDone.add(id);
+    }
+    seenAckRef.current = new Set(acknowledged);
+    seenArcRef.current = new Set(archived.keys());
+
+    for (const id of newlyDone) {
+      if (hasPendingPromptForEmail(id)) continue;
+      const email = allEmails.find((e) => e.id === id);
+      if (!email) continue;
+      const linked = findLinkedTaskForEmail(id, manualTaskList, linkedDocTasks);
+      if (!linked || linked.done) continue;
+      requestLinkedTaskPrompt({
+        mode: 'email-done',
+        emailId: id,
+        emailSubject: email.subject,
+        taskId: linked.id,
+        taskTitle: linked.title,
+        taskSource: linked.source,
+      });
+    }
+  }, [acknowledged, archived, linkedDocTasks, manualTaskList]);
+
+  // Handlers wired into the modal — route by source to the right store.
+  const handleCompleteLinkedTask = (
+    taskId: string,
+    source: 'manual' | 'doc',
+    emailId: number,
+  ) => {
+    if (source === 'doc') {
+      setLinkedDocDone(emailId, true);
+    } else {
+      setManualTaskList((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, done: true, noteAfterEmailDone: undefined } : t)),
+      );
+    }
+  };
+
+  const handleKeepTaskOpenWithNote = (
+    taskId: string,
+    source: 'manual' | 'doc',
+    emailId: number,
+    note: string,
+  ) => {
+    if (source === 'doc') {
+      setLinkedDocNote(emailId, note);
+    } else {
+      setManualTaskList((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, noteAfterEmailDone: note } : t)),
+      );
+    }
+  };
+
+  const handleCompleteEmailFromPrompt = (emailId: number) => {
+    acknowledgeEmail(emailId);
+    archiveEmail(emailId, 'done');
+  };
 
   useEffect(() => {
     const key = getWeekKey();
@@ -206,6 +286,12 @@ export default function ClinAdmin() {
           onDismiss={handleWeeklySetupDismiss}
         />
       )}
+
+      <LinkedTaskPromptModal
+        onCompleteTask={handleCompleteLinkedTask}
+        onKeepTaskOpenWithNote={handleKeepTaskOpenWithNote}
+        onCompleteEmail={handleCompleteEmailFromPrompt}
+      />
 
       {/* Sidebar */}
       <aside className="w-56 border-r border-sidebar-border bg-sidebar flex flex-col">

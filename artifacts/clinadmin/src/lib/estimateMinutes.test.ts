@@ -46,6 +46,9 @@ function makeClassification(
     documentRequested: null,
     eventDate: null,
     registrationDeadline: null,
+    requiresDocument: false,
+    documentType: null,
+    documentDueDays: null,
     ...overrides,
   };
 }

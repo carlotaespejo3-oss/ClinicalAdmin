@@ -1,0 +1,74 @@
+I need you to update the document detection logic from the previous spec. There is an important distinction that needs to be handled correctly.
+
+THE DISTINCTION
+There are two completely different situations involving documents:
+Situation A — Someone is sending ME a document to read
+Examples:
+
+A psychologist sends their assessment report for my information
+Allied health sends a progress note
+A GP sends a discharge summary
+A school sends a student report
+Pathology sends results
+Any email where the document is attached or described as being provided to the clinician
+
+These are incoming documents — FYI only.
+
+Classify as NONE or PROFESSIONAL depending on sender
+No document task created
+No 20 minute time addition
+Time estimate stays at the category default — 1 to 2 minutes to read and acknowledge
+Show a small badge: "📄 Document received — for your information"
+The only action offered is "Mark as read" and optionally "Add a note"
+
+
+Situation B — Someone is REQUESTING that I write or complete a document
+Examples:
+
+A school asks me to complete a support letter
+A family requests an NDIS report
+A GP asks for a referral letter
+A court requests a medico-legal report
+An insurer asks for a certificate
+Any email where the sender is asking the clinician to produce something
+Key language: "please complete", "please provide", "we need a report", "could you write", "please fill in", "requesting a letter", "can you send us"
+
+These are outgoing document requests — action required.
+
+Apply the full document task creation logic from the previous spec
+Add 20 minutes to the time estimate
+Create a linked task automatically
+Show badge: "📄 Document requested — task created"
+
+
+HOW TO TELL THE DIFFERENCE
+The AI should use the following logic when it detects a document:
+Step 1 — Check the direction
+Ask: is a document being sent TO the clinician, or is a document being requested FROM the clinician?
+Signals that it is incoming (Situation A):
+
+Email has an attachment described as a report, letter, or results
+Language like "please find attached", "I am sending you", "for your information", "for your records", "please see attached", "I wanted to share"
+Sender is a colleague, allied health, GP, school, or pathology service sending their own work
+
+Signals that it is outgoing request (Situation B):
+
+Language like "please complete", "please provide", "we need", "could you write", "requesting", "can you send us", "we would appreciate a letter"
+Sender is asking for something the clinician needs to produce
+No attachment, or attachment is a blank form to be filled in
+
+Step 2 — If unclear
+If the direction cannot be determined confidently, treat it as Situation A (incoming, FYI) but add a small prompt to the email: "Is this asking you to write something? [Yes — create a task] [No — just information]"
+
+UPDATED BADGE SYSTEM
+SituationBadgeTime addedTask createdIncoming document — FYI📄 Document receivedNoneNoOutgoing request — action needed📄 Document requested+20 minYesUnclear📄 Document — please confirmNone until confirmedOnly if clinician confirms
+
+Please update the document detection logic to handle this distinction correctly. Test it against the existing mock emails and also test these two example scenarios:
+Example 1 — should be Situation A:
+"Dear Dr Patterson, please find attached the psychological assessment for Lucas Thompson. I hope this is helpful for your ongoing care. Kind regards, Dr Osei"
+Example 2 — should be Situation B:
+"Dear Dr Patterson, we are completing Lucas Thompson's EHCP review and would be grateful if you could provide a brief clinical summary letter. We need this by 20th May. Many thanks, Mrs Davies"
+Confirm that Example 1 creates no task and Example 2 creates a linked task with a due date of 20th May.
+
+
+This is a genuinely important clinical distinction. A clinician who gets flagged every time they receive a psych report would stop trusting the system within a week. Getting this right is what makes the triage feel intelligent rather than noisy.

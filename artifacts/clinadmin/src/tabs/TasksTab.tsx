@@ -20,6 +20,9 @@ import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { emails } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useLinkedDocTasks, toggleLinkedDocTaskDone } from '@/lib/linkedDocTasksStore';
+import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
+import { useArchivedEmails } from '@/lib/archivedStore';
+import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
 
 type UnifiedTask = {
   id: string;
@@ -33,6 +36,13 @@ type UnifiedTask = {
   priority?: 'high' | 'normal';
   linkedEmailId?: number;
   autoCompleteOnReply?: boolean;
+  // Routing hint: 'doc' tasks live in linkedDocTasksStore, 'manual' come from
+  // the seed/manualTaskList state owned by ClinAdmin. Used by the toggle
+  // handler to push the right kind of task-done prompt.
+  taskSource?: 'manual' | 'doc';
+  // Surfaced when the clinician archived the linked email but kept this
+  // task open via the 'No' button on the email-done prompt.
+  noteAfterEmailDone?: string;
 };
 
 type Filter = 'all' | 'due-soon' | 'linked' | 'manual' | 'done';
@@ -106,6 +116,10 @@ export default function TasksTab({
   const [newMins, setNewMins] = useState('15');
   const [newPriority, setNewPriority] = useState<'high' | 'normal'>('normal');
   const linkedDocTasks = useLinkedDocTasks();
+  const acknowledged = useAcknowledgedEmails();
+  const archived = useArchivedEmails();
+  const isEmailOpen = (id: number | undefined) =>
+    id != null && !acknowledged.has(id) && !archived.has(id);
 
   const all: UnifiedTask[] = useMemo(() => {
     const m: UnifiedTask[] = manualTasks.map(t => ({
@@ -119,6 +133,8 @@ export default function TasksTab({
       risk: t.risk,
       linkedEmailId: t.linkedEmailId,
       autoCompleteOnReply: t.autoCompleteOnReply,
+      taskSource: 'manual',
+      noteAfterEmailDone: t.noteAfterEmailDone,
     }));
     const s: UnifiedTask[] = sidebarTasks.map(t => ({
       id: t.id,
@@ -144,6 +160,8 @@ export default function TasksTab({
       risk: t.risk,
       linkedEmailId: t.linkedEmailId,
       autoCompleteOnReply: t.autoCompleteOnReply,
+      taskSource: 'doc',
+      noteAfterEmailDone: t.noteAfterEmailDone,
     }));
     return [...d, ...m, ...s];
   }, [manualTasks, sidebarTasks, linkedDocTasks]);
@@ -176,6 +194,10 @@ export default function TasksTab({
   }, [all]);
 
   const handleToggle = (t: UnifiedTask) => {
+    // Capture pre-toggle state — we only prompt when the task is becoming
+    // done, never when un-ticking it.
+    const wasDone = t.done;
+
     if (t.source === 'manual') {
       // Auto-created document tasks live in their own store and are keyed
       // by linkedEmailId — route the toggle there.
@@ -186,6 +208,22 @@ export default function TasksTab({
       }
     } else {
       onToggleSidebarTask(t.id);
+    }
+
+    // After marking a linked task done, ask whether to also close out the
+    // originating email — but only if the email is still open.
+    if (!wasDone && t.linkedEmailId && isEmailOpen(t.linkedEmailId)) {
+      const linkedEmail = emails.find(e => e.id === t.linkedEmailId);
+      if (linkedEmail && t.taskSource) {
+        requestLinkedTaskPrompt({
+          mode: 'task-done',
+          emailId: t.linkedEmailId,
+          emailSubject: linkedEmail.subject,
+          taskId: t.id,
+          taskTitle: t.title,
+          taskSource: t.taskSource,
+        });
+      }
     }
   };
 
@@ -467,10 +505,16 @@ export default function TasksTab({
                             </button>
                           )}
                         </div>
-                        {t.autoCompleteOnReply && linkedEmail && !t.done && (
+                        {t.noteAfterEmailDone && !t.done && (
+                          <p className="text-[11px] text-amber-800 mt-2 flex items-center gap-1.5 font-semibold bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                            <AlertCircle size={10} />
+                            {t.noteAfterEmailDone}
+                          </p>
+                        )}
+                        {!t.noteAfterEmailDone && t.autoCompleteOnReply && linkedEmail && !t.done && isEmailOpen(t.linkedEmailId) && (
                           <p className="text-[11px] text-purple-700 mt-2 flex items-center gap-1.5 font-medium">
                             <Mail size={10} />
-                            Will auto-complete when you reply to "{linkedEmail.subject.slice(0, 40)}{linkedEmail.subject.length > 40 ? '…' : ''}"
+                            We'll ask if you also completed the document when you mark "{linkedEmail.subject.slice(0, 40)}{linkedEmail.subject.length > 40 ? '…' : ''}" done
                           </p>
                         )}
                       </div>

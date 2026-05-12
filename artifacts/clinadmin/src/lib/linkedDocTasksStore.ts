@@ -18,6 +18,24 @@ export interface LinkedDocTask extends ManualTask {
   createdAt: number;
 }
 
+export function setLinkedDocNote(emailId: number, note: string | null) {
+  const t = load().get(emailId);
+  if (!t) return;
+  mutate((m) => {
+    const next = m.get(emailId);
+    if (next) m.set(emailId, { ...next, noteAfterEmailDone: note ?? undefined });
+  });
+}
+
+export function setLinkedDocDone(emailId: number, done: boolean) {
+  const t = load().get(emailId);
+  if (!t) return;
+  mutate((m) => {
+    const next = m.get(emailId);
+    if (next) m.set(emailId, { ...next, done });
+  });
+}
+
 const KEY = 'clinadmin-linked-doc-tasks-v1';
 const listeners = new Set<() => void>();
 let cache: Map<number, LinkedDocTask> | null = null;
