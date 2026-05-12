@@ -10,11 +10,12 @@ import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
-import { TabType, SidebarTask } from '@/lib/types';
+import { TabType, SidebarTask, GeneratedPlan } from '@/lib/types';
 
 export interface WeekSetup {
   hours: number;
   days: string[];
+  plan?: GeneratedPlan | null;
 }
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
@@ -63,11 +64,22 @@ export default function ClinAdmin() {
     return () => clearTimeout(t);
   }, []);
 
-  const handleWeeklySetupComplete = (hours: number, days: string[]) => {
-    const setup: WeekSetup = { hours, days };
+  const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null) => {
+    const setup: WeekSetup = { hours, days, plan };
     setWeekSetup(setup);
     setShowWeeklySetup(false);
     localStorage.setItem(getWeekKey(), JSON.stringify(setup));
+    // Navigate to Weekly Plan tab to show the generated schedule
+    if (plan) setActiveTab('Weekly Plan');
+  };
+
+  const handlePlanGenerated = (plan: GeneratedPlan) => {
+    setWeekSetup(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, plan };
+      localStorage.setItem(getWeekKey(), JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const handleWeeklySetupDismiss = () => {
@@ -106,7 +118,7 @@ export default function ClinAdmin() {
       case 'Inbox': return <InboxTab />;
       case 'High Risk': return <HighRiskTab />;
       case 'Timeline': return <TimelineTab />;
-      case 'Weekly Plan': return <WeeklyPlanTab />;
+      case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'My Style': return <StyleTab />;
       case 'Catch-up': return <CatchUpTab />;
       default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;

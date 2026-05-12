@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, X, ChevronRight, TrendingUp, Mail, ClipboardList, AlertTriangle, CalendarDays, Check } from 'lucide-react';
+import { Sparkles, X, ChevronRight, TrendingUp, Mail, ClipboardList, AlertTriangle, CalendarDays, Check, Loader2 } from 'lucide-react';
 import { emails, weekHistory, manualTasks } from '@/lib/data';
+import { GeneratedPlan } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  onComplete: (hours: number, days: string[]) => void;
+  onComplete: (hours: number, days: string[], plan: GeneratedPlan | null) => void;
   onDismiss: () => void;
 }
 
@@ -23,20 +24,17 @@ function getWeekLabel() {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// Workload calculations
-const emailMins = emails.reduce((a, e) => a + e.estMin, 0);          // 104 min
-const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);       // 88 min
+const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
+const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);
 const highRiskEmails = emails.filter(e => e.risk === 'high').length;
 const mediumEmails = emails.filter(e => e.risk === 'medium').length;
-const projectedExtra = 45; // buffer for projected incoming
-const totalRecommendedMins = emailMins + taskMins + projectedExtra;   // ~237 min ≈ 3h 57min → round to 4h 30min with safety
+const projectedExtra = 45;
+const totalRecommendedMins = emailMins + taskMins + projectedExtra;
 
-// Historical averages from weekHistory (last 4 weeks)
 const last4 = weekHistory.slice(-4);
 const histAvgMins = Math.round(
   last4.reduce((a, w) => a + w.high + w.medium + w.low + w.admin, 0) / last4.length
 );
-// Recommendation = max of (current workload, historical avg) + 10% buffer
 const recommendedMins = Math.round(Math.max(totalRecommendedMins, histAvgMins) * 1.1 / 10) * 10;
 
 const SCAN_STEPS = [
@@ -48,14 +46,24 @@ const SCAN_STEPS = [
   'Generating recommendation...',
 ];
 
+const BUILD_MESSAGES = [
+  'Prioritising by clinical risk...',
+  'Scheduling high-risk items first...',
+  'Allocating professional emails...',
+  'Fitting tasks across your days...',
+  'Checking 14-day KPI compliance...',
+  'Finalising your schedule...',
+];
+
 export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
-  const [phase, setPhase] = useState<'scan' | 'plan'>('scan');
+  const [phase, setPhase] = useState<'scan' | 'plan' | 'building' | 'error'>('scan');
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStep, setScanStep] = useState(0);
+  const [buildStep, setBuildStep] = useState(0);
   const [hours, setHours] = useState(String(Math.ceil(recommendedMins / 60)));
   const [selectedDays, setSelectedDays] = useState<string[]>(['Tue', 'Wed', 'Thu']);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Scan animation
   useEffect(() => {
     if (phase !== 'scan') return;
     const interval = setInterval(() => {
@@ -74,22 +82,64 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
     return () => clearInterval(interval);
   }, [phase]);
 
+  // Cycle build messages while building
+  useEffect(() => {
+    if (phase !== 'building') return;
+    const interval = setInterval(() => {
+      setBuildStep(prev => (prev + 1) % BUILD_MESSAGES.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [phase]);
+
   const toggleDay = (day: string) => {
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     );
   };
 
-  const handleBuild = () => {
+  const handleBuild = async () => {
     const h = parseFloat(hours) || Math.ceil(recommendedMins / 60);
-    onComplete(h, selectedDays);
+    setPhase('building');
+    setBuildStep(0);
+
+    const emailPayload = emails.map(e => ({
+      id: e.id,
+      from: e.from,
+      subject: e.subject,
+      risk: e.risk,
+      cat: e.cat,
+      deadline: e.deadline,
+      estMin: e.estMin,
+    }));
+
+    const taskPayload = manualTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      estMin: t.estMin,
+      priority: t.risk === 'high' ? 'high' : 'normal',
+    }));
+
+    try {
+      const resp = await fetch('/api/clinadmin/weekly-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: h, days: selectedDays, emails: emailPayload, tasks: taskPayload }),
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json() as { plan: GeneratedPlan };
+      onComplete(h, selectedDays, data.plan);
+    } catch (err) {
+      console.error('Weekly plan error:', err);
+      setErrorMsg('Could not connect to AI. Your schedule has been saved without a generated plan.');
+      onComplete(h, selectedDays, null);
+    }
   };
 
   const prevWeekMins = last4[last4.length - 1]
     ? last4[last4.length - 1].high + last4[last4.length - 1].medium +
       last4[last4.length - 1].low + last4[last4.length - 1].admin
     : histAvgMins;
-
   const diffVsPrev = recommendedMins - prevWeekMins;
 
   return (
@@ -106,17 +156,20 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
               </div>
               <h2 className="text-2xl font-bold">Your Weekly Admin Brief</h2>
               <p className="text-sm opacity-75 mt-1">
-                {phase === 'scan'
-                  ? 'Analysing your current workload and history...'
-                  : "Here's what we found. Set your available time to build your plan."}
+                {phase === 'scan' && 'Analysing your current workload and history...'}
+                {phase === 'plan' && "Here's what we found. Set your available time to build your plan."}
+                {phase === 'building' && 'AI is building your personalised weekly schedule...'}
+                {phase === 'error' && 'Something went wrong.'}
               </p>
             </div>
-            <button
-              onClick={onDismiss}
-              className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-            >
-              <X size={16} />
-            </button>
+            {phase !== 'building' && (
+              <button
+                onClick={onDismiss}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -140,6 +193,23 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
           </div>
         )}
 
+        {/* Building phase */}
+        {phase === 'building' && (
+          <div className="px-8 py-16 flex flex-col items-center">
+            <div className="relative w-20 h-20 mb-8">
+              <div className="absolute inset-0 rounded-full border-4 border-primary/10 border-t-primary animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Sparkles size={24} className="text-primary animate-pulse" />
+              </div>
+            </div>
+            <p className="text-lg font-bold text-foreground mb-2">Building your week...</p>
+            <p className="text-sm text-primary font-medium mb-1 h-5 transition-all">{BUILD_MESSAGES[buildStep]}</p>
+            <p className="text-xs text-muted-foreground text-center max-w-xs mt-3">
+              Cross-referencing {emails.length + manualTasks.length} items with your availability across {selectedDays.join(', ')}.
+            </p>
+          </div>
+        )}
+
         {/* Plan phase */}
         {phase === 'plan' && (
           <div className="px-8 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
@@ -148,7 +218,6 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">What we found</p>
               <div className="grid grid-cols-2 gap-3">
-                {/* Inbox */}
                 <div className="bg-slate-50 border border-border rounded-2xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -170,7 +239,6 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                   </p>
                 </div>
 
-                {/* Manual tasks */}
                 <div className="bg-slate-50 border border-border rounded-2xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
@@ -211,10 +279,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                     <div key={w.week} className="flex-1 flex flex-col items-center gap-1">
                       <div className="w-full flex flex-col justify-end h-10">
                         <div
-                          className={cn(
-                            "w-full rounded-t-sm transition-all",
-                            i === last4.length - 1 ? "bg-primary" : "bg-primary/30"
-                          )}
+                          className={cn("w-full rounded-t-sm", i === last4.length - 1 ? "bg-primary" : "bg-primary/30")}
                           style={{ height: `${pct}%` }}
                         />
                       </div>
@@ -262,7 +327,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Based on <strong>{emails.length} current emails</strong> (~{fmtMins(emailMins)}),{' '}
                     <strong>{manualTasks.length} pending tasks</strong> (~{fmtMins(taskMins)}), plus
-                    a ~{fmtMins(projectedExtra)} buffer for projected incoming items based on your recent history.
+                    a ~{fmtMins(projectedExtra)} buffer for incoming items.
                   </p>
                 </div>
               </div>
@@ -289,12 +354,11 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                       />
                     </div>
                     <span className="text-sm text-muted-foreground font-medium">hours / week</span>
-                    {parseFloat(hours) < recommendedMins / 60 && (
+                    {parseFloat(hours) < recommendedMins / 60 ? (
                       <span className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
                         <AlertTriangle size={11} /> Below recommended
                       </span>
-                    )}
-                    {parseFloat(hours) >= recommendedMins / 60 && (
+                    ) : (
                       <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
                         <Check size={11} /> Covers workload
                       </span>
@@ -330,6 +394,12 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                 </div>
               </div>
             </div>
+
+            {errorMsg && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium rounded-xl px-4 py-3">
+                {errorMsg}
+              </div>
+            )}
           </div>
         )}
 

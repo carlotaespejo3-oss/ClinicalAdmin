@@ -69,6 +69,27 @@ export interface WeekHistoryItem {
 
 export type TabType = 'Home' | 'Today' | 'Inbox' | 'High Risk' | 'Timeline' | 'Weekly Plan' | 'My Style' | 'Catch-up';
 
+export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';
+
+export interface PlanBlock {
+  task: string;
+  min: number;
+  category: PlanBlockCategory;
+  reason: string;
+}
+
+export interface PlanDay {
+  day: string;
+  totalMin: number;
+  blocks: PlanBlock[];
+}
+
+export interface GeneratedPlan {
+  days: PlanDay[];
+  deferredItems: string[];
+  safetyNote: string;
+}
+
 export interface StyleProfile {
   overall: string;
   sections: {
