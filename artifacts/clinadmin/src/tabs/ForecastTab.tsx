@@ -5,6 +5,7 @@ import { emails, CAT } from '@/lib/data';
 import { cn, getEmailPriority } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
+import { useAiClassifications } from '@/lib/aiClassifyStore';
 import type { WeekSetup } from '../pages/ClinAdmin';
 
 interface Props {
@@ -26,6 +27,9 @@ const fmtH = (mins: number) => {
 export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   const aiComplete = useAiComplete();
   const acknowledged = useAcknowledgedEmails();
+  // Subscribe so memos below recompute when classifications stream in
+  // and mutate emails[].estMin via the rules-based estimator.
+  const classifications = useAiClassifications();
   const [aiNote, setAiNote] = useState<string>('');
   const [aiError, setAiError] = useState<string>('');
 
@@ -57,7 +61,7 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
       LowDueSoon: { count: groups.LowDueSoon.length, mins: sumMin(groups.LowDueSoon) },
       LowDeferrable: { count: groups.LowDeferrable.length, mins: sumMin(groups.LowDeferrable) },
     };
-  }, [acknowledged]);
+  }, [acknowledged, classifications]);
 
   const lowTotal = { count: backlog.LowDueSoon.count + backlog.LowDeferrable.count, mins: backlog.LowDueSoon.mins + backlog.LowDeferrable.mins };
   const totalBacklogMin = backlog.High.mins + backlog.Medium.mins + lowTotal.mins;
