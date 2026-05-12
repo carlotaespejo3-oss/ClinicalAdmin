@@ -9,6 +9,7 @@ import TimelineTab from '../tabs/TimelineTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
+import DraftsTab from '../tabs/DraftsTab';
 import TasksTab from '../tabs/TasksTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
 import { TabType, SidebarTask, ManualTask, GeneratedPlan } from '@/lib/types';
@@ -154,7 +155,7 @@ export default function ClinAdmin() {
           onOpenEmail={(id) => setOpenEmailId(id)}
         />
       );
-      case 'Drafts':
+      case 'Drafts': return <DraftsTab />;
       case 'Settings':
         return (
           <div className="flex items-center justify-center h-64 text-muted-foreground">
