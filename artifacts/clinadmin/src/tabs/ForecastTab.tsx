@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Clock, TrendingUp, CheckCircle2, Sparkles, Loader2, CalendarDays, Mail } from 'lucide-react';
+import { AlertTriangle, TrendingUp, CheckCircle2, Sparkles, Loader2, Mail } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { emails } from '@/lib/data';
 import { cn, getEmailPriority } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
+import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import type { WeekSetup } from '../pages/ClinAdmin';
 
 interface Props {
@@ -24,6 +25,7 @@ const fmtH = (mins: number) => {
 
 export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   const aiComplete = useAiComplete();
+  const acknowledged = useAcknowledgedEmails();
   const [aiNote, setAiNote] = useState<string>('');
   const [aiError, setAiError] = useState<string>('');
 
@@ -32,9 +34,11 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   const weeklyCapacityMin = weeklyCapacityH * 60;
 
   // ---- Backlog by priority (using each email's actual estMin) ----
+  // Acknowledged emails are excluded — they don't need clinician time.
   const backlog = useMemo(() => {
+    const active = emails.filter(e => !acknowledged.has(e.id));
     const groups = { High: [] as typeof emails, Medium: [] as typeof emails, Low: [] as typeof emails };
-    for (const e of emails) {
+    for (const e of active) {
       groups[getEmailPriority(e)].push(e);
     }
     const sumMin = (arr: typeof emails) => arr.reduce((a, e) => a + e.estMin, 0);
@@ -43,7 +47,7 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
       Medium: { count: groups.Medium.length, mins: sumMin(groups.Medium) },
       Low: { count: groups.Low.length, mins: sumMin(groups.Low) },
     };
-  }, []);
+  }, [acknowledged]);
 
   const totalBacklogMin = backlog.High.mins + backlog.Medium.mins + backlog.Low.mins;
   const totalBacklogCount = backlog.High.count + backlog.Medium.count + backlog.Low.count;
@@ -79,14 +83,16 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
     };
   }, [mix, avgMin]);
 
-  // ---- Realistic ask: this week MUST clear all High (5-day SLA) + ideally Medium + a chunk of Low ----
-  // To stay inside 14-day SLA for current Low backlog, those Low items must clear within 2 weeks.
-  const requiredThisWeekMin = backlog.High.mins + backlog.Medium.mins + Math.min(backlog.Low.mins, weeklyCapacityMin); // try to do as much Low as fits
+  // ---- Realistic ask for THIS week ----
+  // High (5-day clinical SLA) MUST clear this week.
+  // Medium SHOULD clear this week (7-day SLA, but better not to let it slip).
+  // Low (14-day SLA) is safe to defer to next week — only do as much as fits after High+Medium.
+  // The headline number is High + Medium ONLY. Low is shown separately as "and there's X of low-priority work that can wait until next week."
+  const requiredThisWeekMin = backlog.High.mins + backlog.Medium.mins;
   const minimumSafeThisWeekMin = backlog.High.mins; // bare minimum to avoid clinical SLA breach
-  const idealTwoWeekMin = totalBacklogMin + incomingPerWeek.totalMin; // current backlog + 1 week of new mail
-
   const gapThisWeekMin = Math.max(0, requiredThisWeekMin - weeklyCapacityMin);
-  const gapTwoWeekMin = Math.max(0, idealTwoWeekMin - weeklyCapacityMin * 2);
+  // Spillover Low after this week's capacity is used on High+Medium first
+  const lowDeferrableMin = backlog.Low.mins;
 
   // ---- Will any Low priority breach 14 days? ----
   // After 2 weeks of capacity at weeklyCapacityMin, can we clear (current Low + 2 weeks of incoming Low + High + Medium)?
@@ -161,8 +167,9 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
 - Weekly admin capacity: ${weeklyCapacityH}h
 - Expected new emails per week: ${NEW_PER_WEEK}
 - SLA: high-risk clinical replies within 5 days, low priority within 14 days
-- Required this week to clear High + Medium + as much Low as fits: ${fmtH(requiredThisWeekMin)}
+- Required this week to clear High + Medium ONLY (Low can defer to next week, still inside 14-day SLA): ${fmtH(requiredThisWeekMin)}
 - Capacity gap this week: ${gapThisWeekMin > 0 ? fmtH(gapThisWeekMin) + ' short' : 'none'}
+- Low priority that can safely wait until next week: ${fmtH(lowDeferrableMin)} (${backlog.Low.count} emails)
 - Two-week SLA breach risk for Low priority: ${willBreachLowSla ? `Yes — about ${fmtH(lowBreachMin)} of work will spill past 14 days` : 'No'}
 - High-risk SLA risk this week: ${highSlaAtRisk ? 'Yes' : 'No'}
 `;
@@ -203,15 +210,19 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Workload forecast</p>
               <h2 className="text-xl font-bold mb-2">
-                You realistically need <span className="text-primary">{headlineNeedH.toFixed(1)} hours</span> this week to stay on top of {totalBacklogCount} emails.
+                You realistically need <span className="text-primary">{headlineNeedH.toFixed(1)} hours</span> this week to clear High and Medium priority emails.
               </h2>
               <p className="text-sm text-muted-foreground">
                 You have <strong className="text-foreground">{weeklyCapacityH} hours</strong> scheduled
                 {weekSetup?.days?.length ? <> across {weekSetup.days.join(', ')}</> : ''}.
                 {' '}
-                {status === 'ok' && <span className="text-green-700 font-semibold">That's enough — you're inside both the 5-day and 14-day windows.</span>}
-                {status === 'tight' && <span className="text-amber-700 font-semibold">That covers the urgent clinical work but Low-priority items will spill into next week.</span>}
+                {status === 'ok' && <span className="text-green-700 font-semibold">That's enough for everything urgent this week.</span>}
+                {status === 'tight' && <span className="text-amber-700 font-semibold">That covers the high-risk clinical work; some medium-priority items will slip into next week.</span>}
                 {status === 'short' && <span className="text-red-700 font-semibold">Even the urgent clinical replies won't all fit — see suggestions below.</span>}
+                {' '}
+                {backlog.Low.count > 0 && (
+                  <span>The <strong className="text-foreground">{fmtH(lowDeferrableMin)}</strong> of low-priority work ({backlog.Low.count} emails) is safe to defer to next week — still inside the 14-day window.</span>
+                )}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -344,7 +355,8 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
           <p>· Each email's time estimate is based on its category and complexity (current average: <strong>{avgMin.High.toFixed(0)}min</strong> high, <strong>{avgMin.Medium.toFixed(0)}min</strong> medium, <strong>{avgMin.Low.toFixed(0)}min</strong> low).</p>
           <p>· Forecast assumes ~{NEW_PER_WEEK} new emails arrive each week in the same priority mix as your current backlog.</p>
           <p>· SLA targets: high-risk clinical {HIGH_SLA_DAYS} days, low priority {LOW_SLA_DAYS} days.</p>
-          <p>· "Required this week" = all High + all Medium + as much Low as fits in your scheduled hours.</p>
+          <p>· "Required this week" = all High + all Medium. Low priority is safe to defer to next week (still inside the 14-day SLA).</p>
+          <p>· Acknowledged emails (the "no action" button in the inbox) are excluded from these numbers.</p>
         </CardContent>
       </Card>
     </div>

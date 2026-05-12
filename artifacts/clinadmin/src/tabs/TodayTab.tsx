@@ -3,13 +3,16 @@ import { AlertTriangle, Clock, Inbox, FileText, BarChart3, TrendingDown, CheckCi
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { weekHistory, emails, CAT } from '@/lib/data';
 import { fmtTime } from '@/lib/utils';
+import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 export default function TodayTab() {
-  const inboxCount = emails.length;
-  const highRiskCount = emails.filter(e => e.risk === 'high').length;
-  const pendingDraftCount = emails.filter(e => e.cat === CAT.UNSAFE || e.cat === CAT.REVIEW).length;
-  const clearMinutes = emails.reduce((a, e) => a + e.estMin, 0);
+  const acknowledged = useAcknowledgedEmails();
+  const activeEmails = emails.filter(e => !acknowledged.has(e.id));
+  const inboxCount = activeEmails.length;
+  const highRiskCount = activeEmails.filter(e => e.risk === 'high').length;
+  const pendingDraftCount = activeEmails.filter(e => e.cat === CAT.UNSAFE || e.cat === CAT.REVIEW).length;
+  const clearMinutes = activeEmails.reduce((a, e) => a + e.estMin, 0);
   const clearLabel = clearMinutes >= 60
     ? `${Math.floor(clearMinutes / 60)}h ${clearMinutes % 60}m`
     : `${clearMinutes}m`;

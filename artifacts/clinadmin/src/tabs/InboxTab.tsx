@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Reply, Undo2 } from 'lucide-react';
 import { emails, manualTasks, CAT } from '@/lib/data';
 import type { Email } from '@/lib/data';
 import { cn, initials, avatarColor, getEmailPriority, getEmailWhy, PRIORITY_PILL } from '@/lib/utils';
@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { detectRecipientType, getSignatureForRecipient } from '@/lib/signatures';
 import { getStyleGuidanceForRecipient } from '@/lib/styleProfile';
+import { useAcknowledgedEmails, acknowledgeEmail, unacknowledgeEmail } from '@/lib/acknowledgedStore';
 
 type DraftSlot = 'single' | 'family' | 'admin';
 type DraftState = { single?: string; family?: string; admin?: string };
@@ -49,6 +50,40 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   const selectedEmail = emails.find(e => e.id === selectedId);
   const aiComplete = useAiComplete();
+  const acknowledged = useAcknowledgedEmails();
+  const [replyOpenFor, setReplyOpenFor] = useState<Set<number>>(new Set());
+
+  // Sort: unacknowledged first (in original order), then acknowledged at the bottom (greyed).
+  const orderedEmails = useMemo(() => {
+    const active = emails.filter(e => !acknowledged.has(e.id));
+    const done = emails.filter(e => acknowledged.has(e.id));
+    return [...active, ...done];
+  }, [acknowledged]);
+
+  const isReplyOpen = selectedEmail ? replyOpenFor.has(selectedEmail.id) : false;
+  const isAcknowledged = selectedEmail ? acknowledged.has(selectedEmail.id) : false;
+
+  const openReply = (id: number) => {
+    setReplyOpenFor(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const handleAcknowledge = () => {
+    if (!selectedEmail) return;
+    acknowledgeEmail(selectedEmail.id);
+    // Auto-advance to the next unacknowledged email so the inbox flows.
+    const remaining = emails.filter(e => e.id !== selectedEmail.id && !acknowledged.has(e.id));
+    if (remaining.length > 0) {
+      setSelectedId(remaining[0].id);
+    }
+  };
+
+  const handleUnacknowledge = (id: number) => {
+    unacknowledgeEmail(id);
+  };
 
   const setSlotLoading = (id: number, slot: DraftSlot, value: boolean) => {
     setDraftLoading(prev => ({ ...prev, [id]: { ...prev[id], [slot]: value } }));
@@ -122,9 +157,10 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // so re-renders don't refire requests. Regenerate bypasses this ref entirely.
   const autoDraftedRef = useRef<Set<string>>(new Set());
 
-  // Auto-draft as soon as an email is selected — no more "Draft reply" click.
-  // The clinician can edit the draft, regenerate, or write something completely
-  // new. Drafts persist per email so re-opening doesn't refire the AI.
+  // Auto-draft only for clinical-safety cases (UNSAFE) — for everything else the
+  // clinician decides whether the email needs a reply at all by clicking
+  // "Reply" or "Acknowledge — no action". This avoids spending AI budget and
+  // clinician attention on emails that don't actually need a written response.
   useEffect(() => {
     if (!selectedEmail) return;
     const fire = (slot: DraftSlot, prompt: string) => {
@@ -136,11 +172,21 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     if (selectedEmail.cat === CAT.UNSAFE) {
       fire('family', buildUnsafeFamilyPrompt(selectedEmail));
       fire('admin', buildUnsafeAdminPrompt(selectedEmail));
-    } else if (selectedEmail.cat !== CAT.NONE) {
-      fire('single', buildSinglePrompt(selectedEmail));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmail?.id]);
+
+  // When the user clicks Reply on a non-UNSAFE email, fire the single draft once.
+  useEffect(() => {
+    if (!selectedEmail) return;
+    if (!isReplyOpen) return;
+    if (selectedEmail.cat === CAT.UNSAFE || selectedEmail.cat === CAT.NONE) return;
+    const key = `${selectedEmail.id}:single`;
+    if (autoDraftedRef.current.has(key)) return;
+    autoDraftedRef.current.add(key);
+    void runDraft(selectedEmail, 'single', buildSinglePrompt(selectedEmail));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmail?.id, isReplyOpen]);
 
   const handleRegenerate = (slot: DraftSlot) => {
     if (!selectedEmail) return;
@@ -182,39 +228,51 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         </div>
         <ScrollArea className="flex-1">
           <div className="divide-y divide-border">
-            {emails.map((e) => (
-              <div 
-                key={e.id}
-                onClick={() => setSelectedId(e.id)}
-                className={cn(
-                  "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
-                  selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
-                )}
-                data-testid={`email-row-${e.id}`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
-                    {initials(e.from)}
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <div className="flex justify-between items-start mb-1">
-                      <p className="text-sm font-bold truncate">{e.from}</p>
-                      <span className="text-[10px] text-muted-foreground font-medium uppercase">{e.date}</span>
+            {orderedEmails.map((e) => {
+              const isAck = acknowledged.has(e.id);
+              return (
+                <div
+                  key={e.id}
+                  onClick={() => setSelectedId(e.id)}
+                  className={cn(
+                    "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
+                    selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent",
+                    isAck && "opacity-50"
+                  )}
+                  data-testid={`email-row-${e.id}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
+                      {initials(e.from)}
                     </div>
-                    <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
-                    <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className={cn("inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full", PRIORITY_PILL[getEmailPriority(e)])}>
-                        {getEmailPriority(e)}
-                      </span>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        <span className="font-medium">Why:</span> {getEmailWhy(e)}
-                      </p>
+                    <div className="flex-1 overflow-hidden">
+                      <div className="flex justify-between items-start mb-1">
+                        <p className={cn("text-sm font-bold truncate", isAck && "line-through text-muted-foreground")}>{e.from}</p>
+                        <span className="text-[10px] text-muted-foreground font-medium uppercase">{e.date}</span>
+                      </div>
+                      <p className={cn("text-xs font-semibold mb-1 truncate", isAck && "line-through")}>{e.subject}</p>
+                      <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        {isAck ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold border border-green-200 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 size={10} /> Acknowledged
+                          </span>
+                        ) : (
+                          <>
+                            <span className={cn("inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full", PRIORITY_PILL[getEmailPriority(e)])}>
+                              {getEmailPriority(e)}
+                            </span>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              <span className="font-medium">Why:</span> {getEmailWhy(e)}
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </ScrollArea>
       </div>
@@ -310,20 +368,48 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                 {selectedEmail.body.split('\n').map((line, i) => <p key={i}>{line}</p>)}
               </div>
 
-              <div className="flex gap-4 mb-8">
-                <button 
-                  onClick={handleClassify}
-                  disabled={aiComplete.isPending}
-                  className="flex items-center gap-2 bg-blue-50 text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors disabled:opacity-50"
-                  data-testid="button-classify-ai"
-                >
-                  {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  Classify with AI
-                </button>
-                <button className="flex items-center gap-2 text-muted-foreground font-bold text-xs px-4 py-2.5 rounded-lg border border-border hover:bg-muted transition-colors">
-                  <CheckCircle2 size={14} />
-                  Mark as done
-                </button>
+              <div className="flex flex-wrap gap-3 mb-8">
+                {isAcknowledged ? (
+                  <button
+                    onClick={() => handleUnacknowledge(selectedEmail.id)}
+                    className="flex items-center gap-2 bg-green-50 text-green-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-green-200 hover:bg-green-100 transition-colors"
+                    data-testid="button-unacknowledge"
+                  >
+                    <Undo2 size={14} />
+                    Undo acknowledge
+                  </button>
+                ) : (
+                  <>
+                    {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && !isReplyOpen && (
+                      <button
+                        onClick={() => openReply(selectedEmail.id)}
+                        className="flex items-center gap-2 bg-primary text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-sm hover:bg-primary/90 transition-colors"
+                        data-testid="button-reply"
+                      >
+                        <Reply size={14} />
+                        Reply
+                      </button>
+                    )}
+                    <button
+                      onClick={handleAcknowledge}
+                      className="flex items-center gap-2 bg-emerald-50 text-emerald-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                      data-testid="button-acknowledge"
+                      title="Mark as read — no reply needed"
+                    >
+                      <CheckCircle2 size={14} />
+                      Acknowledge — no action
+                    </button>
+                    <button
+                      onClick={handleClassify}
+                      disabled={aiComplete.isPending}
+                      className="flex items-center gap-2 bg-blue-50 text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors disabled:opacity-50 ml-auto"
+                      data-testid="button-classify-ai"
+                    >
+                      {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      Classify with AI
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* AI Panels */}
@@ -430,7 +516,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   );
                 })()}
 
-                {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && (() => {
+                {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && isReplyOpen && (() => {
                   const text = aiDrafts[selectedEmail.id]?.single;
                   const isLoading = draftLoading[selectedEmail.id]?.single;
                   const isError = draftError[selectedEmail.id]?.single;
