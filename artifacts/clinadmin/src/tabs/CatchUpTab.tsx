@@ -39,7 +39,7 @@ function fmtMins(min: number) {
 
 const CAT_ICON: Record<string, any> = {
   'Urgent clinical': AlertTriangle,
-  'Unsafe to answer by email': Phone,
+  'Requires clinical assessment': Phone,
   'Professional — high priority': Users,
   'Needs clinician review': FileText,
   'Meeting / event deadline': CalendarClock,

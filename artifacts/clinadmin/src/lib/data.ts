@@ -4,7 +4,7 @@ export type { Email, SentEmail, ManualTask, HomePlanItem, WeekDataItem, WeekHist
 
 export const CAT = {
   URGENT: 'Urgent clinical',
-  UNSAFE: 'Unsafe to answer by email',
+  UNSAFE: 'Requires clinical assessment',
   PROF: 'Professional — high priority',
   REVIEW: 'Needs clinician review',
   MEETING: 'Meeting / event deadline',
