@@ -151,6 +151,14 @@ export interface GeneratedPlan {
   days: PlanDay[];
   deferredItems: string[];
   safetyNote: string;
+  // Documents / forms to write across the week. Surfaced as a separate
+  // summary line in the Weekly Plan UI: "Includes X documents or forms
+  // to complete — estimated X minutes additional".
+  docSummary?: { count: number; mins: number };
+  // Total minutes reserved across the week as a buffer for unexpected
+  // urgent emails. The packer fills each day to 80% of its capacity and
+  // leaves the remaining 20% as buffer.
+  bufferMin?: number;
 }
 
 export interface StyleProfile {

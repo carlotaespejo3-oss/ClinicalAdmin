@@ -1,0 +1,96 @@
+Add prescription and medication script requests to the task detection system. This is a specific and common email type that needs its own handling.
+
+PRESCRIPTION AND SCRIPT REQUESTS
+Detect when an email is requesting a prescription or script. Indicators include:
+
+"Running low on" or "run out of" followed by a medication name
+"Early script" or "early prescription"
+"Repeat prescription"
+"Can we have a script"
+"Could you send a prescription"
+"We need more medication"
+"Lost prescription" or "misplaced script"
+"Going away" or "travelling" combined with a medication mention — this always means an early script is needed
+"Holiday" or "trip" combined with a medication mention
+
+
+WHAT TO DO
+When a prescription request is detected:
+1. Classify as CLINICAL, default priority MEDIUM
+2. Scan for a deadline
+Look for:
+
+A specific day mentioned: "Friday", "Thursday", "by the weekend"
+A travel date: "we leave on", "going away on", "flying on"
+A date: "by the 15th", "before the 20th"
+
+If a deadline is found within 7 days — escalate to URGENT automatically.
+If a deadline is found within 3 days — escalate to URGENT and add a red banner:
+"⚡ Time sensitive — this family needs a script before [day detected]. Today is [today's date]."
+3. Extract medication details from the email
+Look for:
+
+Medication name (e.g. Ritalin, Aripiprazole, Melatonin, Concerta)
+Dose if mentioned (e.g. 54mg, 10mg)
+Quantity if mentioned (e.g. one month supply, 30 tablets)
+Patient name if mentioned
+
+4. Auto-generate a draft reply
+Warm and practical. Confirm the script is being arranged and give an expected timeframe. Example:
+"Dear [Name], thank you for letting us know. I will arrange an early script for [medication and dose] for James. You should receive this by [day before their deadline]. Please contact us if you have not received it by then."
+5. Show the task prompt
+💡 Prescription task detected
+
+James needs an early Ritalin 54mg script before Friday.
+
+Do you want to add this as a task?
+
+[Yes — add task]   [No — not needed]
+6. When clinician clicks Yes — pre-fill the task as follows:
+Task title:    Write early script — Ritalin 54mg — James
+Type:          Prescription
+Priority:      URGENT (deadline within 3 days)
+Due:           Thursday (one day before their Friday deadline)
+Patient:       James
+Linked email:  [this email]
+Est. time:     5 minutes
+Notes:         Family going away Friday. Early script for
+               one month supply of Ritalin 54mg requested.
+Due date should always be set to one day BEFORE the family's deadline — not the day itself. This gives a safety buffer.
+
+CONTROLLED DRUG FLAG
+Ritalin, Concerta, and other stimulant medications are controlled drugs. If the medication detected is a controlled drug, add a small flag to the task and the email:
+"⚠️ Controlled drug — check prescribing rules and patient record before issuing"
+Common controlled drugs to flag: Ritalin, Concerta, methylphenidate, dexamphetamine, Vyvanse, lisdexamfetamine, Strattera (note: Strattera is not controlled but flag anyway as it is a stimulant-adjacent ADHD medication)
+Do not block the task or the draft — just flag it as a reminder.
+
+PRESCRIPTION TASK TIME ESTIMATES
+Update the task time estimates table to include:
+Task typeDefault estimateRepeat prescription (standard)3 minutesEarly prescription (standard medication)5 minutesEarly prescription (controlled drug)8 minutesLost prescription reissue5 minutes
+Controlled drug scripts take longer because the clinician needs to check the patient record, verify the last script date, and confirm it is appropriate to issue early.
+
+TRAVEL AND HOLIDAY SCRIPTS — SPECIAL CASE
+When the email mentions going away, travelling, or a holiday alongside a medication request:
+
+Always treat as an early script request even if the word "script" or "prescription" is not used
+Always check for a travel date and use it as the deadline
+Add a note to the draft reply: "If you are travelling internationally, please let us know as some medications have additional requirements for travel"
+Add a note to the task: "Family travelling — confirm whether travel letter or additional documentation is needed"
+
+
+TEST CASE
+Test against this exact email and confirm the output matches what is described above:
+"James is running low on his Ritalin 54mg and we are going away on Friday. Could we please have an early script for his next month's supply?"
+Expected output:
+
+Category: CLINICAL
+Priority: URGENT (deadline within 3 days)
+Red time-sensitive banner shown
+Draft reply generated automatically
+Task prompt shown: "James needs an early Ritalin 54mg script before Friday"
+If Yes clicked: task pre-filled with title, due date of Thursday, controlled drug flag, 8 minute estimate
+Controlled drug warning shown on both email and task
+
+
+
+The due date being set to Thursday not Friday is a small detail that matters a lot in practice. If the task is due Friday and the clinician gets to it Friday afternoon, the family has already left. One day of buffer is the difference between the system being useful and the system failing at the exact moment it matters.
