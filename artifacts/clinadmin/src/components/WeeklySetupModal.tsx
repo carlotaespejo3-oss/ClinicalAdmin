@@ -5,11 +5,44 @@ import { GeneratedPlan } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  onComplete: (hours: number, days: string[], plan: GeneratedPlan | null) => void;
+  onComplete: (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => void;
   onDismiss: () => void;
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+const SETTINGS_STORAGE_KEY = 'clinadmin-settings';
+
+interface SavedWeeklyDefaults {
+  hoursPerWeek?: number;
+  days?: string[];
+  sessionLengthMin?: number;
+}
+
+function loadWeeklyDefaults(): SavedWeeklyDefaults | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const wd = parsed?.weeklyDefaults;
+    if (!wd || typeof wd !== 'object') return null;
+    const result: SavedWeeklyDefaults = {};
+    if (typeof wd.hoursPerWeek === 'number' && wd.hoursPerWeek > 0) {
+      result.hoursPerWeek = wd.hoursPerWeek;
+    }
+    if (Array.isArray(wd.days)) {
+      const validDays = wd.days.filter((d: unknown): d is string => typeof d === 'string' && DAYS.includes(d));
+      if (validDays.length > 0) result.days = validDays;
+    }
+    if (typeof wd.sessionLengthMin === 'number' && wd.sessionLengthMin > 0) {
+      result.sessionLengthMin = wd.sessionLengthMin;
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
@@ -65,8 +98,19 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStep, setScanStep] = useState(0);
   const [buildStep, setBuildStep] = useState(0);
-  const [hours, setHours] = useState(String(Math.ceil(recommendedMins / 60)));
-  const [selectedDays, setSelectedDays] = useState<string[]>(['Tue', 'Wed', 'Thu']);
+  const [{ initialHours, initialDays, initialSessionLength }] = useState(() => {
+    const saved = loadWeeklyDefaults();
+    return {
+      initialHours: saved?.hoursPerWeek != null
+        ? String(saved.hoursPerWeek)
+        : String(Math.ceil(recommendedMins / 60)),
+      initialDays: saved?.days && saved.days.length > 0 ? saved.days : ['Tue', 'Wed', 'Thu'],
+      initialSessionLength: saved?.sessionLengthMin ?? 90,
+    };
+  });
+  const [hours, setHours] = useState(initialHours);
+  const [selectedDays, setSelectedDays] = useState<string[]>(initialDays);
+  const [sessionLengthMin, setSessionLengthMin] = useState<number>(initialSessionLength);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -123,10 +167,10 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json() as { plan: GeneratedPlan };
-      onComplete(h, selectedDays, data.plan);
+      onComplete(h, selectedDays, data.plan, sessionLengthMin);
     } catch (err) {
       setErrorMsg('Could not connect to AI. Your schedule has been saved without a generated plan.');
-      onComplete(h, selectedDays, null);
+      onComplete(h, selectedDays, null, sessionLengthMin);
     }
   };
 
@@ -402,6 +446,29 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                       {fmtMins(Math.round((parseFloat(hours) * 60) / selectedDays.length))} per day across {selectedDays.length} day{selectedDays.length !== 1 ? 's' : ''}
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-foreground block mb-2">
+                    Typical session length
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={sessionLengthMin}
+                      onChange={e => setSessionLengthMin(parseInt(e.target.value))}
+                      className="text-sm bg-white border border-border rounded-xl px-3 py-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      data-testid="select-modal-session-length"
+                    >
+                      {[30, 45, 60, 90, 120].map(m => (
+                        <option key={m} value={m}>{m} minutes</option>
+                      ))}
+                    </select>
+                    {selectedDays.length > 0 && parseFloat(hours) > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        ≈ {Math.max(1, Math.floor(((parseFloat(hours) * 60) / selectedDays.length) / sessionLengthMin))} session{Math.floor(((parseFloat(hours) * 60) / selectedDays.length) / sessionLengthMin) !== 1 ? 's' : ''} per day
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

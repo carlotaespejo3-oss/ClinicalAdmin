@@ -19,6 +19,7 @@ export interface WeekSetup {
   hours: number;
   days: string[];
   plan?: GeneratedPlan | null;
+  sessionLengthMin?: number;
 }
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
@@ -69,8 +70,8 @@ export default function ClinAdmin() {
     return () => clearTimeout(t);
   }, []);
 
-  const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null) => {
-    const setup: WeekSetup = { hours, days, plan };
+  const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => {
+    const setup: WeekSetup = { hours, days, plan, sessionLengthMin };
     setWeekSetup(setup);
     setShowWeeklySetup(false);
     localStorage.setItem(getWeekKey(), JSON.stringify(setup));
@@ -88,7 +89,12 @@ export default function ClinAdmin() {
 
   const handleUpdateAvailability = (hours: number, days: string[]) => {
     setWeekSetup(prev => {
-      const updated: WeekSetup = { hours, days, plan: prev?.plan ?? null };
+      const updated: WeekSetup = {
+        hours,
+        days,
+        plan: prev?.plan ?? null,
+        sessionLengthMin: prev?.sessionLengthMin,
+      };
       localStorage.setItem(getWeekKey(), JSON.stringify(updated));
       return updated;
     });
