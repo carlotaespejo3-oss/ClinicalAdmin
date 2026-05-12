@@ -22,6 +22,10 @@ export interface WeekSetup {
   days: string[];
   plan?: GeneratedPlan | null;
   sessionLengthMin?: number;
+  /** Optional per-day minute allocations. When present, takes precedence
+   * over the even-split derived from `hours / days.length` for any day
+   * listed here. Days not present fall back to the even split. */
+  minutesByDay?: Record<string, number>;
 }
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
@@ -90,13 +94,14 @@ export default function ClinAdmin() {
     });
   };
 
-  const handleUpdateAvailability = (hours: number, days: string[]) => {
+  const handleUpdateAvailability = (hours: number, days: string[], minutesByDay?: Record<string, number>) => {
     setWeekSetup(prev => {
       const updated: WeekSetup = {
         hours,
         days,
         plan: prev?.plan ?? null,
         sessionLengthMin: prev?.sessionLengthMin,
+        minutesByDay,
       };
       localStorage.setItem(getWeekKey(), JSON.stringify(updated));
       return updated;

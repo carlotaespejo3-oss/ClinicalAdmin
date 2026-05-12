@@ -11,7 +11,7 @@ interface Props {
   manualTasks: ManualTask[];
   weekSetup: WeekSetup | null;
   onOpenWeeklySetup: () => void;
-  onUpdateAvailability: (hours: number, days: string[]) => void;
+  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>) => void;
   onNavigate: (tab: TabType) => void;
   onOpenEmail: (emailId: number) => void;
 }
@@ -43,6 +43,12 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   const [draftHours, setDraftHours] = useState<number>(weekSetup?.hours ?? 4);
   const [draftDays, setDraftDays] = useState<string[]>(weekSetup?.days ?? ['Tue', 'Wed', 'Thu']);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [recToast, setRecToast] = useState<string | null>(null);
+
+  const showRecToast = (msg: string) => {
+    setRecToast(msg);
+    window.setTimeout(() => setRecToast(prev => (prev === msg ? null : prev)), 2800);
+  };
 
   useEffect(() => {
     if (weekSetup) {
@@ -116,12 +122,78 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     todayTasks.filter(t => handledTaskIds.has(t.id)).length +
     sidebarTasks.filter(t => t.done).length;
 
-  const allocatedMins = weekSetup ? Math.round(weekSetup.hours * 60) : weekData.reduce((a, d) => a + d.planned, 0);
   const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
-  const perDayMins = activeDays.length > 0 ? Math.round(allocatedMins / activeDays.length) : 0;
+
+  // Build the per-day minute breakdown. If the user has explicit overrides
+  // (set via the AI recommendation buttons), use them; otherwise fall back
+  // to an even split of total weekly hours across active days.
+  const minutesPerDay = useMemo<Record<string, number>>(() => {
+    if (!weekSetup) {
+      return Object.fromEntries(weekData.map(d => [d.day, d.planned]));
+    }
+    const totalMins = Math.round(weekSetup.hours * 60);
+    const overrides = weekSetup.minutesByDay ?? {};
+    const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+    const result: Record<string, number> = {};
+    for (const d of weekSetup.days) {
+      result[d] = overrides[d] != null ? overrides[d] : evenSplit;
+    }
+    return result;
+  }, [weekSetup]);
+
+  const allocatedMins = weekSetup
+    ? activeDays.reduce((sum, d) => sum + (minutesPerDay[d] ?? 0), 0)
+    : weekData.reduce((a, d) => a + d.planned, 0);
   const perDayRecommended = activeDays.length > 0 ? Math.round(recommendedMins / activeDays.length) : 0;
   const isAtRisk = allocatedMins < recommendedMins;
   const shortfall = recommendedMins - allocatedMins;
+
+  // Pick which days to suggest topping up. Prefer currently active admin
+  // days with the lowest allocation (so adding 1h moves the needle on a
+  // day the clinician already plans to work). Fall back to any inactive
+  // weekdays only if there are fewer than 2 active days.
+  const recommendedDays = useMemo(() => {
+    const sortedActive = [...activeDays].sort((a, b) => {
+      const ma = minutesPerDay[a] ?? 0;
+      const mb = minutesPerDay[b] ?? 0;
+      if (ma !== mb) return ma - mb;
+      return ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b);
+    });
+    const inactive = ALL_DAYS.filter(d => !activeDays.includes(d));
+    return [...sortedActive, ...inactive].slice(0, 2);
+  }, [activeDays, minutesPerDay]);
+
+  const handleAddHourToDay = (day: string) => {
+    const baseDays = weekSetup?.days ?? draftDays;
+    const newDays = baseDays.includes(day)
+      ? baseDays
+      : [...baseDays, day].sort((a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b));
+
+    // Start from the current visible per-day breakdown so existing
+    // allocations are preserved, then add 60 to the target day.
+    const nextMinutes: Record<string, number> = {};
+    for (const d of newDays) {
+      const current = minutesPerDay[d] ?? 0;
+      nextMinutes[d] = d === day ? current + 60 : current;
+    }
+    const newTotalMins = Object.values(nextMinutes).reduce((a, b) => a + b, 0);
+    const newHours = +(newTotalMins / 60).toFixed(2);
+    onUpdateAvailability(newHours, newDays, nextMinutes);
+    showRecToast(`Added 1h to ${day}`);
+  };
+
+  const handleRebalance = () => {
+    const baseHours = weekSetup?.hours ?? draftHours;
+    const baseDays = weekSetup?.days ?? draftDays;
+    const days = baseDays.length > 0 ? baseDays : ['Tue', 'Wed', 'Thu'];
+    const recommendedHoursRaw = recommendedMins / 60;
+    const targetHours = Math.max(baseHours, Math.ceil(recommendedHoursRaw * 2) / 2);
+    // Rebalance = drop any per-day overrides, spread the (possibly topped-up)
+    // total evenly across active days.
+    onUpdateAvailability(targetHours, days, undefined);
+    const perDay = Math.round((targetHours * 60) / days.length);
+    showRecToast(`Rebalanced to ${fmtMins(perDay)} per day across ${days.length} day${days.length !== 1 ? 's' : ''}`);
+  };
 
   // Flat ordered render list.
   type Row =
@@ -199,17 +271,37 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
               <>
                 <p className="text-lg font-bold text-foreground leading-tight mb-1">Add 1 extra hour this week</p>
                 <div className="flex items-center gap-2 mb-4">
-                  <p className="text-sm text-muted-foreground">Best option: Add 1h Wednesday afternoon.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {recommendedDays[0]
+                      ? <>Best option: Add 1h {recommendedDays[0]} afternoon.</>
+                      : <>Top up your week to cover the shortfall.</>}
+                  </p>
                   <span className="text-amber-500 text-xl">↷</span>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-3">
-                  <button className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
-                    Add 1h Wednesday
-                  </button>
-                  <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
-                    Add 1h Thursday
-                  </button>
-                  <button className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors">
+                  {recommendedDays[0] && (
+                    <button
+                      onClick={() => handleAddHourToDay(recommendedDays[0])}
+                      className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+                      data-testid="button-rec-add-hour-primary"
+                    >
+                      Add 1h {recommendedDays[0]}
+                    </button>
+                  )}
+                  {recommendedDays[1] && (
+                    <button
+                      onClick={() => handleAddHourToDay(recommendedDays[1])}
+                      className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                      data-testid="button-rec-add-hour-secondary"
+                    >
+                      Add 1h {recommendedDays[1]}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleRebalance}
+                    className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                    data-testid="button-rec-rebalance"
+                  >
                     Rebalance my week
                   </button>
                 </div>
@@ -221,6 +313,14 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                   Your {fmtMins(allocatedMins)} allocation covers all current and projected workload.
                 </p>
               </>
+            )}
+            {recToast && (
+              <div
+                className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full animate-in fade-in"
+                data-testid="rec-toast"
+              >
+                <Check size={11} /> {recToast}
+              </div>
             )}
             <button
               onClick={() => setShowWhyRec(v => !v)}
@@ -433,15 +533,16 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
 
           <div className="px-6 py-5 space-y-4">
             {activeDays.map(day => {
-              const maxBar = Math.max(perDayMins, perDayRecommended, 90);
-              const plannedPct = Math.min((perDayMins / maxBar) * 100, 100);
+              const dayMins = minutesPerDay[day] ?? 0;
+              const maxBar = Math.max(dayMins, perDayRecommended, 90);
+              const plannedPct = Math.min((dayMins / maxBar) * 100, 100);
               const recPct = Math.min((perDayRecommended / maxBar) * 100, 100);
-              const isOver = perDayMins >= perDayRecommended;
+              const isOver = dayMins >= perDayRecommended;
               return (
-                <div key={day}>
+                <div key={day} data-testid={`week-day-${day.toLowerCase()}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm font-bold text-foreground">{day}</span>
-                    <span className="text-xs text-muted-foreground">{fmtMins(perDayMins)} planned</span>
+                    <span className="text-xs text-muted-foreground" data-testid={`week-day-${day.toLowerCase()}-mins`}>{fmtMins(dayMins)} planned</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden flex">
@@ -458,7 +559,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                     </div>
                     {!isOver && (
                       <span className="text-[10px] font-bold text-amber-600 whitespace-nowrap">
-                        +{fmtMins(perDayRecommended - perDayMins)}
+                        +{fmtMins(perDayRecommended - dayMins)}
                       </span>
                     )}
                   </div>
