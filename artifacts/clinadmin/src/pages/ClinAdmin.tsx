@@ -10,6 +10,7 @@ import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
 import TasksTab from '../tabs/TasksTab';
+import SettingsTab from '../tabs/SettingsTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
 import { TabType, SidebarTask, ManualTask, GeneratedPlan } from '@/lib/types';
 import { manualTasks as initialManualTasks } from '@/lib/data';
@@ -153,12 +154,7 @@ export default function ClinAdmin() {
           onOpenEmail={(id) => setOpenEmailId(id)}
         />
       );
-      case 'Settings':
-        return (
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
-            <p className="text-sm">{activeTab} — coming soon</p>
-          </div>
-        );
+      case 'Settings': return <SettingsTab />;
       default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
     }
   };
