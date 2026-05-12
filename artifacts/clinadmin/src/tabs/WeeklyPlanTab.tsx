@@ -146,9 +146,18 @@ export default function WeeklyPlanTab({ weekSetup, plan, onPlanGenerated, onOpen
         </div>
         {weekSetup && (
           <div className="text-right">
-            <p className="text-xs text-muted-foreground">
-              {weekSetup.hours}h · {weekSetup.days.join(', ')}
+            <p className="text-xs text-muted-foreground" data-testid="weekly-plan-availability-summary">
+              {(() => {
+                const totalMins = Math.round(weekSetup.hours * 60);
+                const overrides = weekSetup.minutesByDay ?? {};
+                const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+                return weekSetup.days.map(d => {
+                  const m = overrides[d] != null ? overrides[d] : evenSplit;
+                  return `${d} ${fmtMins(m)}`;
+                }).join(' · ');
+              })()}
             </p>
+            <p className="text-[10px] text-muted-foreground">{weekSetup.hours}h total this week</p>
             <button onClick={onOpenWeeklySetup} className="text-xs text-primary font-semibold hover:underline">
               Change availability
             </button>

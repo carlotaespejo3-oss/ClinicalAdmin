@@ -40,8 +40,21 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   const [handledEmailIds, setHandledEmailIds] = useState<Set<number>>(new Set());
   const [handledTaskIds, setHandledTaskIds] = useState<Set<string>>(new Set());
 
-  const [draftHours, setDraftHours] = useState<number>(weekSetup?.hours ?? 4);
-  const [draftDays, setDraftDays] = useState<string[]>(weekSetup?.days ?? ['Tue', 'Wed', 'Thu']);
+  const buildInitialDraft = (): Record<string, number> => {
+    if (!weekSetup) {
+      return { Tue: 80, Wed: 80, Thu: 80 };
+    }
+    const total = Math.round(weekSetup.hours * 60);
+    const overrides = weekSetup.minutesByDay ?? {};
+    const evenSplit = weekSetup.days.length > 0 ? Math.round(total / weekSetup.days.length) : 0;
+    const result: Record<string, number> = {};
+    for (const d of weekSetup.days) {
+      result[d] = overrides[d] != null ? overrides[d] : evenSplit;
+    }
+    return result;
+  };
+
+  const [draftMinutesByDay, setDraftMinutesByDay] = useState<Record<string, number>>(buildInitialDraft);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recToast, setRecToast] = useState<string | null>(null);
 
@@ -51,31 +64,88 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   };
 
   useEffect(() => {
-    if (weekSetup) {
-      setDraftHours(weekSetup.hours);
-      setDraftDays(weekSetup.days);
-    }
-  }, [weekSetup?.hours, weekSetup?.days]);
+    setDraftMinutesByDay(buildInitialDraft());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekSetup?.hours, weekSetup?.days, weekSetup?.minutesByDay]);
 
-  const dirty = !weekSetup
-    || draftHours !== weekSetup.hours
-    || draftDays.length !== weekSetup.days.length
-    || ALL_DAYS.some(d => draftDays.includes(d) !== weekSetup.days.includes(d));
+  const draftDays = ALL_DAYS.filter(d => draftMinutesByDay[d] != null && draftMinutesByDay[d] > 0);
+  const draftTotalMins = draftDays.reduce((a, d) => a + (draftMinutesByDay[d] ?? 0), 0);
+  const draftHours = +(draftTotalMins / 60).toFixed(2);
+
+  const dirty = (() => {
+    if (!weekSetup) return draftDays.length > 0;
+    const totalMins = Math.round(weekSetup.hours * 60);
+    const overrides = weekSetup.minutesByDay ?? {};
+    const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+    return ALL_DAYS.some(d => {
+      const draft = draftMinutesByDay[d] ?? 0;
+      const current = weekSetup.days.includes(d)
+        ? (overrides[d] != null ? overrides[d] : evenSplit)
+        : 0;
+      return draft !== current;
+    });
+  })();
 
   const toggleDraftDay = (d: string) => {
-    setDraftDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort((a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b)));
+    setDraftMinutesByDay(prev => {
+      const next = { ...prev };
+      if (next[d] != null) {
+        delete next[d];
+        return next;
+      }
+      const activeCount = Object.keys(prev).length;
+      const total = Object.values(prev).reduce((a, b) => a + b, 0);
+      const def = activeCount > 0 ? Math.max(15, Math.round(total / activeCount)) : 60;
+      next[d] = def;
+      return next;
+    });
+  };
+
+  const adjustDayMins = (d: string, delta: number) => {
+    setDraftMinutesByDay(prev => {
+      const cur = prev[d] ?? 0;
+      const nextVal = Math.max(0, Math.min(600, cur + delta));
+      if (nextVal === 0) {
+        const { [d]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [d]: nextVal };
+    });
+  };
+
+  const spreadEvenly = () => {
+    const days = ALL_DAYS.filter(d => draftMinutesByDay[d] != null);
+    if (days.length === 0) return;
+    const total = days.reduce((a, d) => a + draftMinutesByDay[d], 0);
+    // Keep 15-min granularity but preserve the total: floor each share to a
+    // 15-min block, then distribute the remaining 15-min increments one by
+    // one across the earliest weekdays.
+    const baseChunks = Math.floor(total / days.length / 15);
+    const base = Math.max(15, baseChunks * 15);
+    const distributed: Record<string, number> = Object.fromEntries(days.map(d => [d, base]));
+    let remaining = total - base * days.length;
+    let i = 0;
+    while (remaining >= 15 && i < days.length * 8) {
+      distributed[days[i % days.length]] += 15;
+      remaining -= 15;
+      i++;
+    }
+    setDraftMinutesByDay(distributed);
   };
 
   const saveAvailability = () => {
-    onUpdateAvailability(draftHours, draftDays);
+    const days = ALL_DAYS.filter(d => draftMinutesByDay[d] != null && draftMinutesByDay[d] > 0);
+    const minsMap = Object.fromEntries(days.map(d => [d, draftMinutesByDay[d]]));
+    const totalMins = days.reduce((a, d) => a + draftMinutesByDay[d], 0);
+    const hours = +(totalMins / 60).toFixed(2);
+    onUpdateAvailability(hours, days, days.length > 0 ? minsMap : undefined);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1800);
   };
 
   const resetDraft = () => {
     if (!weekSetup) return;
-    setDraftHours(weekSetup.hours);
-    setDraftDays(weekSetup.days);
+    setDraftMinutesByDay(buildInitialDraft());
   };
 
   // ---- Derive today's plan from real data ----
@@ -684,70 +754,97 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           </button>
         </div>
 
-        <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Hours stepper */}
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2">
-              Total admin hours
-            </label>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setDraftHours(h => Math.max(0.5, +(h - 0.5).toFixed(1)))}
-                className="w-9 h-9 rounded-lg border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors"
-                data-testid="button-hours-decrease"
-              >
-                <Minus size={14} />
-              </button>
-              <div className="flex-1 h-9 rounded-lg bg-slate-50 border border-border flex items-center justify-center">
-                <span className="text-xl font-bold text-foreground">{draftHours}</span>
-                <span className="text-xs text-muted-foreground ml-1.5">h / week</span>
-              </div>
-              <button
-                onClick={() => setDraftHours(h => Math.min(40, +(h + 0.5).toFixed(1)))}
-                className="w-9 h-9 rounded-lg border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors"
-                data-testid="button-hours-increase"
-              >
-                <Plus size={14} />
-              </button>
+        <div className="px-6 py-5 space-y-4">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">
+                Per-day admin hours
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Set different time for each day — not every week is balanced. Total this week: <strong className="text-foreground" data-testid="text-availability-total">{fmtMins(draftTotalMins)}</strong>
+                {draftDays.length > 0 && <> across {draftDays.length} day{draftDays.length !== 1 ? 's' : ''}</>}.
+              </p>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              {draftDays.length > 0
-                ? <>~{Math.round((draftHours * 60) / draftDays.length)} min per admin day</>
-                : 'Pick at least one day to spread these hours across.'}
-            </p>
+            {draftDays.length > 1 && (
+              <button
+                onClick={spreadEvenly}
+                className="text-[11px] font-bold text-primary bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-colors flex items-center gap-1.5"
+                data-testid="button-spread-evenly"
+              >
+                <RotateCcw size={11} /> Spread evenly
+              </button>
+            )}
           </div>
 
-          {/* Day toggles */}
-          <div className="lg:col-span-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2">
-              Admin days
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_DAYS.map(d => {
-                const active = draftDays.includes(d);
-                return (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {ALL_DAYS.map(d => {
+              const mins = draftMinutesByDay[d];
+              const active = mins != null && mins > 0;
+              return (
+                <div
+                  key={d}
+                  className={cn(
+                    "rounded-xl border p-3 transition-colors",
+                    active ? "border-primary/40 bg-primary/5" : "border-border bg-white"
+                  )}
+                  data-testid={`day-card-${d.toLowerCase()}`}
+                >
                   <button
-                    key={d}
                     onClick={() => toggleDraftDay(d)}
                     className={cn(
-                      "px-3.5 py-2 rounded-lg border text-sm font-bold transition-colors",
+                      "w-full text-sm font-bold mb-2 py-1 rounded-md transition-colors",
                       active
-                        ? "bg-primary text-white border-primary"
-                        : "bg-white text-slate-600 border-border hover:border-primary/40"
+                        ? "text-primary hover:bg-primary/10"
+                        : "text-slate-500 hover:bg-slate-50"
                     )}
                     data-testid={`day-toggle-${d.toLowerCase()}`}
                   >
                     {d}
                   </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              {draftDays.length === 0
-                ? 'No days selected — your week is unscheduled.'
-                : <>Admin will sit across <strong className="text-foreground">{draftDays.join(', ')}</strong>.</>}
-            </p>
+                  {active ? (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => adjustDayMins(d, -15)}
+                          className="w-7 h-7 rounded-md border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors flex-shrink-0"
+                          data-testid={`day-mins-decrease-${d.toLowerCase()}`}
+                          aria-label={`Decrease ${d} by 15 min`}
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <div className="flex-1 text-center">
+                          <span className="text-sm font-bold text-foreground" data-testid={`day-mins-${d.toLowerCase()}`}>
+                            {fmtMins(mins!)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => adjustDayMins(d, 15)}
+                          className="w-7 h-7 rounded-md border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors flex-shrink-0"
+                          data-testid={`day-mins-increase-${d.toLowerCase()}`}
+                          aria-label={`Increase ${d} by 15 min`}
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-center mt-1.5">
+                        ±15 min
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground text-center py-2 italic">
+                      Off
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            {draftDays.length === 0
+              ? 'No admin days selected — your week is unscheduled.'
+              : <>{draftHours}h total / week. Tap a day name to switch it on or off.</>}
+          </p>
         </div>
 
         {dirty && (
