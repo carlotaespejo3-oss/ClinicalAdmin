@@ -1,0 +1,109 @@
+
+Prompt for Replit Agent
+
+Update the time estimates and add a linked email-task system. This replaces the previous time estimate values.
+
+PART 1 — UPDATED TIME ESTIMATES
+Replace all previous time estimates with these:
+CategoryEstimated timeSAFEGUARDING20 minutesLEGAL30 minutesURGENT_CLINICAL15 minutes (up to 20 if complex)CLINICAL10 minutes (up to 15 if complex)PROFESSIONAL5 minutes (up to 10 if complex)ADMIN2 minutesNONE1 minuteCPD2 minutesUNCLEAR5 minutes (up to 10 pending classification)
+For URGENT_CLINICAL and CLINICAL: use the lower estimate by default. If the email is more than 150 words or contains multiple questions or concerns, use the higher estimate.
+For PROFESSIONAL: use the lower estimate by default. If the colleague is waiting on a clinical opinion or a document, use the higher estimate.
+If the priority is escalated due to content (e.g. CLINICAL escalated to URGENT), add 5 minutes to the estimate.
+
+PART 2 — DOCUMENT AND FORM DETECTION
+When classifying any email, scan for indicators that a document needs to be completed. These include:
+
+NDIS report or letter
+School support letter
+Medical certificate
+Referral letter
+Court or medico-legal report
+Insurance form
+Psychologist or allied health report request
+Any attachment described as a form
+Any request that says "please complete", "please provide a letter", "please fill in", "we need a report"
+
+If any of these are detected:
+
+Flag the email with a document badge: "📄 Document required"
+Add 20 minutes to the email's time estimate to account for the document itself
+Automatically create a linked task. The task should contain:
+
+Title: "[Document type] — [patient name if detectable] — requested by [sender name]"
+Category: CLINICAL or PROFESSIONAL depending on who sent it
+Priority: inherited from the email's final priority
+Due date: extracted from the email if mentioned. If not mentioned, default to 14 days from today
+Time estimate: 20 minutes
+Linked email ID: the ID of the email that generated this task
+Status: incomplete
+
+
+Show the linked task immediately below the email in the worklist — visually connected with a line or indent so it is clear they belong together
+Show a note on the email: "A task has been created for this document. It will complete automatically when you mark this email as done."
+
+
+PART 3 — LINKED EMAIL-TASK LOGIC
+Tasks and emails that are linked should behave as follows:
+When the clinician marks the email as done:
+
+Check if there is a linked task
+If the task is still incomplete, show a prompt: "You've marked this email as done. Have you completed the document too? [Yes — complete task] [No — keep task open]"
+If they click Yes: mark the linked task as complete automatically
+If they click No: keep the task open and move it to the task list with a note: "Document still needed — email already replied to"
+
+When the clinician marks the linked task as done:
+
+Check if the linked email is still open
+If it is: show a prompt: "You've completed the document. Do you also want to mark the original email as done? [Yes] [No]"
+
+When the clinician sends a reply to the email that says the document is in the file or has been completed:
+
+Detect language like "please find attached", "I have completed", "the letter is in the file", "I have sent the report"
+Automatically prompt: "It looks like you may have completed this document. Do you want to mark the linked task as done? [Yes] [No]"
+
+
+PART 4 — DAILY PLAN DISPLAY
+In the home screen daily plan and the detailed today view, when an email has a linked task:
+
+Show the email and its linked task one after the other — never separated
+The email comes first, the task comes second, indented slightly below it
+Show a small link icon or connector between them so the clinician can see they belong together
+The combined time estimate for the pair is shown as one total: "Email + document: approx X min total"
+If the task has been completed but the email is still open, show: "Document done — reply still needed"
+If the email has been replied to but the task is still open, show: "Email replied to — document still needed"
+
+Example of how it should look in the daily plan:
+1. CLINICAL — Mrs Davies re Lucas Thompson EHCP          10 min
+   📄 Linked task: EHCP report — Lucas Thompson           20 min
+   ─────────────────────────────────────────────────────
+   Combined: approx 30 min
+
+2. PROFESSIONAL — Dr Osei re case formulation             5 min
+
+PART 5 — TASK PRIORITY FOR DOCUMENT TASKS
+Document tasks created automatically from emails should follow this priority logic:
+Requesting email categoryDocument task prioritySAFEGUARDINGURGENTURGENT_CLINICALURGENTLEGALURGENTCLINICALMEDIUMPROFESSIONALMEDIUMADMINLOW
+If the email contains a deadline for the document, the task due date should match that deadline exactly. If the deadline is within 7 days, escalate the task priority by one level (LOW becomes MEDIUM, MEDIUM becomes URGENT).
+
+PART 6 — WEEKLY PLANNING ENGINE UPDATE
+Update the weekly planning engine to:
+
+Include linked document tasks in the total time calculation — not just the emails
+When building the day-by-day plan, always schedule an email and its linked task on the same day — never split them across different days
+If an email-task pair is too large to fit in the remaining time on a day, move the entire pair to the next available day — never schedule just the email without its task
+Show document tasks as a separate line in the weekly plan summary: "Includes X documents or forms to complete — estimated X minutes additional"
+Keep the 20% buffer on top of total estimated time for unexpected urgent emails. Show it as: "Buffer for unexpected urgent emails: X min"
+
+
+Please implement this in the following order and pause after each part to confirm it is working:
+
+Update time estimates
+Add document detection and automatic task creation
+Implement linked email-task completion logic
+Update daily plan display to show pairs together
+Update weekly planning engine to treat pairs as units
+
+Test each part against the existing mock emails before moving to the next. Confirm when done.
+
+
+The linked pair logic is the most clinically important piece here. The gap between "I replied to the EHCP email" and "I actually wrote the EHCP report" is exactly where things fall through in real clinical admin. This closes that gap explicitly.
