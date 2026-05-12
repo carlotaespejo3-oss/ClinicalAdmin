@@ -22,7 +22,7 @@ export interface LinkedTaskPrompt {
   emailSubject: string;
   taskId: string;
   taskTitle: string;
-  taskSource: 'manual' | 'doc';
+  taskSource: 'manual' | 'doc' | 'prompt';
 }
 
 let nextId = 1;

@@ -14,6 +14,11 @@ import {
   hasPendingPromptForEmail,
 } from '@/lib/linkedTaskPromptStore';
 import { findLinkedTaskForEmail } from '@/lib/linkedTaskUtils';
+import {
+  usePromptedTasksState,
+  getPromptedTasksForEmail,
+  setPromptedTaskDone,
+} from '@/lib/promptedTasksStore';
 import LinkedTaskPromptModal from '../components/LinkedTaskPromptModal';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
@@ -88,6 +93,10 @@ export default function ClinAdmin() {
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const linkedDocTasks = useLinkedDocTasks();
+  // Subscribe so the email-done detector reacts to newly-created
+  // prompted tasks. Value itself is read via getPromptedTasksForEmail
+  // inside the effect to avoid stale-closure issues.
+  usePromptedTasksState();
   // An email is "out of the inbox" if it has been acknowledged OR archived
   // (acknowledged or marked done). Sidebar badges and counts use this.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
@@ -122,26 +131,48 @@ export default function ClinAdmin() {
       const email = allEmails.find((e) => e.id === id);
       if (!email) continue;
       const linked = findLinkedTaskForEmail(id, manualTaskList, linkedDocTasks);
-      if (!linked || linked.done) continue;
-      requestLinkedTaskPrompt({
-        mode: 'email-done',
-        emailId: id,
-        emailSubject: email.subject,
-        taskId: linked.id,
-        taskTitle: linked.title,
-        taskSource: linked.source,
-      });
+      if (linked && !linked.done) {
+        requestLinkedTaskPrompt({
+          mode: 'email-done',
+          emailId: id,
+          emailSubject: email.subject,
+          taskId: linked.id,
+          taskTitle: linked.title,
+          taskSource: linked.source,
+        });
+        continue;
+      }
+      // No doc/manual link — check inbox-prompted tasks. If there are
+      // open prompted tasks for this email, ask about the most
+      // recently created one. Sort explicitly so we don't depend on
+      // store insertion order.
+      const prompted = getPromptedTasksForEmail(id)
+        .filter((t) => !t.done)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      if (prompted.length > 0) {
+        const t = prompted[0];
+        requestLinkedTaskPrompt({
+          mode: 'email-done',
+          emailId: id,
+          emailSubject: email.subject,
+          taskId: t.id,
+          taskTitle: t.title,
+          taskSource: 'prompt',
+        });
+      }
     }
   }, [acknowledged, archived, linkedDocTasks, manualTaskList]);
 
   // Handlers wired into the modal — route by source to the right store.
   const handleCompleteLinkedTask = (
     taskId: string,
-    source: 'manual' | 'doc',
+    source: 'manual' | 'doc' | 'prompt',
     emailId: number,
   ) => {
     if (source === 'doc') {
       setLinkedDocDone(emailId, true);
+    } else if (source === 'prompt') {
+      setPromptedTaskDone(taskId, true);
     } else {
       setManualTaskList((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, done: true, noteAfterEmailDone: undefined } : t)),
@@ -151,12 +182,17 @@ export default function ClinAdmin() {
 
   const handleKeepTaskOpenWithNote = (
     taskId: string,
-    source: 'manual' | 'doc',
+    source: 'manual' | 'doc' | 'prompt',
     emailId: number,
     note: string,
   ) => {
     if (source === 'doc') {
       setLinkedDocNote(emailId, note);
+    } else if (source === 'prompt') {
+      // Prompted tasks don't carry a note field today; keeping it open
+      // is the default "No" behaviour. The note is intentionally
+      // ignored — we just need the task to remain visible in Tasks tab.
+      void note;
     } else {
       setManualTaskList((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, noteAfterEmailDone: note } : t)),

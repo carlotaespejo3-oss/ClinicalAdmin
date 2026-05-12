@@ -23,10 +23,14 @@ import { useLinkedDocTasks, toggleLinkedDocTaskDone } from '@/lib/linkedDocTasks
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
 import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
+import {
+  usePromptedTasksState,
+  togglePromptedTaskDone,
+} from '@/lib/promptedTasksStore';
 
 type UnifiedTask = {
   id: string;
-  source: 'manual' | 'sidebar';
+  source: 'manual' | 'sidebar' | 'prompt';
   title: string;
   estMin: number;
   done: boolean;
@@ -37,9 +41,10 @@ type UnifiedTask = {
   linkedEmailId?: number;
   autoCompleteOnReply?: boolean;
   // Routing hint: 'doc' tasks live in linkedDocTasksStore, 'manual' come from
-  // the seed/manualTaskList state owned by ClinAdmin. Used by the toggle
-  // handler to push the right kind of task-done prompt.
-  taskSource?: 'manual' | 'doc';
+  // the seed/manualTaskList state owned by ClinAdmin, 'prompt' come from
+  // promptedTasksStore. Used by the toggle handler to push the right kind
+  // of task-done prompt.
+  taskSource?: 'manual' | 'doc' | 'prompt';
   // Surfaced when the clinician archived the linked email but kept this
   // task open via the 'No' button on the email-done prompt.
   noteAfterEmailDone?: string;
@@ -116,6 +121,7 @@ export default function TasksTab({
   const [newMins, setNewMins] = useState('15');
   const [newPriority, setNewPriority] = useState<'high' | 'normal'>('normal');
   const linkedDocTasks = useLinkedDocTasks();
+  const { tasks: promptedTasks } = usePromptedTasksState();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const isEmailOpen = (id: number | undefined) =>
@@ -163,8 +169,22 @@ export default function TasksTab({
       taskSource: 'doc',
       noteAfterEmailDone: t.noteAfterEmailDone,
     }));
-    return [...d, ...m, ...s];
-  }, [manualTasks, sidebarTasks, linkedDocTasks]);
+    // Prompted tasks: surfaced from inbox "Possible task detected"
+    // confirmations. They're linked to the originating email so the
+    // bidirectional task-done / email-done flow works.
+    const p: UnifiedTask[] = promptedTasks.map((t) => ({
+      id: t.id,
+      source: 'prompt',
+      title: t.title,
+      estMin: t.estMin,
+      done: t.done,
+      deadline: t.dueDays,
+      type: t.type,
+      linkedEmailId: t.emailId,
+      taskSource: 'prompt',
+    }));
+    return [...d, ...m, ...p, ...s];
+  }, [manualTasks, sidebarTasks, linkedDocTasks, promptedTasks]);
 
   const filtered = useMemo(() => {
     return all.filter(t => {
@@ -206,6 +226,8 @@ export default function TasksTab({
       } else {
         onToggleManualTask(t.id);
       }
+    } else if (t.source === 'prompt') {
+      togglePromptedTaskDone(t.id);
     } else {
       onToggleSidebarTask(t.id);
     }

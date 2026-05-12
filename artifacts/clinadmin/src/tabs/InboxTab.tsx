@@ -27,6 +27,7 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
+import PotentialTaskPanel from '@/components/PotentialTaskPanel';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -1041,6 +1042,17 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
                   return null;
                 })()}
+
+                {/* ---- Possible-task prompts (phone calls, appointments,
+                       results, referrals, prescriptions, follow-ups,
+                       deadlines). Sits between the draft reply and the
+                       mini chat box per spec. Auto-skipped for NONE,
+                       CPD, LEGAL, UNCLEAR, and any email with a
+                       documentDirection (handled by document detection). */}
+                <PotentialTaskPanel
+                  email={selectedEmail}
+                  classification={classifications.get(selectedEmail.id)}
+                />
 
                 {/* ---- Mini chat box: ad-hoc extra drafts (hidden for UNCLEAR) ---- */}
                 {(() => {

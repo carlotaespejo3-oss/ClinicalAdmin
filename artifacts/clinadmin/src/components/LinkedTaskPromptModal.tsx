@@ -7,10 +7,10 @@ import {
 
 interface Props {
   // Mark the linked task as done (routes to the right store internally).
-  onCompleteTask: (taskId: string, source: 'manual' | 'doc', emailId: number) => void;
+  onCompleteTask: (taskId: string, source: 'manual' | 'doc' | 'prompt', emailId: number) => void;
   // Keep the task open but attach a contextual note so the Tasks tab can
   // explain why it's still there.
-  onKeepTaskOpenWithNote: (taskId: string, source: 'manual' | 'doc', emailId: number, note: string) => void;
+  onKeepTaskOpenWithNote: (taskId: string, source: 'manual' | 'doc' | 'prompt', emailId: number, note: string) => void;
   // Mark the originating email as done (acknowledge + archive).
   onCompleteEmail: (emailId: number) => void;
 }
