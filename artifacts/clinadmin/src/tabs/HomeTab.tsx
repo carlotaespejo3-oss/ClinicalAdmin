@@ -29,31 +29,42 @@ function fmtMins(min: number) {
 const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
 const projectedExtra = 45;
 
+// Concrete, plain-English reason for *why* this email is on today's plan.
+// Driven by data (risk, deadline, kind) rather than operational jargon.
 function emailWhy(e: Email): string {
-  if (e.cat === CAT.UNSAFE) return 'Suicidal-risk wording from parent — needs a holding reply plus an urgent booking request.';
-  if (e.cat === CAT.URGENT) return 'Urgent clinical — your input required.';
-  if (e.isProfessional) return 'Colleague awaiting your reply.';
-  if (e.isMeeting) return 'Meeting / event — deadline approaching.';
-  if (e.kind === 'script') return 'Script request — quick triage.';
-  if (e.kind === 'complex') return 'Complex case — has a linked task.';
-  if (e.kind === 'triage') return 'Quick triage decision.';
-  if (e.kind === 'admin') return 'Admin response.';
-  return 'Needs review.';
-}
-
-function emailRowBadge(e: Email): { label: string; cls: string; Icon: typeof Users } | null {
-  if (e.cat === CAT.UNSAFE) return { label: 'Holding reply + booking request', cls: 'text-amber-700 bg-amber-50 border-amber-200', Icon: ShieldAlert };
-  if (e.isProfessional) return { label: 'Professional colleague', cls: 'text-purple-700 bg-purple-50 border-purple-200', Icon: Users };
-  if (e.isMeeting) return { label: 'Deadline approaching', cls: 'text-orange-700 bg-orange-50 border-orange-200', Icon: CalendarClock };
-  if (e.cat === CAT.URGENT) return { label: 'Urgent clinical', cls: 'text-red-700 bg-red-50 border-red-200', Icon: AlertTriangle };
-  return null;
+  if (e.cat === CAT.UNSAFE) return 'High clinical risk — needs clinical assessment, not an email reply.';
+  if (e.risk === 'high') return 'High clinical risk.';
+  if (e.deadline !== null && e.deadline <= 1) return e.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
+  if (e.deadline !== null && e.deadline <= 3) return `Due in ${e.deadline} days.`;
+  if (e.isMeeting) return 'Meeting deadline approaching.';
+  if (e.isProfessional) return 'Colleague waiting on your reply.';
+  if (e.deadline !== null && e.deadline >= 10 && e.deadline <= 14) return 'Close to 14-day timeframe.';
+  if (e.kind === 'script') return 'Script request.';
+  if (e.kind === 'complex') return 'Complex case — multi-step.';
+  return 'Routine review.';
 }
 
 function taskWhy(t: ManualTask): string {
-  if (t.deadline <= 1) return `Due ${t.deadline === 0 ? 'today' : 'tomorrow'} — ${t.type.toLowerCase()}.`;
-  if (t.deadline <= 3) return `Due in ${t.deadline}d — ${t.type.toLowerCase()}.`;
-  return `${t.type} — due in ${t.deadline}d.`;
+  if (t.risk === 'high') return 'High clinical risk.';
+  if (t.deadline <= 1) return t.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
+  if (t.deadline <= 3) return `Due in ${t.deadline} days.`;
+  if (t.deadline >= 10 && t.deadline <= 14) return 'Close to 14-day timeframe.';
+  return `Due in ${t.deadline} days.`;
 }
+
+// Priority is derived from the email/task `risk` field. UNSAFE always = High.
+type Priority = 'High' | 'Medium' | 'Low';
+function priorityFromRisk(risk: 'high' | 'medium' | 'low' | 'none', isUnsafe = false): Priority {
+  if (isUnsafe || risk === 'high') return 'High';
+  if (risk === 'medium') return 'Medium';
+  return 'Low';
+}
+const PRIORITY_PILL: Record<Priority, string> = {
+  High: 'text-red-700 bg-red-50 border-red-200',
+  Medium: 'text-amber-700 bg-amber-50 border-amber-200',
+  Low: 'text-slate-600 bg-slate-50 border-slate-200',
+};
+const PRIORITY_RANK: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
 
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
   // Derived from live task state so completion in Tasks tab propagates here.
@@ -98,19 +109,15 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   };
 
   // ---- Derive today's plan from real data ----
-  // Pick top priority emails (UNSAFE first, then by deadline asc, skip pure-admin/none).
+  // Pick top priority emails by Priority (High → Low), then by deadline asc.
+  // Skip pure no-action emails entirely.
   const todayEmails = useMemo(() => {
-    const catRank = (e: Email) => {
-      if (e.cat === CAT.UNSAFE) return 0;
-      if (e.cat === CAT.URGENT) return 1;
-      if (e.isProfessional || e.isMeeting) return 2;
-      return 3;
-    };
     return [...emails]
       .filter(e => e.cat !== CAT.NONE)
       .sort((a, b) => {
-        const r = catRank(a) - catRank(b);
-        if (r !== 0) return r;
+        const pa = PRIORITY_RANK[priorityFromRisk(a.risk, a.cat === CAT.UNSAFE)];
+        const pb = PRIORITY_RANK[priorityFromRisk(b.risk, b.cat === CAT.UNSAFE)];
+        if (pa !== pb) return pa - pb;
         const da = a.deadline ?? 99;
         const db = b.deadline ?? 99;
         return da - db;
@@ -307,7 +314,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
               if (row.kind === 'email') {
                 const e = row.email;
                 const handled = handledEmailIds.has(e.id);
-                const badge = emailRowBadge(e);
+                const priority = priorityFromRisk(e.risk, e.cat === CAT.UNSAFE);
                 return (
                   <li
                     key={`email-${e.id}`}
@@ -337,21 +344,14 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                       <p className="text-xs text-muted-foreground mt-1">
                         <span className="font-medium">Why:</span> {emailWhy(e)}
                       </p>
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {badge && (
-                          <span className={cn(
-                            "inline-flex items-center gap-1 text-[10px] font-bold border px-2 py-0.5 rounded-full",
-                            badge.cls
-                          )}>
-                            <badge.Icon size={9} /> {badge.label}
-                          </span>
-                        )}
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
-                          <ExternalLink size={9} /> Open in Emails
-                        </span>
-                      </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={cn(
+                        "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                        PRIORITY_PILL[priority]
+                      )}>
+                        {priority}
+                      </span>
                       <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{e.estMin}min</span>
                       <ChevronRight size={14} className="text-muted-foreground" />
                     </div>
@@ -362,6 +362,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
               if (row.kind === 'task') {
                 const t = row.task;
                 const handled = handledTaskIds.has(t.id);
+                const priority = priorityFromRisk(t.risk);
                 return (
                   <li
                     key={`task-${t.id}`}
@@ -388,16 +389,14 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                       <p className="text-xs text-muted-foreground mt-1">
                         <span className="font-medium">Why:</span> {taskWhy(t)}
                       </p>
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                          <ClipboardList size={9} /> {t.type}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
-                          <ExternalLink size={9} /> Open in Tasks
-                        </span>
-                      </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={cn(
+                        "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                        PRIORITY_PILL[priority]
+                      )}>
+                        {priority}
+                      </span>
                       <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{t.estMin}min</span>
                       <ChevronRight size={14} className="text-muted-foreground" />
                     </div>
