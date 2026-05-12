@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert } from 'lucide-react';
 import { emails, manualTasks, CAT } from '@/lib/data';
 import type { Email } from '@/lib/data';
@@ -98,36 +98,55 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     return `Draft a SHORT internal email to the CAMHS admin / booking team on behalf of Dr. A. Patterson, NHS CAMHS consultant. British English only.\n\nPurpose: ask the admin team to book the patient in URGENTLY for a clinical review (telephone or face-to-face).\n\nRules:\n- Address the admin team (e.g. "Hi team,").\n- Reference the patient name as it appears in the parent's email, and the requesting clinician (Dr. A. Patterson).\n- Keep it to a few sentences. No clinical detail beyond what is needed to prioritise the booking (e.g. "raised today by parent, needs urgent review" — do NOT include detailed symptoms or quoted text).\n- Ask them to confirm once booked and to flag back if no slot is available within 24–48 hours.\n- Sign off: Dr. A. Patterson | Consultant Child Psychiatrist | CAMHS Outpatient\n\nReturn ONLY the email body. No preamble, no headings, no commentary.\n\nContext (do NOT quote the parent's wording in your reply):\nFrom: ${email.from}\nSubject: ${email.subject}\n---\n${email.body}`;
   };
 
-  const runDraft = (email: Email, slot: DraftSlot, prompt: string) => {
+  // Use mutateAsync + try/catch instead of mutate({ onSuccess }) — when two
+  // drafts fire back-to-back (UNSAFE emails fire family + admin in parallel),
+  // react-query's per-call callbacks race and the first one's onSuccess can be
+  // dropped, leaving its card stuck in a loading spinner forever.
+  const runDraft = async (email: Email, slot: DraftSlot, prompt: string) => {
     setSlotLoading(email.id, slot, true);
     setSlotError(email.id, slot, false);
-    aiComplete.mutate({ data: { prompt } }, {
-      onSuccess: (res) => {
-        setAiDrafts(prev => ({ ...prev, [email.id]: { ...prev[email.id], [slot]: res.text } }));
-        setSlotLoading(email.id, slot, false);
-      },
-      onError: () => {
-        setSlotLoading(email.id, slot, false);
-        setSlotError(email.id, slot, true);
-      },
-    });
-  };
-
-  const handleDraft = () => {
-    if (!selectedEmail) return;
-    if (selectedEmail.cat === CAT.UNSAFE) {
-      runDraft(selectedEmail, 'family', buildUnsafeFamilyPrompt(selectedEmail));
-      runDraft(selectedEmail, 'admin', buildUnsafeAdminPrompt(selectedEmail));
-    } else {
-      runDraft(selectedEmail, 'single', buildSinglePrompt(selectedEmail));
+    try {
+      const res = await aiComplete.mutateAsync({ data: { prompt } });
+      setAiDrafts(prev => ({ ...prev, [email.id]: { ...prev[email.id], [slot]: res.text } }));
+    } catch {
+      setSlotError(email.id, slot, true);
+      // Clear the auto-fire guard so reselecting this email retries the draft
+      // automatically instead of leaving the clinician on a stale error state.
+      autoDraftedRef.current.delete(`${email.id}:${slot}`);
+    } finally {
+      setSlotLoading(email.id, slot, false);
     }
   };
 
+  // Track which (emailId, slot) pairs the auto-drafter has already kicked off
+  // so re-renders don't refire requests. Regenerate bypasses this ref entirely.
+  const autoDraftedRef = useRef<Set<string>>(new Set());
+
+  // Auto-draft as soon as an email is selected — no more "Draft reply" click.
+  // The clinician can edit the draft, regenerate, or write something completely
+  // new. Drafts persist per email so re-opening doesn't refire the AI.
+  useEffect(() => {
+    if (!selectedEmail) return;
+    const fire = (slot: DraftSlot, prompt: string) => {
+      const key = `${selectedEmail.id}:${slot}`;
+      if (autoDraftedRef.current.has(key)) return;
+      autoDraftedRef.current.add(key);
+      void runDraft(selectedEmail, slot, prompt);
+    };
+    if (selectedEmail.cat === CAT.UNSAFE) {
+      fire('family', buildUnsafeFamilyPrompt(selectedEmail));
+      fire('admin', buildUnsafeAdminPrompt(selectedEmail));
+    } else if (selectedEmail.cat !== CAT.NONE) {
+      fire('single', buildSinglePrompt(selectedEmail));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmail?.id]);
+
   const handleRegenerate = (slot: DraftSlot) => {
     if (!selectedEmail) return;
-    if (slot === 'family') runDraft(selectedEmail, 'family', buildUnsafeFamilyPrompt(selectedEmail));
-    else if (slot === 'admin') runDraft(selectedEmail, 'admin', buildUnsafeAdminPrompt(selectedEmail));
-    else runDraft(selectedEmail, 'single', buildSinglePrompt(selectedEmail));
+    if (slot === 'family') void runDraft(selectedEmail, 'family', buildUnsafeFamilyPrompt(selectedEmail));
+    else if (slot === 'admin') void runDraft(selectedEmail, 'admin', buildUnsafeAdminPrompt(selectedEmail));
+    else void runDraft(selectedEmail, 'single', buildSinglePrompt(selectedEmail));
   };
 
   const handleCopy = async (id: number, slot: DraftSlot, text: string) => {
@@ -301,15 +320,6 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                   Classify with AI
                 </button>
-                <button 
-                  onClick={handleDraft}
-                  disabled={aiComplete.isPending}
-                  className="flex items-center gap-2 bg-slate-100 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-200 transition-colors disabled:opacity-50"
-                  data-testid="button-draft-ai"
-                >
-                  {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                  Draft reply
-                </button>
                 <button className="flex items-center gap-2 text-muted-foreground font-bold text-xs px-4 py-2.5 rounded-lg border border-border hover:bg-muted transition-colors">
                   <CheckCircle2 size={14} />
                   Mark as done
@@ -318,12 +328,6 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
               {/* AI Panels */}
               <div className="space-y-4">
-                {aiComplete.isPending && !aiDrafts[selectedEmail.id] && !aiAnalysis[selectedEmail.id] && (
-                  <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-6 flex flex-col items-center justify-center gap-3 animate-pulse">
-                    <Loader2 size={24} className="animate-spin text-primary" />
-                    <p className="text-xs font-bold text-primary uppercase tracking-widest">AI analysis in progress...</p>
-                  </div>
-                )}
 
                 {aiAnalysis[selectedEmail.id] && (
                   <div className="bg-[#E6F1FB] border border-[#94C4F0] rounded-xl p-6 shadow-sm animate-in zoom-in-95 duration-300">
@@ -426,19 +430,43 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   );
                 })()}
 
-                {selectedEmail.cat !== CAT.UNSAFE && aiDrafts[selectedEmail.id]?.single !== undefined && (() => {
-                  const text = aiDrafts[selectedEmail.id]?.single ?? '';
+                {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && (() => {
+                  const text = aiDrafts[selectedEmail.id]?.single;
                   const isLoading = draftLoading[selectedEmail.id]?.single;
+                  const isError = draftError[selectedEmail.id]?.single;
                   const isCopied = copiedSlot?.id === selectedEmail.id && copiedSlot.slot === 'single';
                   return (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm animate-in zoom-in-95 duration-300">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm animate-in zoom-in-95 duration-300" data-testid="draft-card-single">
                       <div className="flex items-center gap-2 mb-3">
                         <Send size={16} className="text-slate-600" />
-                        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Suggested Draft</h4>
+                        <div className="flex-1">
+                          <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Suggested Draft</h4>
+                          <p className="text-[10px] text-slate-500 font-medium">Edit, regenerate or write your own.</p>
+                        </div>
                       </div>
-                      <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-4 border-slate-300 pl-4 bg-white p-4 rounded shadow-inner">
-                        {text}
-                      </div>
+                      {isLoading && !text ? (
+                        <div className="min-h-[180px] flex flex-col items-center justify-center gap-2 bg-white border border-slate-200 rounded p-4">
+                          <Loader2 size={18} className="animate-spin text-primary" />
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Drafting…</p>
+                        </div>
+                      ) : isError && !text ? (
+                        <div className="min-h-[180px] flex flex-col items-center justify-center gap-2 bg-red-50 border border-red-200 rounded p-4">
+                          <p className="text-xs font-bold text-red-600">Draft failed.</p>
+                          <button
+                            onClick={() => handleRegenerate('single')}
+                            className="text-[10px] font-bold bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 uppercase tracking-tight"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      ) : (
+                        <textarea
+                          value={text ?? ''}
+                          onChange={(e) => handleDraftEdit(selectedEmail.id, 'single', e.target.value)}
+                          className="w-full min-h-[200px] text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-4 border-slate-300 pl-4 bg-white p-4 rounded shadow-inner font-sans resize-y focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          data-testid="draft-textarea-single"
+                        />
+                      )}
                       <div className="mt-4 flex justify-end gap-2">
                         <button
                           onClick={() => handleRegenerate('single')}
@@ -448,8 +476,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           <RefreshCcw size={10} /> Regenerate
                         </button>
                         <button
-                          onClick={() => handleCopy(selectedEmail.id, 'single', text)}
-                          className="text-[10px] font-bold bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary/90 transition-colors uppercase tracking-tight"
+                          onClick={() => text && handleCopy(selectedEmail.id, 'single', text)}
+                          disabled={!text}
+                          className="text-[10px] font-bold bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary/90 transition-colors uppercase tracking-tight disabled:opacity-50"
                         >
                           {isCopied ? 'Copied!' : 'Copy to Clipboard'}
                         </button>
@@ -457,18 +486,6 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </div>
                   );
                 })()}
-
-                {aiComplete.isError && !aiDrafts[selectedEmail.id] && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-                    <p className="text-sm font-bold text-red-600 mb-2">AI Completion failed to load.</p>
-                    <button 
-                      onClick={() => handleClassify()}
-                      className="text-xs font-bold bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors uppercase"
-                    >
-                      Retry Connection
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </ScrollArea>
