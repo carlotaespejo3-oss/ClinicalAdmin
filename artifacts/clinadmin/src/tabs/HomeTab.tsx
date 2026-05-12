@@ -36,8 +36,13 @@ type PlanEntry =
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate }: Props) {
   const [plan, setPlan] = useState(homePlan);
   const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
+  const [editedDrafts, setEditedDrafts] = useState<Record<number, string>>({});
   const [copied, setCopied] = useState(false);
   const [showWhyRec, setShowWhyRec] = useState(false);
+
+  const currentDraftBody = openItem
+    ? editedDrafts[openItem.id] ?? openItem.draftReply ?? ''
+    : '';
 
   const [draftHours, setDraftHours] = useState<number>(weekSetup?.hours ?? 4);
   const [draftDays, setDraftDays] = useState<string[]>(weekSetup?.days ?? ['Tue', 'Wed', 'Thu']);
@@ -81,8 +86,8 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
   };
 
   const handleCopy = () => {
-    if (openItem?.draftReply) {
-      navigator.clipboard.writeText(openItem.draftReply);
+    if (openItem) {
+      navigator.clipboard.writeText(currentDraftBody);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -91,6 +96,11 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
   const handleSend = () => {
     if (openItem) {
       setPlan(plan.map(item => item.id === openItem.id ? { ...item, done: true } : item));
+      setEditedDrafts(prev => {
+        const next = { ...prev };
+        delete next[openItem.id];
+        return next;
+      });
       setOpenItem(null);
     }
   };
@@ -656,10 +666,17 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
                 </div>
               )}
               <div className="mx-6 mt-4 mb-6">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">AI Draft Response</p>
-                <div className="p-4 bg-white border border-border rounded-xl">
-                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{openItem.draftReply}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">AI Draft Response</p>
+                  <p className="text-[10px] font-medium text-muted-foreground">Editable — tweak before sending</p>
                 </div>
+                <textarea
+                  value={currentDraftBody}
+                  onChange={(e) => setEditedDrafts(prev => ({ ...prev, [openItem.id]: e.target.value }))}
+                  rows={Math.max(8, currentDraftBody.split('\n').length + 1)}
+                  className="w-full p-4 bg-white border border-border rounded-xl text-sm text-foreground leading-relaxed font-sans resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                  data-testid="textarea-draft-reply"
+                />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-border flex gap-3">
