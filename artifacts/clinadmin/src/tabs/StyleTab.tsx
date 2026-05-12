@@ -1,18 +1,31 @@
 import { useState, useEffect } from 'react';
-import { PenTool, Sparkles, Loader2, Mail, CheckCircle, ChevronRight, MessageSquare } from 'lucide-react';
+import { PenTool, Sparkles, Loader2, Users, Heart, Stethoscope, UserCheck, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { sentEmails } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
 import type { RecipientType } from '@/lib/signatures';
-import { parseStyleProfile, saveStyleProfile, loadStyleProfile, type StyleProfile } from '@/lib/styleProfile';
+import {
+  parseStyleProfile,
+  saveStyleProfile,
+  loadStyleProfile,
+  DEFAULT_TONE_PROFILES,
+  type StyleProfile,
+  type StyleProfileSection,
+} from '@/lib/styleProfile';
 
-const SECTION_META: Array<{ type: RecipientType; icon: typeof MessageSquare; color: string; bg: string }> = [
-  { type: 'Parents/Families', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { type: 'Clinical Colleagues', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-  { type: 'GPs', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { type: 'Schools / SENCOs', icon: MessageSquare, color: 'text-amber-600', bg: 'bg-amber-50' },
-  { type: 'Formal / Legal', icon: CheckCircle, color: 'text-slate-600', bg: 'bg-slate-50' },
+const SECTION_META: Array<{ type: RecipientType; icon: typeof Users; color: string; bg: string }> = [
+  { type: 'Admin Team', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { type: 'Families', icon: Heart, color: 'text-blue-600', bg: 'bg-blue-50' },
+  { type: 'Other Professionals', icon: Stethoscope, color: 'text-violet-600', bg: 'bg-violet-50' },
+  { type: 'Recurrent Families / Patients', icon: UserCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
+];
+
+const FIELD_LABELS: Array<{ key: keyof StyleProfileSection; label: string; multiline?: boolean }> = [
+  { key: 'tone', label: 'Tone', multiline: true },
+  { key: 'greeting', label: 'Greeting' },
+  { key: 'signOff', label: 'Sign-off' },
+  { key: 'keyPhrases', label: 'Key phrases', multiline: true },
 ];
 
 export default function StyleTab() {
@@ -25,8 +38,8 @@ export default function StyleTab() {
 
   const handleBuild = () => {
     const sample = sentEmails.map(e => `To: ${e.to}\nSubject: ${e.subject}\nBody: ${e.body}`).join('\n\n---\n\n');
-    const prompt = `Analyse this clinician's writing style. Return EXACTLY this format:\nOVERALL: [2-sentence voice summary]\n\nPARENTS/FAMILIES\nGreeting: ...\nTone: ...\nSign-off: ...\nKey phrases: ...\n\n[repeat for CLINICAL COLLEAGUES, GPs, SCHOOLS / SENCOs, FORMAL / LEGAL]\n\nEmails:\n${sample}`;
-    
+    const prompt = `Analyse this clinician's writing style. Return EXACTLY this format:\nOVERALL: [2-sentence voice summary]\n\nADMIN TEAM\nGreeting: ...\nTone: ...\nSign-off: ...\nKey phrases: ...\n\n[repeat for FAMILIES, OTHER PROFESSIONALS, RECURRENT FAMILIES / PATIENTS]\n\nEmails:\n${sample}`;
+
     aiComplete.mutate({ data: { prompt } }, {
       onSuccess: (res) => {
         const parsed = parseStyleProfile(res.text);
@@ -39,16 +52,50 @@ export default function StyleTab() {
     });
   };
 
+  const updateSection = (type: RecipientType, field: keyof StyleProfileSection, value: string) => {
+    setProfile(prev => {
+      const base = prev ?? { overall: '', sections: {}, builtAt: 0 };
+      const current = base.sections[type] ?? { ...DEFAULT_TONE_PROFILES[type] };
+      const next: StyleProfile = {
+        ...base,
+        sections: { ...base.sections, [type]: { ...current, [field]: value } },
+      };
+      saveStyleProfile(next);
+      return next;
+    });
+  };
+
+  const updateOverall = (value: string) => {
+    setProfile(prev => {
+      const base = prev ?? { overall: '', sections: {}, builtAt: 0 };
+      const next: StyleProfile = { ...base, overall: value };
+      saveStyleProfile(next);
+      return next;
+    });
+  };
+
+  const resetSection = (type: RecipientType) => {
+    setProfile(prev => {
+      const base = prev ?? { overall: '', sections: {}, builtAt: 0 };
+      const next: StyleProfile = {
+        ...base,
+        sections: { ...base.sections, [type]: { ...DEFAULT_TONE_PROFILES[type] } },
+      };
+      saveStyleProfile(next);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="max-w-xl">
           <h2 className="text-2xl font-bold tracking-tight">Writing Style Profile</h2>
           <p className="text-muted-foreground mt-1">
-            AI analyses your sent emails to learn your professional voice, ensuring generated drafts sound exactly like you.
+            Each recipient group has a built-in tone you can edit inline. Or let the AI analyse your sent emails to refine it.
           </p>
         </div>
-        <button 
+        <button
           onClick={handleBuild}
           disabled={aiComplete.isPending}
           className="flex items-center gap-2 bg-primary text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
@@ -59,7 +106,7 @@ export default function StyleTab() {
         </button>
       </div>
 
-      {profile ? (
+      {profile && (
         <div className="space-y-6">
           <Card className="border-primary/20 bg-primary/5 shadow-sm">
             <CardContent className="p-6">
@@ -67,49 +114,73 @@ export default function StyleTab() {
                 <div className="p-3 bg-white rounded-xl text-primary shadow-sm h-fit">
                   <PenTool size={24} />
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                   <h3 className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Overall Voice</h3>
-                  <p className="text-lg font-medium leading-relaxed italic">"{profile.overall}"</p>
+                  <textarea
+                    value={profile.overall}
+                    onChange={e => updateOverall(e.target.value)}
+                    rows={2}
+                    className="w-full text-lg font-medium leading-relaxed italic bg-transparent border border-transparent hover:border-primary/30 focus:border-primary/50 focus:bg-white rounded-lg px-2 py-1 -mx-2 -my-1 resize-none focus:outline-none transition-colors"
+                    data-testid="input-overall-voice"
+                  />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {SECTION_META.map((s, i) => {
-              const section = profile.sections[s.type];
-              const tone = section?.tone || 'Direct & Empathetic';
-              const greeting = section?.greeting || 'Dear...';
-              const keyPhrases = section?.keyPhrases || '—';
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {SECTION_META.map((s) => {
+              const section = profile.sections[s.type] ?? { ...DEFAULT_TONE_PROFILES[s.type] };
               return (
-                <Card key={i} className="border-border/50 shadow-sm hover:border-primary/30 transition-colors" data-testid={`style-section-${s.type}`}>
-                  <CardHeader className={cn("pb-3 border-b border-border/30", s.bg)}>
-                    <CardTitle className={cn("text-xs font-bold uppercase tracking-widest flex items-center gap-2", s.color)}>
+                <Card
+                  key={s.type}
+                  className="border-border/50 shadow-sm hover:border-primary/30 transition-colors"
+                  data-testid={`style-section-${s.type}`}
+                >
+                  <CardHeader className={cn('pb-3 border-b border-border/30 flex flex-row items-center justify-between gap-2', s.bg)}>
+                    <CardTitle className={cn('text-xs font-bold uppercase tracking-widest flex items-center gap-2', s.color)}>
                       <s.icon size={14} /> {s.type}
                     </CardTitle>
+                    <button
+                      type="button"
+                      onClick={() => resetSection(s.type)}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-white/60"
+                      data-testid={`reset-${s.type}`}
+                      title="Restore the built-in default values"
+                    >
+                      <RotateCcw size={11} /> Reset to default
+                    </button>
                   </CardHeader>
-                  <CardContent className="p-4 space-y-4">
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Tone & Greeting</p>
-                      <p className="text-sm font-semibold">{tone} • "{greeting}"</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Key Phrases</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed italic">{keyPhrases}</p>
-                    </div>
+                  <CardContent className="p-4 space-y-3">
+                    {FIELD_LABELS.map(f => (
+                      <div key={f.key} className="space-y-1">
+                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                          {f.label}
+                        </label>
+                        {f.multiline ? (
+                          <textarea
+                            value={section[f.key]}
+                            onChange={e => updateSection(s.type, f.key, e.target.value)}
+                            rows={2}
+                            className="w-full text-sm bg-transparent border border-transparent hover:border-border focus:border-primary/50 focus:bg-white rounded-md px-2 py-1.5 resize-y focus:outline-none transition-colors leading-relaxed"
+                            data-testid={`input-${s.type}-${f.key}`}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={section[f.key]}
+                            onChange={e => updateSection(s.type, f.key, e.target.value)}
+                            className="w-full text-sm font-semibold bg-transparent border border-transparent hover:border-border focus:border-primary/50 focus:bg-white rounded-md px-2 py-1.5 focus:outline-none transition-colors"
+                            data-testid={`input-${s.type}-${f.key}`}
+                          />
+                        )}
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
               );
             })}
           </div>
-        </div>
-      ) : (
-        <div className="py-20 border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center">
-          <div className="p-4 bg-muted/50 rounded-full text-muted-foreground mb-4">
-            <PenTool size={32} />
-          </div>
-          <p className="font-bold">No style profile active</p>
-          <p className="text-sm text-muted-foreground max-w-xs mt-1">Click "Build Style Profile" to let AI learn from your sent items below.</p>
         </div>
       )}
 

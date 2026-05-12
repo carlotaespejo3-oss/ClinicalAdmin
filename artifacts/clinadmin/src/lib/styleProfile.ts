@@ -16,16 +16,43 @@ export interface StyleProfile {
 const STYLE_KEY = 'clinadmin-style-profile';
 
 const HEADER_TO_TYPE: Record<string, RecipientType> = {
-  'PARENTS/FAMILIES': 'Parents/Families',
-  'PARENTS / FAMILIES': 'Parents/Families',
-  'CLINICAL COLLEAGUES': 'Clinical Colleagues',
-  'GPS': 'GPs',
-  'GP': 'GPs',
-  'SCHOOLS / SENCOS': 'Schools / SENCOs',
-  'SCHOOLS/SENCOS': 'Schools / SENCOs',
-  'FORMAL / LEGAL': 'Formal / Legal',
-  'FORMAL/LEGAL': 'Formal / Legal',
+  'ADMIN TEAM': 'Admin Team',
+  'FAMILIES': 'Families',
+  'OTHER PROFESSIONALS': 'Other Professionals',
+  'RECURRENT FAMILIES / PATIENTS': 'Recurrent Families / Patients',
+  'RECURRENT FAMILIES/PATIENTS': 'Recurrent Families / Patients',
+  'RECURRENT FAMILIES': 'Recurrent Families / Patients',
 };
+
+export const DEFAULT_TONE_PROFILES: Record<RecipientType, StyleProfileSection> = {
+  'Admin Team': {
+    greeting: 'Hi team,',
+    tone: 'Casual, warm, and collegial — like talking to people you see every day.',
+    signOff: 'Thanks!',
+    keyPhrases: 'quick one, when you get a sec, no rush, ta, cheers',
+  },
+  'Families': {
+    greeting: 'Hi [first name],',
+    tone: 'Professional but warm and close, somewhat casual. Always address parents by their first name.',
+    signOff: 'Warm regards,',
+    keyPhrases: 'thanks so much, just wanted to check in, do let me know, happy to chat through this',
+  },
+  'Other Professionals': {
+    greeting: 'Hi [first name],',
+    tone: 'Casual and warm but professional — collegial peer-to-peer tone with allied health and other doctors.',
+    signOff: 'Best wishes,',
+    keyPhrases: 'thanks for the referral, happy to discuss, keen to hear your thoughts, will keep you posted',
+  },
+  'Recurrent Families / Patients': {
+    greeting: 'Hi [first name],',
+    tone: 'Even more casual than Families — familiar, friendly, and personal, as you already have an established relationship.',
+    signOff: 'Take care,',
+    keyPhrases: 'lovely to hear from you again, hope you\'ve all been well, just give me a shout, as always',
+  },
+};
+
+const DEFAULT_OVERALL =
+  'Warm, attentive, and clearly clinical — adapts naturally from collegial casualness with the team to a closer, friendlier tone with families you know well.';
 
 function fieldValue(block: string, label: string): string {
   const re = new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, 'im');
@@ -39,7 +66,6 @@ export function parseStyleProfile(text: string): StyleProfile {
 
   const sections: Partial<Record<RecipientType, StyleProfileSection>> = {};
 
-  // Split by blank lines and look at first line of each block as a potential header.
   const blocks = text.split(/\n\s*\n/);
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
@@ -68,16 +94,28 @@ export function saveStyleProfile(profile: StyleProfile): void {
   }
 }
 
+function buildDefaultProfile(): StyleProfile {
+  const sections: Partial<Record<RecipientType, StyleProfileSection>> = {};
+  for (const type of RECIPIENT_TYPES) {
+    sections[type] = { ...DEFAULT_TONE_PROFILES[type] };
+  }
+  return { overall: DEFAULT_OVERALL, sections, builtAt: 0 };
+}
+
 export function loadStyleProfile(): StyleProfile | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STYLE_KEY);
-    if (!raw) return null;
+    if (!raw) return buildDefaultProfile();
     const parsed = JSON.parse(raw) as StyleProfile;
-    if (!parsed || typeof parsed !== 'object' || !parsed.sections) return null;
-    return parsed;
+    if (!parsed || typeof parsed !== 'object' || !parsed.sections) return buildDefaultProfile();
+    const sections: Partial<Record<RecipientType, StyleProfileSection>> = { ...parsed.sections };
+    for (const type of RECIPIENT_TYPES) {
+      if (!sections[type]) sections[type] = { ...DEFAULT_TONE_PROFILES[type] };
+    }
+    return { ...parsed, sections };
   } catch {
-    return null;
+    return buildDefaultProfile();
   }
 }
 
