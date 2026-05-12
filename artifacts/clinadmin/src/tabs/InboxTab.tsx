@@ -342,7 +342,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
                 {selectedEmail.cat === CAT.UNSAFE && (() => {
                   const slots: { slot: DraftSlot; label: string; sub: string }[] = [
-                    { slot: 'family', label: 'Draft to family', sub: 'Compassionate interim acknowledgement' },
+                    { slot: 'family', label: 'Draft to family', sub: 'Holding reply — interim acknowledgement' },
                     { slot: 'admin', label: 'Draft to admin team', sub: 'Urgent booking request' },
                   ];
                   const drafts = aiDrafts[selectedEmail.id] ?? {};

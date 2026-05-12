@@ -11,7 +11,6 @@ export const CAT = {
   ADMIN: 'Admin only',
   NONE: 'No action required',
   LEGAL: 'Medico-legal',
-  LOW: 'Low priority',
   DONE: 'Completed'
 } as const;
 
@@ -237,7 +236,7 @@ export const homePlan: HomePlanItem[] = [
   {
     id: 1,
     title: 'Review Mia C. high-risk email — suicidal ideation flag',
-    why: 'Suicidal-risk wording from parent — needs compassionate dual draft, not a standard reply.',
+    why: 'Suicidal-risk wording from parent — needs a holding reply plus an urgent booking request, not a standard reply.',
     time: '15 min',
     done: false,
     emailId: 1,

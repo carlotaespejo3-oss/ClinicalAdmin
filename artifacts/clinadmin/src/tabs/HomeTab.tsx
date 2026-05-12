@@ -30,7 +30,7 @@ const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
 const projectedExtra = 45;
 
 function emailWhy(e: Email): string {
-  if (e.cat === CAT.UNSAFE) return 'Suicidal-risk wording from parent — compassionate dual draft needed.';
+  if (e.cat === CAT.UNSAFE) return 'Suicidal-risk wording from parent — needs a holding reply plus an urgent booking request.';
   if (e.cat === CAT.URGENT) return 'Urgent clinical — your input required.';
   if (e.isProfessional) return 'Colleague awaiting your reply.';
   if (e.isMeeting) return 'Meeting / event — deadline approaching.';
@@ -42,7 +42,7 @@ function emailWhy(e: Email): string {
 }
 
 function emailRowBadge(e: Email): { label: string; cls: string; Icon: typeof Users } | null {
-  if (e.cat === CAT.UNSAFE) return { label: 'Compassionate dual draft', cls: 'text-amber-700 bg-amber-50 border-amber-200', Icon: ShieldAlert };
+  if (e.cat === CAT.UNSAFE) return { label: 'Holding reply + booking request', cls: 'text-amber-700 bg-amber-50 border-amber-200', Icon: ShieldAlert };
   if (e.isProfessional) return { label: 'Professional colleague', cls: 'text-purple-700 bg-purple-50 border-purple-200', Icon: Users };
   if (e.isMeeting) return { label: 'Deadline approaching', cls: 'text-orange-700 bg-orange-50 border-orange-200', Icon: CalendarClock };
   if (e.cat === CAT.URGENT) return { label: 'Urgent clinical', cls: 'text-red-700 bg-red-50 border-red-200', Icon: AlertTriangle };
