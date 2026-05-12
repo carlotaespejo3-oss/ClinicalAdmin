@@ -11,7 +11,7 @@ import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
 import { manualTasks as seedManualTasks } from '@/lib/data';
 import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
 import { findLinkedTaskForEmail, detectCompletionLanguage } from '@/lib/linkedTaskUtils';
-import { useAiClassifications, setClassification, overrideCategory } from '@/lib/aiClassifyStore';
+import { useAiClassifications, setClassification, overrideCategory, confirmDocumentDirection } from '@/lib/aiClassifyStore';
 import { classifyQueue, classifyEmail } from '@/lib/classifyEmail';
 import { CATEGORY_LABEL, CATEGORY_BADGE, PRIORITY_LABEL, PRIORITY_BADGE } from '@/lib/aiCategory';
 import {
@@ -219,6 +219,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         documentRequested: null,
         eventDate: null,
         registrationDeadline: null,
+        documentDirection: null,
         requiresDocument: false,
         documentType: null,
         documentDueDays: null,
@@ -545,13 +546,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", CATEGORY_BADGE[cls.category])}>
                             {CATEGORY_LABEL[cls.category]}
                           </span>
-                          {cls.requiresDocument && (
+                          {cls.documentDirection === 'outgoing' && (
                             <span
                               className="inline-flex items-center gap-1 text-[11px] font-bold border border-purple-200 bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full"
                               data-testid="badge-document-required"
-                              title={cls.documentType ?? 'Document required'}
+                              title={cls.documentType ?? 'Document requested'}
                             >
-                              📄 Document required
+                              📄 Document requested — task created
+                            </span>
+                          )}
+                          {cls.documentDirection === 'incoming' && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-bold border border-slate-200 bg-slate-50 text-slate-600 px-2.5 py-1 rounded-full"
+                              data-testid="badge-document-received"
+                              title={cls.documentType ?? 'Document received'}
+                            >
+                              📄 Document received — for your information
+                            </span>
+                          )}
+                          {cls.documentDirection === 'unclear' && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-bold border border-amber-200 bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full"
+                              data-testid="badge-document-unclear"
+                              title={cls.documentType ?? 'Document — please confirm'}
+                            >
+                              📄 Document — please confirm
                             </span>
                           )}
                         </div>
@@ -589,6 +608,57 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   </span>
                 )}
               </div>
+
+              {/* Direction-confirm banner — shown when a document was
+                  detected but the AI couldn't tell whether it's incoming
+                  (FYI) or outgoing (action). The clinician decides;
+                  pressing "Yes" creates the linked task, pressing "No"
+                  leaves it as a received document. */}
+              {(() => {
+                const cls = classifications.get(selectedEmail.id);
+                if (cls?.documentDirection !== 'unclear') return null;
+                return (
+                  <div
+                    className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4"
+                    data-testid="document-direction-confirm"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-base">
+                        📄
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-amber-900 mb-1">
+                          Is this asking you to write something?
+                        </p>
+                        <p className="text-xs text-amber-800 leading-snug mb-3">
+                          A document was mentioned ({cls.documentType ?? 'document'}),
+                          but it's not clear whether the sender is asking
+                          you to produce it or sharing it for your
+                          information.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => confirmDocumentDirection(selectedEmail.id, 'outgoing')}
+                            className="text-xs font-bold bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors"
+                            data-testid="confirm-doc-outgoing"
+                          >
+                            Yes — create a task
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmDocumentDirection(selectedEmail.id, 'incoming')}
+                            className="text-xs font-bold bg-white border border-amber-300 text-amber-800 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors"
+                            data-testid="confirm-doc-incoming"
+                          >
+                            No — just information
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Auto-created linked-document task panel (Step 4: document/form detection) */}
               {(() => {

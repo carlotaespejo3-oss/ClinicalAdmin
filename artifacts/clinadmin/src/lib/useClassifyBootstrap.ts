@@ -42,6 +42,7 @@ export function useClassifyBootstrap(): void {
           documentRequested: null,
           eventDate: null,
           registrationDeadline: null,
+          documentDirection: null,
           requiresDocument: false,
           documentType: null,
           documentDueDays: null,

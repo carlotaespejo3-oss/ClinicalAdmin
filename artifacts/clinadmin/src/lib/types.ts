@@ -123,10 +123,23 @@ export interface AiClassification {
   documentRequested: string | null;
   eventDate: string | null;
   registrationDeadline: string | null;
-  // Document/form detection (Step 4): true when the email asks the
-  // clinician to write a document (report, letter, certificate, form). When
-  // true, estimateMinutes returns a single combined block (20 min, or 30
-  // for LEGAL) — the email reply and document write are ONE piece of work.
+  // Document/form detection. There are two completely different cases:
+  //   - Someone is sending the clinician a document for their information
+  //     (psych report, GP discharge, school report, pathology results) →
+  //     direction = 'incoming'. No task created, no extra time, just a
+  //     "Document received" badge.
+  //   - Someone is asking the clinician to PRODUCE a document (NDIS
+  //     report, EHCP letter, court report, school support letter) →
+  //     direction = 'outgoing'. requiresDocument = true, a linked task
+  //     is auto-created, and estimateMinutes returns the combined block.
+  //   - direction = 'unclear' means a document is mentioned but we can't
+  //     tell which way; the UI prompts the clinician to confirm.
+  //   - direction = null means no document was detected at all.
+  //
+  // requiresDocument is the canonical "create the task / use the
+  // combined time block" flag — it is only true when direction is
+  // 'outgoing' (either auto-detected or clinician-confirmed).
+  documentDirection: 'incoming' | 'outgoing' | 'unclear' | null;
   requiresDocument: boolean;
   documentType: string | null;       // e.g. "NDIS report", "EHCP letter"
   documentDueDays: number | null;    // days from now if the email mentions a deadline

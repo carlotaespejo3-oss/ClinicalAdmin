@@ -54,9 +54,15 @@ OUTPUT JSON SHAPE (exact keys, no extras):
   "documentRequested": "<short description of document if PROFESSIONAL+document_request, else null>",
   "eventDate": "<event/meeting date if CPD and detectable, else null>",
   "registrationDeadline": "<registration deadline if CPD and detectable, else null>",
-  "requiresDocument": <true if the email asks the clinician to write/complete a report, letter, certificate, or form (NDIS report, EHCP/school letter, medical certificate, referral letter, court or medico-legal report, insurance form, allied health report, "please complete", "please provide a letter", "please fill in", "we need a report"); else false>,
-  "documentType": "<short label like 'NDIS report', 'EHCP letter', 'Medical certificate', 'Court report', 'Insurance form' if requiresDocument else null>",
-  "documentDueDays": <integer days from today the document is due if mentioned in the email, else null>
+  "documentDirection": "<one of 'outgoing' | 'incoming' | 'unclear' | null. CRITICAL distinction:
+      - 'outgoing'  → the sender is asking the CLINICIAN to PRODUCE a document (NDIS report request, EHCP letter request, court report, school support letter request, insurance certificate request, medical certificate request, referral letter request). Cues: 'please complete', 'please provide', 'we need a letter/report', 'could you write', 'requesting a letter/report', 'we would be grateful if you could provide', 'please fill in', 'can you send us'.
+      - 'incoming'  → the sender is sending the CLINICIAN a document FOR INFORMATION (a colleague sharing their psych assessment, a GP sharing a discharge summary, allied health sharing a progress note, school sharing a report, pathology sharing results). Cues: 'please find attached', 'I am sending you', 'attached is', 'enclosed', 'for your information', 'for your records', 'I wanted to share', 'I hope this is helpful'.
+      - 'unclear'   → a document is mentioned but you cannot tell direction with confidence.
+      - null        → no document is involved at all.
+      Never set 'outgoing' just because the email mentions a document — ONLY when the sender is asking the clinician to write/produce one.>",
+  "requiresDocument": <true ONLY if documentDirection is 'outgoing'. false for 'incoming', 'unclear', or null. This drives task creation and time estimates, so only set true when you are confident the clinician must produce something.>,
+  "documentType": "<short label like 'NDIS report', 'EHCP letter', 'Medical certificate', 'Court report', 'Insurance form', 'Psychological assessment', 'Discharge summary' if a document is involved (any direction); else null>",
+  "documentDueDays": <integer days from today the document is due if requiresDocument and a deadline is mentioned; else null>
 }
 
 EMAIL TO CLASSIFY:
@@ -113,17 +119,50 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
       ? (rawSubType as AiClassification['professionalSubType'])
       : null;
 
-  // Document detection: OR the AI's flag with a regex-based heuristic so
-  // we still catch document requests even when the AI misses the cue.
+  // Document detection — direction-aware. Combine the AI's
+  // documentDirection with the regex heuristic. Either source can flag a
+  // document; once a document is detected, direction is decided as:
+  //   - if either source says 'outgoing' → 'outgoing' (action wins,
+  //     because an unmade task is worse than an extra "received" badge)
+  //   - else if either source says 'incoming' → 'incoming'
+  //   - else 'unclear'
+  // requiresDocument is then set ONLY when direction is 'outgoing', so
+  // the linked task and combined time block don't fire for FYI emails.
+  const aiDocDir = asString(parsed?.documentDirection as unknown);
+  const aiDirection: 'incoming' | 'outgoing' | 'unclear' | null =
+    aiDocDir === 'outgoing' || aiDocDir === 'incoming' || aiDocDir === 'unclear'
+      ? aiDocDir
+      : null;
   const aiRequiresDoc = parsed?.requiresDocument === true;
   const aiDocType = asString(parsed?.documentType as unknown);
   const aiDocDueRaw = parsed?.documentDueDays;
-  const aiDocDue = typeof aiDocDueRaw === 'number' && Number.isFinite(aiDocDueRaw) && aiDocDueRaw >= 0
-    ? Math.round(aiDocDueRaw)
-    : null;
+  const aiDocDue =
+    typeof aiDocDueRaw === 'number' && Number.isFinite(aiDocDueRaw) && aiDocDueRaw >= 0
+      ? Math.round(aiDocDueRaw)
+      : null;
   const heuristic = detectDocumentRequest(email);
-  const requiresDocument = aiRequiresDoc || heuristic.requiresDocument;
-  const documentType = requiresDocument
+
+  const hasDocument = heuristic.hasDocument || aiDirection !== null || aiRequiresDoc;
+  let documentDirection: 'incoming' | 'outgoing' | 'unclear' | null = null;
+  if (hasDocument) {
+    // Direction requires explicit directional evidence — never derive
+    // 'outgoing' from a bare requiresDocument flag, because a stale or
+    // contradictory AI payload (e.g. direction='incoming' AND
+    // requiresDocument=true) would otherwise spawn a false-positive task.
+    // We only honour requiresDocument when no source contradicts it
+    // (i.e. it acts as a tiebreaker that nudges 'unclear' → 'outgoing').
+    if (aiDirection === 'outgoing' || heuristic.direction === 'outgoing') {
+      documentDirection = 'outgoing';
+    } else if (aiDirection === 'incoming' || heuristic.direction === 'incoming') {
+      documentDirection = 'incoming';
+    } else if (aiRequiresDoc) {
+      documentDirection = 'outgoing';
+    } else {
+      documentDirection = 'unclear';
+    }
+  }
+  const requiresDocument = documentDirection === 'outgoing';
+  const documentType = hasDocument
     ? (aiDocType ?? heuristic.documentType ?? asString(parsed?.documentRequested as unknown))
     : null;
   const documentDueDays = requiresDocument ? (aiDocDue ?? heuristic.documentDueDays) : null;
@@ -140,6 +179,7 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     documentRequested: asString(parsed?.documentRequested as unknown),
     eventDate: asString(parsed?.eventDate as unknown),
     registrationDeadline: asString(parsed?.registrationDeadline as unknown),
+    documentDirection,
     requiresDocument,
     documentType,
     documentDueDays,

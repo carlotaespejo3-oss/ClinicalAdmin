@@ -90,10 +90,33 @@ export function overrideCategory(emailId: number, category: AiClassification['ca
         documentRequested: null,
         eventDate: null,
         registrationDeadline: null,
+        documentDirection: null,
         requiresDocument: false,
         documentType: null,
         documentDueDays: null,
       };
+  mutate((m) => m.set(emailId, next));
+  applyEstimateToEmail(next, emailId);
+}
+
+// Clinician-confirmed direction for an "unclear" document classification.
+// Pressing "Yes — create a task" calls this with 'outgoing' (which flips
+// requiresDocument to true and triggers ensureLinkedDocTask via the
+// applyEstimateToEmail side-effect). Pressing "No — just information"
+// calls this with 'incoming' (which leaves requiresDocument false and
+// removes any task that was speculatively created).
+export function confirmDocumentDirection(
+  emailId: number,
+  direction: 'outgoing' | 'incoming',
+) {
+  const existing = load().get(emailId);
+  if (!existing) return;
+  const next: AiClassification = {
+    ...existing,
+    documentDirection: direction,
+    requiresDocument: direction === 'outgoing',
+    classifiedAt: Date.now(),
+  };
   mutate((m) => m.set(emailId, next));
   applyEstimateToEmail(next, emailId);
 }
