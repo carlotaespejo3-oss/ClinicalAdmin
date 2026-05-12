@@ -85,6 +85,23 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
     if (item.emailId) setOpenItem(item);
   };
 
+  const requestCloseDraft = () => {
+    if (!openItem) return;
+    const original = openItem.draftReply ?? '';
+    const edited = editedDrafts[openItem.id];
+    const hasUnsavedEdits = edited !== undefined && edited !== original;
+    if (hasUnsavedEdits) {
+      const confirmed = window.confirm('Discard your edits to this draft? Your changes will be lost.');
+      if (!confirmed) return;
+      setEditedDrafts(prev => {
+        const next = { ...prev };
+        delete next[openItem.id];
+        return next;
+      });
+    }
+    setOpenItem(null);
+  };
+
   const handleCopy = () => {
     if (openItem) {
       navigator.clipboard.writeText(currentDraftBody);
@@ -633,14 +650,14 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
       {/* Email Draft Slide-over */}
       {openItem && (
         <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setOpenItem(null)} />
+          <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={requestCloseDraft} />
           <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Draft Reply</p>
                 <h3 className="text-base font-bold">{openItem.title}</h3>
               </div>
-              <button onClick={() => setOpenItem(null)} className="p-2 rounded-full hover:bg-slate-100 text-muted-foreground transition-colors">
+              <button onClick={requestCloseDraft} className="p-2 rounded-full hover:bg-slate-100 text-muted-foreground transition-colors" data-testid="button-close-draft">
                 <X size={18} />
               </button>
             </div>
