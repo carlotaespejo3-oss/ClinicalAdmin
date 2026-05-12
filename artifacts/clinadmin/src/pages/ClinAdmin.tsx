@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
@@ -25,6 +25,7 @@ export interface WeekSetup {
 const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
   { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
+  { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
   { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
   { id: 'Tasks', icon: CheckSquare, label: 'Tasks' },
