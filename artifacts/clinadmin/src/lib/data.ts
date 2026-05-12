@@ -1,5 +1,7 @@
 import { Email, SentEmail, ManualTask, HomePlanItem, WeekDataItem, WeekHistoryItem } from './types';
 
+export type { Email, SentEmail, ManualTask, HomePlanItem, WeekDataItem, WeekHistoryItem } from './types';
+
 export const CAT = {
   URGENT: 'Urgent clinical',
   UNSAFE: 'Unsafe to answer by email',
