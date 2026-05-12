@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw, ShieldAlert, FileText, ExternalLink } from 'lucide-react';
 import { weekData, emails, CAT } from '@/lib/data';
 import { Email, ManualTask, SidebarTask, TabType } from '@/lib/types';
-import { cn, getEmailPriority, getTaskPriority, getEmailWhy, getTaskWhy, PRIORITY_PILL, PRIORITY_RANK } from '@/lib/utils';
+import { cn, getEmailPriority, getTaskPriority, getEmailWhy, getTaskWhy, PRIORITY_PILL, PRIORITY_RANK, type Priority } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
 
 interface Props {
@@ -215,6 +215,26 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     todayTasks.filter(t => handledTaskIds.has(t.id)).length +
     sidebarTasks.filter(t => t.done).length;
 
+  // Priority summary: bucket all actionable items (open emails + uncompleted
+  // manual & sidebar tasks) into Urgent / Medium / Low. Memoised so it stays
+  // reactive as items are handled or completed elsewhere in the app.
+  const priorityCounts = useMemo(() => {
+    const counts = { High: 0, Medium: 0, Low: 0 } as Record<Priority, number>;
+    for (const e of emails) {
+      if (e.cat === CAT.NONE) continue;
+      counts[getEmailPriority(e)]++;
+    }
+    for (const t of manualTasks) {
+      if (t.done) continue;
+      counts[getTaskPriority(t)]++;
+    }
+    for (const t of sidebarTasks) {
+      if (t.done) continue;
+      counts[t.priority === 'high' ? 'High' : 'Low']++;
+    }
+    return counts;
+  }, [manualTasks, sidebarTasks]);
+
   const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
 
   // Build the per-day minute breakdown. If the user has explicit overrides
@@ -325,6 +345,37 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           <h1 className="text-2xl font-bold text-foreground">Good morning, Dr. Morgan</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan. Follow it and you're on top of your admin.</p>
         </div>
+      </div>
+
+      {/* Priority summary bar */}
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="priority-summary-bar"
+        aria-label="Priority summary"
+      >
+        {([
+          { key: 'High' as const, label: 'Urgent' },
+          { key: 'Medium' as const, label: 'Medium' },
+          { key: 'Low' as const, label: 'Low' },
+        ]).map(({ key, label }) => {
+          const count = priorityCounts[key];
+          const zero = count === 0;
+          return (
+            <span
+              key={key}
+              data-testid={`priority-summary-${label.toLowerCase()}`}
+              className={cn(
+                'inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border',
+                zero
+                  ? 'text-muted-foreground bg-slate-50 border-slate-200 opacity-60'
+                  : PRIORITY_PILL[key],
+              )}
+            >
+              <span className="tabular-nums">{count}</span>
+              <span>{label}</span>
+            </span>
+          );
+        })}
       </div>
 
       {/* Risk / Status Banner */}
