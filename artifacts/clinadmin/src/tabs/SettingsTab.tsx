@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RECIPIENT_TYPES, type RecipientType } from '@/lib/signatures';
 
 const STORAGE_KEY = 'clinadmin-settings';
 
@@ -27,6 +28,7 @@ export interface ClinAdminSettings {
     desktopSound: boolean;
   };
   signature: string;
+  signatures: Partial<Record<RecipientType, string>>;
 }
 
 const DEFAULT_SETTINGS: ClinAdminSettings = {
@@ -50,6 +52,7 @@ const DEFAULT_SETTINGS: ClinAdminSettings = {
   },
   signature:
     'Kind regards,\nDr. Sam Patel\nConsultant Clinical Psychologist\nNorth CAMHS Team',
+  signatures: {},
 };
 
 function loadSettings(): ClinAdminSettings {
@@ -63,6 +66,12 @@ function loadSettings(): ClinAdminSettings {
       weeklyDefaults: { ...DEFAULT_SETTINGS.weeklyDefaults, ...(parsed.weeklyDefaults ?? {}) },
       notifications: { ...DEFAULT_SETTINGS.notifications, ...(parsed.notifications ?? {}) },
       signature: typeof parsed.signature === 'string' ? parsed.signature : DEFAULT_SETTINGS.signature,
+      signatures:
+        parsed.signatures && typeof parsed.signatures === 'object'
+          ? Object.fromEntries(
+              RECIPIENT_TYPES.map(t => [t, typeof parsed.signatures[t] === 'string' ? parsed.signatures[t] : '']),
+            )
+          : {},
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -120,6 +129,13 @@ export default function SettingsTab() {
 
   const updateSignature = (value: string) => {
     persist({ ...settings, signature: value });
+  };
+
+  const updateRecipientSignature = (recipient: RecipientType, value: string) => {
+    persist({
+      ...settings,
+      signatures: { ...settings.signatures, [recipient]: value },
+    });
   };
 
   const resetDefaults = () => {
@@ -311,26 +327,68 @@ export default function SettingsTab() {
       <section className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
         <header className="px-5 py-4 border-b border-border flex items-center gap-2.5">
           <PenLine size={16} className="text-primary" />
-          <h2 className="text-sm font-bold text-foreground">Email signature</h2>
+          <h2 className="text-sm font-bold text-foreground">Email signatures</h2>
         </header>
-        <div className="p-5 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Appended to the bottom of every AI-drafted reply. Plain text only.
-          </p>
-          <textarea
-            value={settings.signature}
-            onChange={e => updateSignature(e.target.value)}
-            rows={6}
-            className="w-full text-sm bg-white border border-border rounded-lg px-3 py-2 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
-            data-testid="input-signature"
-          />
-          <div className="rounded-xl bg-slate-50 border border-border p-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-              Preview
-            </p>
-            <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">
-              {settings.signature || '(no signature set)'}
-            </pre>
+        <div className="p-5 space-y-5">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Default signature</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Used for any AI-drafted reply when no recipient-specific signature is set. Plain text only.
+              </p>
+            </div>
+            <textarea
+              value={settings.signature}
+              onChange={e => updateSignature(e.target.value)}
+              rows={6}
+              className="w-full text-sm bg-white border border-border rounded-lg px-3 py-2 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+              data-testid="input-signature"
+            />
+            <div className="rounded-xl bg-slate-50 border border-border p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                Preview
+              </p>
+              <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">
+                {settings.signature || '(no signature set)'}
+              </pre>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-5 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Per-recipient signatures</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Optional sign-offs tailored to each recipient type. Leave blank to fall back to the default above.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {RECIPIENT_TYPES.map(recipient => {
+                const value = settings.signatures[recipient] ?? '';
+                const usingDefault = !value.trim();
+                return (
+                  <div key={recipient} className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-foreground uppercase tracking-wider">
+                        {recipient}
+                      </label>
+                      {usingDefault && (
+                        <span className="text-[10px] font-semibold text-muted-foreground bg-slate-100 border border-border px-2 py-0.5 rounded-full">
+                          Using default
+                        </span>
+                      )}
+                    </div>
+                    <textarea
+                      value={value}
+                      onChange={e => updateRecipientSignature(recipient, e.target.value)}
+                      rows={5}
+                      placeholder={`e.g. a warmer sign-off for ${recipient.toLowerCase()}…`}
+                      className="w-full text-sm bg-white border border-border rounded-lg px-3 py-2 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+                      data-testid={`input-signature-${recipient.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>
