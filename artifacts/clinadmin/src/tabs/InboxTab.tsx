@@ -1,9 +1,31 @@
 import { useState } from 'react';
-import { Mail, Search, Sparkles, AlertCircle, Send, CheckCircle2, Loader2, RefreshCcw } from 'lucide-react';
-import { emails, CAT } from '@/lib/data';
+import { Mail, Search, Sparkles, AlertCircle, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2 } from 'lucide-react';
+import { emails, manualTasks, CAT } from '@/lib/data';
 import { cn, initials, avatarColor, catBadge, riskDot } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
+
+const KIND_LABEL: Record<string, string> = {
+  clinical: 'Clinical question',
+  triage: 'Triage / quick decision',
+  script: 'Script request',
+  complex: 'Complex — creates a task',
+  admin: 'Admin',
+  meeting: 'Meeting / event',
+  professional: 'Professional',
+  none: 'No action',
+};
+
+const KIND_COLOUR: Record<string, string> = {
+  clinical: 'bg-red-50 text-red-700 border-red-200',
+  triage: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  script: 'bg-blue-50 text-blue-700 border-blue-200',
+  complex: 'bg-purple-50 text-purple-700 border-purple-200',
+  admin: 'bg-slate-50 text-slate-600 border-slate-200',
+  meeting: 'bg-amber-50 text-amber-700 border-amber-200',
+  professional: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  none: 'bg-slate-50 text-slate-500 border-slate-200',
+};
 
 export default function InboxTab() {
   const [selectedId, setSelectedId] = useState<number | null>(emails[0]?.id || null);
@@ -119,6 +141,65 @@ export default function InboxTab() {
                   </div>
                 </div>
               </div>
+
+              {/* Meta strip: kind, time, deadline */}
+              <div className="flex flex-wrap items-center gap-2 mb-6 pb-4 border-b border-border">
+                {selectedEmail.kind && (
+                  <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border", KIND_COLOUR[selectedEmail.kind])}>
+                    {KIND_LABEL[selectedEmail.kind]}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
+                  <Clock size={11} /> {selectedEmail.estMin} min to action
+                </span>
+                {selectedEmail.deadline !== null && (
+                  <span className={cn(
+                    "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border",
+                    selectedEmail.deadline <= 1
+                      ? "bg-red-50 text-red-700 border-red-200"
+                      : selectedEmail.deadline <= 3
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-slate-50 text-slate-600 border-slate-200"
+                  )}>
+                    Reply within {selectedEmail.deadline}d
+                  </span>
+                )}
+              </div>
+
+              {/* Linked-task panel for complex emails */}
+              {selectedEmail.linkedTaskId && (() => {
+                const task = manualTasks.find(t => t.id === selectedEmail.linkedTaskId);
+                if (!task) return null;
+                return (
+                  <div className="mb-6 bg-purple-50/50 border border-purple-200 rounded-2xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+                        <ListChecks size={15} className="text-purple-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest">Linked task</span>
+                          <Link2 size={10} className="text-purple-400" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground mb-1">{task.title}</p>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <span className="font-semibold">{task.type}</span>
+                          <span>·</span>
+                          <span><Clock size={9} className="inline" /> {task.estMin} min</span>
+                          <span>·</span>
+                          <span>Due in {task.deadline}d</span>
+                        </div>
+                        {task.autoCompleteOnReply && (
+                          <p className="text-[11px] text-purple-700 mt-2 font-medium">
+                            <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full mr-1.5 align-middle" />
+                            Will auto-complete when this email chain closes
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="prose prose-sm max-w-none mb-10 text-foreground leading-relaxed">
                 {selectedEmail.body.split('\n').map((line, i) => <p key={i}>{line}</p>)}

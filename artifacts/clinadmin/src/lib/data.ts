@@ -23,6 +23,7 @@ export const emails: Email[] = [
     date: 'Today, 08:45',
     risk: 'high',
     cat: CAT.UNSAFE,
+    kind: 'clinical',
     deadline: 1,
     estMin: 15
   },
@@ -35,8 +36,9 @@ export const emails: Email[] = [
     date: 'Today, 09:12',
     risk: 'high',
     cat: CAT.URGENT,
+    kind: 'clinical',
     deadline: 2,
-    estMin: 20
+    estMin: 15
   },
   {
     id: 3,
@@ -47,8 +49,9 @@ export const emails: Email[] = [
     date: 'Yesterday',
     risk: 'medium',
     cat: CAT.PROF,
+    kind: 'triage',
     deadline: 3,
-    estMin: 10,
+    estMin: 3,
     isProfessional: true
   },
   {
@@ -60,6 +63,7 @@ export const emails: Email[] = [
     date: 'Yesterday',
     risk: 'medium',
     cat: CAT.MEETING,
+    kind: 'meeting',
     deadline: 3,
     estMin: 5,
     isMeeting: true
@@ -71,22 +75,25 @@ export const emails: Email[] = [
     preview: "James is running low on his Ritalin 54mg and we are going away...",
     body: "James is running low on his Ritalin 54mg and we are going away on Friday. Could we please have an early script for his next month's supply?",
     date: '2 days ago',
-    risk: 'medium',
+    risk: 'low',
     cat: CAT.REVIEW,
-    deadline: 3,
-    estMin: 12
+    kind: 'script',
+    deadline: 14,
+    estMin: 15
   },
   {
     id: 6,
     from: 'Mrs. Davies — SENCO',
     subject: 'Lucas Thompson EHCP review 24th May',
     preview: "We are preparing for Lucas Thompson's EHCP review on the 24th May...",
-    body: "We are preparing for Lucas Thompson's EHCP review on the 24th May and would appreciate your clinical contribution to his social and emotional needs section.",
+    body: "We are preparing for Lucas Thompson's EHCP review on the 24th May and would appreciate your clinical contribution to his social and emotional needs section. Please complete the attached SENCO contribution template and return by 22nd May.",
     date: '3 days ago',
     risk: 'low',
     cat: CAT.REVIEW,
+    kind: 'complex',
     deadline: 9,
-    estMin: 30
+    estMin: 20,
+    linkedTaskId: 'm5'
   },
   {
     id: 7,
@@ -97,6 +104,7 @@ export const emails: Email[] = [
     date: '1 week ago',
     risk: 'none',
     cat: CAT.ADMIN,
+    kind: 'admin',
     deadline: 35,
     estMin: 5
   },
@@ -109,8 +117,9 @@ export const emails: Email[] = [
     date: '1 week ago',
     risk: 'none',
     cat: CAT.ADMIN,
+    kind: 'triage',
     deadline: 10,
-    estMin: 5
+    estMin: 3
   },
   {
     id: 9,
@@ -121,6 +130,7 @@ export const emails: Email[] = [
     date: '2 weeks ago',
     risk: 'none',
     cat: CAT.NONE,
+    kind: 'none',
     deadline: null,
     estMin: 2
   }
@@ -207,6 +217,17 @@ export const manualTasks: ManualTask[] = [
     risk: 'none',
     type: 'Meeting',
     estMin: 8
+  },
+  {
+    id: 'm5',
+    title: 'Complete EHCP clinical section — Lucas Thompson',
+    cat: CAT.REVIEW,
+    deadline: 9,
+    risk: 'low',
+    type: 'Form',
+    estMin: 30,
+    linkedEmailId: 6,
+    autoCompleteOnReply: true,
   }
 ];
 
@@ -258,8 +279,8 @@ CAMHS Consultant, St. Jude's Hospital`
   {
     id: 3,
     title: 'Reply to Dr. Osei — Priya Sharma formulation',
-    why: 'Clinical colleague — professional response required by Thu.',
-    time: '10 min',
+    why: 'Clinical colleague — quick yes/no by Thu.',
+    time: '3 min',
     done: false,
     badge: 'professional',
     emailId: 3,
@@ -299,7 +320,7 @@ Dr. A. Patterson`
     id: 5,
     title: 'Review medication side effect response',
     why: 'Parent waiting for advice.',
-    time: '10 min',
+    time: '15 min',
     done: false,
     emailId: 5,
     draftTo: 'Patricia Okafor (parent)',
@@ -351,8 +372,9 @@ export const histEmails: Email[] = [
     date: '14 days ago',
     risk: 'high',
     cat: CAT.UNSAFE,
+    kind: 'clinical',
     deadline: 0,
-    estMin: 20,
+    estMin: 15,
   },
   {
     id: 102,
@@ -363,6 +385,7 @@ export const histEmails: Email[] = [
     date: '12 days ago',
     risk: 'high',
     cat: CAT.URGENT,
+    kind: 'clinical',
     deadline: 2,
     estMin: 15,
   },
@@ -375,8 +398,9 @@ export const histEmails: Email[] = [
     date: '10 days ago',
     risk: 'high',
     cat: CAT.LEGAL,
+    kind: 'complex',
     deadline: 3,
-    estMin: 45,
+    estMin: 20,
   },
   {
     id: 104,
@@ -387,8 +411,9 @@ export const histEmails: Email[] = [
     date: '9 days ago',
     risk: 'medium',
     cat: CAT.REVIEW,
+    kind: 'complex',
     deadline: 1,
-    estMin: 30,
+    estMin: 20,
   },
   {
     id: 105,
@@ -399,8 +424,9 @@ export const histEmails: Email[] = [
     date: '8 days ago',
     risk: 'medium',
     cat: CAT.PROF,
+    kind: 'professional',
     deadline: 2,
-    estMin: 20,
+    estMin: 15,
   },
   {
     id: 106,
@@ -411,8 +437,9 @@ export const histEmails: Email[] = [
     date: '7 days ago',
     risk: 'medium',
     cat: CAT.REVIEW,
+    kind: 'complex',
     deadline: 3,
-    estMin: 25,
+    estMin: 20,
   },
   {
     id: 107,
@@ -423,6 +450,7 @@ export const histEmails: Email[] = [
     date: '6 days ago',
     risk: 'medium',
     cat: CAT.REVIEW,
+    kind: 'script',
     deadline: 1,
     estMin: 10,
   },
@@ -435,8 +463,9 @@ export const histEmails: Email[] = [
     date: '6 days ago',
     risk: 'medium',
     cat: CAT.LEGAL,
+    kind: 'complex',
     deadline: 22,
-    estMin: 30,
+    estMin: 20,
   },
   {
     id: 109,
@@ -447,6 +476,7 @@ export const histEmails: Email[] = [
     date: '5 days ago',
     risk: 'low',
     cat: CAT.MEETING,
+    kind: 'meeting',
     deadline: 23,
     estMin: 5,
   },
@@ -459,8 +489,9 @@ export const histEmails: Email[] = [
     date: '4 days ago',
     risk: 'low',
     cat: CAT.ADMIN,
+    kind: 'triage',
     deadline: 10,
-    estMin: 5,
+    estMin: 3,
   },
   {
     id: 111,
@@ -471,6 +502,7 @@ export const histEmails: Email[] = [
     date: '3 days ago',
     risk: 'low',
     cat: CAT.ADMIN,
+    kind: 'admin',
     deadline: 8,
     estMin: 5,
   },
@@ -483,6 +515,7 @@ export const histEmails: Email[] = [
     date: '2 days ago',
     risk: 'medium',
     cat: CAT.ADMIN,
+    kind: 'complex',
     deadline: 18,
     estMin: 20,
   },

@@ -1,3 +1,5 @@
+export type EmailKind = 'clinical' | 'triage' | 'script' | 'complex' | 'admin' | 'meeting' | 'professional' | 'none';
+
 export interface Email {
   id: number;
   from: string;
@@ -9,6 +11,8 @@ export interface Email {
   cat: string;
   deadline: number | null;
   estMin: number;
+  kind?: EmailKind;
+  linkedTaskId?: string;
   isProfessional?: boolean;
   isMeeting?: boolean;
 }
@@ -29,6 +33,9 @@ export interface ManualTask {
   risk: 'high' | 'medium' | 'low' | 'none';
   type: string;
   estMin: number;
+  linkedEmailId?: number;
+  autoCompleteOnReply?: boolean;
+  done?: boolean;
 }
 
 export interface SidebarTask {
