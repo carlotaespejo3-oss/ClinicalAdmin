@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, X, ChevronRight, TrendingUp, Mail, ClipboardList, AlertTriangle, CalendarDays, Check, Loader2 } from 'lucide-react';
-import { emails, weekHistory, manualTasks } from '@/lib/data';
+import { Sparkles, X, ChevronRight, TrendingUp, Mail, ClipboardList, AlertTriangle, CalendarDays, Check, RefreshCcw } from 'lucide-react';
+import { emails, weekHistory, manualTasks, histEmails } from '@/lib/data';
 import { GeneratedPlan } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -37,12 +37,17 @@ const histAvgMins = Math.round(
 );
 const recommendedMins = Math.round(Math.max(totalRecommendedMins, histAvgMins) * 1.1 / 10) * 10;
 
+// Catch-up stats
+const catchupHighRisk = histEmails.filter(e => e.risk === 'high').length;
+const catchupMedRisk  = histEmails.filter(e => e.risk === 'medium').length;
+const catchupMins     = histEmails.reduce((a, e) => a + e.estMin, 0);
+
 const SCAN_STEPS = [
   'Scanning your inbox...',
   'Classifying email urgency...',
   'Reviewing manual task backlog...',
   'Analysing last 4 weeks...',
-  'Calculating projected workload...',
+  'Checking catch-up backlog...',
   'Generating recommendation...',
 ];
 
@@ -82,7 +87,6 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
     return () => clearInterval(interval);
   }, [phase]);
 
-  // Cycle build messages while building
   useEffect(() => {
     if (phase !== 'building') return;
     const interval = setInterval(() => {
@@ -103,19 +107,11 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
     setBuildStep(0);
 
     const emailPayload = emails.map(e => ({
-      id: e.id,
-      from: e.from,
-      subject: e.subject,
-      risk: e.risk,
-      cat: e.cat,
-      deadline: e.deadline,
-      estMin: e.estMin,
+      id: e.id, from: e.from, subject: e.subject,
+      risk: e.risk, cat: e.cat, deadline: e.deadline, estMin: e.estMin,
     }));
-
     const taskPayload = manualTasks.map(t => ({
-      id: t.id,
-      title: t.title,
-      estMin: t.estMin,
+      id: t.id, title: t.title, estMin: t.estMin,
       priority: t.risk === 'high' ? 'high' : 'normal',
     }));
 
@@ -125,12 +121,10 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hours: h, days: selectedDays, emails: emailPayload, tasks: taskPayload }),
       });
-
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json() as { plan: GeneratedPlan };
       onComplete(h, selectedDays, data.plan);
     } catch (err) {
-      console.error('Weekly plan error:', err);
       setErrorMsg('Could not connect to AI. Your schedule has been saved without a generated plan.');
       onComplete(h, selectedDays, null);
     }
@@ -141,6 +135,10 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
       last4[last4.length - 1].low + last4[last4.length - 1].admin
     : histAvgMins;
   const diffVsPrev = recommendedMins - prevWeekMins;
+
+  // Bar chart max for sparkline
+  const allWeekTotals = [...last4.map(w => w.high + w.medium + w.low + w.admin), recommendedMins];
+  const barMax = Math.max(...allWeekTotals);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
@@ -159,14 +157,10 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                 {phase === 'scan' && 'Analysing your current workload and history...'}
                 {phase === 'plan' && "Here's what we found. Set your available time to build your plan."}
                 {phase === 'building' && 'AI is building your personalised weekly schedule...'}
-                {phase === 'error' && 'Something went wrong.'}
               </p>
             </div>
             {phase !== 'building' && (
-              <button
-                onClick={onDismiss}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-              >
+              <button onClick={onDismiss} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
                 <X size={16} />
               </button>
             )}
@@ -183,10 +177,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
             <p className="text-sm text-muted-foreground mb-8">This only takes a moment</p>
             <div className="w-full max-w-sm">
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-75"
-                  style={{ width: `${scanProgress}%` }}
-                />
+                <div className="h-full bg-primary rounded-full transition-all duration-75" style={{ width: `${scanProgress}%` }} />
               </div>
               <p className="text-xs text-muted-foreground text-center mt-2">{scanProgress}%</p>
             </div>
@@ -214,10 +205,12 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
         {phase === 'plan' && (
           <div className="px-8 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
 
-            {/* Workload breakdown */}
+            {/* What we found — 3 cards */}
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">What we found</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+
+                {/* Current inbox */}
                 <div className="bg-slate-50 border border-border rounded-2xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -226,19 +219,20 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                     <span className="text-sm font-bold">Current inbox</span>
                   </div>
                   <p className="text-2xl font-bold mb-2">{emails.length} emails</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full" /> {highRiskEmails} high risk
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full" /> {highRiskEmails} high
                     </span>
-                    <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                       <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> {mediumEmails} medium
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Estimated time: <span className="font-bold text-foreground">{fmtMins(emailMins)}</span>
+                    Est: <span className="font-bold text-foreground">{fmtMins(emailMins)}</span>
                   </p>
                 </div>
 
+                {/* Pending tasks */}
                 <div className="bg-slate-50 border border-border rounded-2xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
@@ -247,88 +241,105 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                     <span className="text-sm font-bold">Pending tasks</span>
                   </div>
                   <p className="text-2xl font-bold mb-2">{manualTasks.length} tasks</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                       Reports, letters, calls
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Estimated time: <span className="font-bold text-foreground">{fmtMins(taskMins)}</span>
+                    Est: <span className="font-bold text-foreground">{fmtMins(taskMins)}</span>
+                  </p>
+                </div>
+
+                {/* Catch-up backlog */}
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center">
+                      <RefreshCcw size={14} className="text-amber-600" />
+                    </div>
+                    <span className="text-sm font-bold">Catch-up</span>
+                  </div>
+                  <p className="text-2xl font-bold mb-2">{histEmails.length} emails</p>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full" /> {catchupHighRisk} urgent
+                    </span>
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" /> {catchupMedRisk} medium
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Est: <span className="font-bold text-foreground">{fmtMins(catchupMins)}</span>
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Historical trend */}
-            <div className="bg-slate-50 border border-border rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
-                    <TrendingUp size={14} className="text-purple-600" />
-                  </div>
-                  <span className="text-sm font-bold">Historical trend</span>
-                </div>
-                <span className="text-xs text-muted-foreground">Last 4 weeks</span>
-              </div>
-              <div className="flex items-end gap-2 h-12">
-                {last4.map((w, i) => {
-                  const total = w.high + w.medium + w.low + w.admin;
-                  const maxVal = Math.max(...last4.map(x => x.high + x.medium + x.low + x.admin));
-                  const pct = (total / maxVal) * 100;
-                  return (
-                    <div key={w.week} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full flex flex-col justify-end h-10">
-                        <div
-                          className={cn("w-full rounded-t-sm", i === last4.length - 1 ? "bg-primary" : "bg-primary/30")}
-                          style={{ height: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-[9px] text-muted-foreground font-medium">{w.week}</span>
-                    </div>
-                  );
-                })}
-                <div className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full flex flex-col justify-end h-10">
-                    <div
-                      className="w-full rounded-t-sm bg-amber-300 border-2 border-dashed border-amber-500"
-                      style={{ height: `${Math.min((recommendedMins / Math.max(...last4.map(x => x.high + x.medium + x.low + x.admin))) * 100, 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-[9px] text-amber-600 font-bold">This wk</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
-                <p className="text-xs text-muted-foreground">
-                  4-week avg: <span className="font-bold text-foreground">{fmtMins(histAvgMins)}</span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Last week: <span className="font-bold text-foreground">{fmtMins(prevWeekMins)}</span>
-                </p>
-              </div>
-            </div>
+            {/* AI Recommendation + mini trend — side by side */}
+            <div className="grid grid-cols-5 gap-3">
 
-            {/* AI Recommendation */}
-            <div className="bg-gradient-to-br from-primary/8 to-primary/4 border border-primary/25 rounded-2xl p-5">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
-                  <Sparkles size={16} className="text-primary" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">AI Recommendation</p>
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <p className="text-2xl font-bold text-foreground">{fmtMins(recommendedMins)}</p>
-                    <span className="text-sm text-muted-foreground">this week</span>
+              {/* AI Recommendation — 3 cols */}
+              <div className="col-span-3 bg-gradient-to-br from-primary/8 to-primary/4 border border-primary/25 rounded-2xl p-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
+                    <Sparkles size={16} className="text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">AI Recommendation</p>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <p className="text-2xl font-bold text-foreground">{fmtMins(recommendedMins)}</p>
+                      <span className="text-sm text-muted-foreground">this week</span>
+                    </div>
                     {diffVsPrev > 0 && (
-                      <span className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full mb-2">
                         <AlertTriangle size={9} /> +{fmtMins(diffVsPrev)} vs last week
                       </span>
                     )}
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Based on <strong>{emails.length} inbox</strong> (~{fmtMins(emailMins)}),{' '}
+                      <strong>{manualTasks.length} tasks</strong> (~{fmtMins(taskMins)}),
+                      plus ~{fmtMins(projectedExtra)} buffer.
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Based on <strong>{emails.length} current emails</strong> (~{fmtMins(emailMins)}),{' '}
-                    <strong>{manualTasks.length} pending tasks</strong> (~{fmtMins(taskMins)}), plus
-                    a ~{fmtMins(projectedExtra)} buffer for incoming items.
-                  </p>
+                </div>
+              </div>
+
+              {/* Mini trend sparkline — 2 cols */}
+              <div className="col-span-2 bg-slate-50 border border-border rounded-2xl p-4">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <TrendingUp size={13} className="text-purple-500" />
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Trend</p>
+                </div>
+                <div className="flex items-end gap-1.5 h-10 mb-2">
+                  {last4.map((w, i) => {
+                    const total = w.high + w.medium + w.low + w.admin;
+                    const pct = Math.round((total / barMax) * 100);
+                    return (
+                      <div key={w.week} className="flex-1 flex flex-col items-center gap-0.5">
+                        <div className="w-full flex flex-col justify-end h-10">
+                          <div
+                            className={cn("w-full rounded-sm", i === last4.length - 1 ? "bg-primary/60" : "bg-primary/20")}
+                            style={{ height: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-[8px] text-muted-foreground font-medium leading-none">{w.week}</span>
+                      </div>
+                    );
+                  })}
+                  {/* This week bar */}
+                  <div className="flex-1 flex flex-col items-center gap-0.5">
+                    <div className="w-full flex flex-col justify-end h-10">
+                      <div
+                        className="w-full rounded-sm bg-amber-400 border border-dashed border-amber-500"
+                        style={{ height: `${Math.round((recommendedMins / barMax) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[8px] text-amber-600 font-bold leading-none">Now</span>
+                  </div>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-slate-200">
+                  <p className="text-[9px] text-muted-foreground">Avg <span className="font-bold text-foreground">{fmtMins(histAvgMins)}</span></p>
+                  <p className="text-[9px] text-muted-foreground">Last <span className="font-bold text-foreground">{fmtMins(prevWeekMins)}</span></p>
                 </div>
               </div>
             </div>
