@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { CAT } from './data';
+import type { Email, ManualTask } from './types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -77,3 +78,50 @@ export const dotColor = (risk: string) => {
     default: return '#E5E7EB';
   }
 };
+
+// ---- Priority + "Why" helpers (shared by Home dashboard and Inbox) ----
+// Keeps user-facing labels consistent across the app: a single Priority pill
+// (High / Medium / Low) plus a plain-English reason driven by the underlying data.
+
+export type Priority = 'High' | 'Medium' | 'Low';
+
+export const PRIORITY_PILL: Record<Priority, string> = {
+  High: 'text-red-700 bg-red-50 border-red-200',
+  Medium: 'text-amber-700 bg-amber-50 border-amber-200',
+  Low: 'text-slate-600 bg-slate-50 border-slate-200',
+};
+
+export const PRIORITY_RANK: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
+
+export function getEmailPriority(e: Email): Priority {
+  if (e.cat === CAT.UNSAFE || e.risk === 'high') return 'High';
+  if (e.risk === 'medium') return 'Medium';
+  return 'Low';
+}
+
+export function getTaskPriority(t: ManualTask): Priority {
+  if (t.risk === 'high') return 'High';
+  if (t.risk === 'medium') return 'Medium';
+  return 'Low';
+}
+
+export function getEmailWhy(e: Email): string {
+  if (e.cat === CAT.UNSAFE) return 'High clinical risk — needs clinical assessment, not an email reply.';
+  if (e.risk === 'high') return 'High clinical risk.';
+  if (e.deadline !== null && e.deadline <= 1) return e.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
+  if (e.deadline !== null && e.deadline <= 3) return `Due in ${e.deadline} days.`;
+  if (e.isMeeting) return 'Meeting deadline approaching.';
+  if (e.isProfessional) return 'Colleague waiting on your reply.';
+  if (e.deadline !== null && e.deadline >= 10 && e.deadline <= 14) return 'Close to 14-day timeframe.';
+  if (e.kind === 'script') return 'Script request.';
+  if (e.kind === 'complex') return 'Complex case — multi-step.';
+  return 'Routine review.';
+}
+
+export function getTaskWhy(t: ManualTask): string {
+  if (t.risk === 'high') return 'High clinical risk.';
+  if (t.deadline <= 1) return t.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
+  if (t.deadline <= 3) return `Due in ${t.deadline} days.`;
+  if (t.deadline >= 10 && t.deadline <= 14) return 'Close to 14-day timeframe.';
+  return `Due in ${t.deadline} days.`;
+}

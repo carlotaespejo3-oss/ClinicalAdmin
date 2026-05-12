@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert } from 'lucide-react';
 import { emails, manualTasks, CAT } from '@/lib/data';
 import type { Email } from '@/lib/data';
-import { cn, initials, avatarColor, catBadge, riskDot } from '@/lib/utils';
+import { cn, initials, avatarColor, getEmailPriority, getEmailWhy, PRIORITY_PILL } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { detectRecipientType, getSignatureForRecipient } from '@/lib/signatures';
@@ -185,15 +185,12 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
                     <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
                     <div className="mt-2 flex items-center gap-2">
-                      <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider", catBadge(e.cat))}>
-                        {e.cat}
+                      <span className={cn("inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full", PRIORITY_PILL[getEmailPriority(e)])}>
+                        {getEmailPriority(e)}
                       </span>
-                      {e.risk !== 'none' && (
-                        <div className="flex items-center gap-1">
-                          <div className={cn("w-1.5 h-1.5 rounded-full", riskDot(e.risk))}></div>
-                          <span className="text-[9px] font-bold text-muted-foreground uppercase">{e.risk} risk</span>
-                        </div>
-                      )}
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        <span className="font-medium">Why:</span> {getEmailWhy(e)}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -224,8 +221,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                 <div className="flex flex-col items-end gap-2 text-right">
                   <span className="text-xs font-bold text-muted-foreground uppercase">{selectedEmail.date}</span>
                   <div className="flex gap-2">
-                    <span className={cn("text-[10px] font-bold px-2 py-1 rounded-sm uppercase tracking-widest", catBadge(selectedEmail.cat))}>
-                      {selectedEmail.cat}
+                    <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", PRIORITY_PILL[getEmailPriority(selectedEmail)])}>
+                      {getEmailPriority(selectedEmail)} priority
                     </span>
                   </div>
                 </div>

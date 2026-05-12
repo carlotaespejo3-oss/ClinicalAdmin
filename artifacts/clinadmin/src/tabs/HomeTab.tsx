@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw, ShieldAlert, FileText, ExternalLink } from 'lucide-react';
 import { weekData, emails, CAT } from '@/lib/data';
 import { Email, ManualTask, SidebarTask, TabType } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, getEmailPriority, getTaskPriority, getEmailWhy, getTaskWhy, PRIORITY_PILL, PRIORITY_RANK } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
 
 interface Props {
@@ -29,42 +29,6 @@ function fmtMins(min: number) {
 const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
 const projectedExtra = 45;
 
-// Concrete, plain-English reason for *why* this email is on today's plan.
-// Driven by data (risk, deadline, kind) rather than operational jargon.
-function emailWhy(e: Email): string {
-  if (e.cat === CAT.UNSAFE) return 'High clinical risk — needs clinical assessment, not an email reply.';
-  if (e.risk === 'high') return 'High clinical risk.';
-  if (e.deadline !== null && e.deadline <= 1) return e.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
-  if (e.deadline !== null && e.deadline <= 3) return `Due in ${e.deadline} days.`;
-  if (e.isMeeting) return 'Meeting deadline approaching.';
-  if (e.isProfessional) return 'Colleague waiting on your reply.';
-  if (e.deadline !== null && e.deadline >= 10 && e.deadline <= 14) return 'Close to 14-day timeframe.';
-  if (e.kind === 'script') return 'Script request.';
-  if (e.kind === 'complex') return 'Complex case — multi-step.';
-  return 'Routine review.';
-}
-
-function taskWhy(t: ManualTask): string {
-  if (t.risk === 'high') return 'High clinical risk.';
-  if (t.deadline <= 1) return t.deadline === 0 ? 'Due today.' : 'Due tomorrow.';
-  if (t.deadline <= 3) return `Due in ${t.deadline} days.`;
-  if (t.deadline >= 10 && t.deadline <= 14) return 'Close to 14-day timeframe.';
-  return `Due in ${t.deadline} days.`;
-}
-
-// Priority is derived from the email/task `risk` field. UNSAFE always = High.
-type Priority = 'High' | 'Medium' | 'Low';
-function priorityFromRisk(risk: 'high' | 'medium' | 'low' | 'none', isUnsafe = false): Priority {
-  if (isUnsafe || risk === 'high') return 'High';
-  if (risk === 'medium') return 'Medium';
-  return 'Low';
-}
-const PRIORITY_PILL: Record<Priority, string> = {
-  High: 'text-red-700 bg-red-50 border-red-200',
-  Medium: 'text-amber-700 bg-amber-50 border-amber-200',
-  Low: 'text-slate-600 bg-slate-50 border-slate-200',
-};
-const PRIORITY_RANK: Record<Priority, number> = { High: 0, Medium: 1, Low: 2 };
 
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
   // Derived from live task state so completion in Tasks tab propagates here.
@@ -115,8 +79,8 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     return [...emails]
       .filter(e => e.cat !== CAT.NONE)
       .sort((a, b) => {
-        const pa = PRIORITY_RANK[priorityFromRisk(a.risk, a.cat === CAT.UNSAFE)];
-        const pb = PRIORITY_RANK[priorityFromRisk(b.risk, b.cat === CAT.UNSAFE)];
+        const pa = PRIORITY_RANK[getEmailPriority(a)];
+        const pb = PRIORITY_RANK[getEmailPriority(b)];
         if (pa !== pb) return pa - pb;
         const da = a.deadline ?? 99;
         const db = b.deadline ?? 99;
@@ -314,7 +278,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
               if (row.kind === 'email') {
                 const e = row.email;
                 const handled = handledEmailIds.has(e.id);
-                const priority = priorityFromRisk(e.risk, e.cat === CAT.UNSAFE);
+                const priority = getEmailPriority(e);
                 return (
                   <li
                     key={`email-${e.id}`}
@@ -342,7 +306,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                         From <strong className="text-foreground">{e.from}</strong> · {e.date}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        <span className="font-medium">Why:</span> {emailWhy(e)}
+                        <span className="font-medium">Why:</span> {getEmailWhy(e)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -362,7 +326,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
               if (row.kind === 'task') {
                 const t = row.task;
                 const handled = handledTaskIds.has(t.id);
-                const priority = priorityFromRisk(t.risk);
+                const priority = getTaskPriority(t);
                 return (
                   <li
                     key={`task-${t.id}`}
@@ -387,7 +351,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                         </p>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        <span className="font-medium">Why:</span> {taskWhy(t)}
+                        <span className="font-medium">Why:</span> {getTaskWhy(t)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
