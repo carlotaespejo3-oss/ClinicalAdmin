@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw, ShieldAlert, FileText, ExternalLink } from 'lucide-react';
-import { weekData, emails, CAT } from '@/lib/data';
+import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw, ShieldAlert, FileText, ExternalLink, Link2 } from 'lucide-react';
+import { weekData, emails, manualTasks as seedManualTasks, CAT } from '@/lib/data';
 import { Email, ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, getEmailWhy, getTaskWhy, PRIORITY_PILL, PRIORITY_RANK, type Priority } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
-import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
+import { useLinkedDocTasks, type LinkedDocTask } from '@/lib/linkedDocTasksStore';
 import { useAiClassifications } from '@/lib/aiClassifyStore';
+import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
+import { useArchivedEmails } from '@/lib/archivedStore';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -36,6 +38,8 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   // recompute when new classifications stream in or doc tasks get created.
   useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
+  const acknowledged = useAcknowledgedEmails();
+  const archived = useArchivedEmails();
 
   // Document/form detection: a linked doc task and its email are ONE piece
   // of work. The email's estMin already covers the combined 20/30 min, so
@@ -43,6 +47,29 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   // email — otherwise we'd double-count time (e.g. email 20 + task 20).
   const isLinkedDocTask = (t: ManualTask) =>
     !!t.linkedEmailId && linkedDocTasks.has(t.linkedEmailId);
+
+  // For a given email, find the linked task it should be paired with in the
+  // daily plan. Preference order:
+  //   1. Auto-created LinkedDocTask (from doc-detection) keyed by email id.
+  //   2. Manual task whose linkedEmailId points back at this email.
+  //   3. Manual task whose id matches email.linkedTaskId.
+  // The returned task is rendered indented directly below the email.
+  const findLinkedTask = (
+    emailId: number,
+    emailLinkedTaskId: string | undefined,
+  ): { task: ManualTask | LinkedDocTask; isLinkedDoc: boolean } | null => {
+    const doc = linkedDocTasks.get(emailId);
+    if (doc) return { task: doc, isLinkedDoc: true };
+    const byBackref = manualTasks.find((t) => t.linkedEmailId === emailId);
+    if (byBackref) return { task: byBackref, isLinkedDoc: false };
+    if (emailLinkedTaskId) {
+      const byId =
+        manualTasks.find((t) => t.id === emailLinkedTaskId) ??
+        seedManualTasks.find((t) => t.id === emailLinkedTaskId);
+      if (byId) return { task: byId, isLinkedDoc: false };
+    }
+    return null;
+  };
 
   // Derived from live task state so completion in Tasks tab propagates here.
   // Note: emailMins is computed on every render so the rules-based estimator
@@ -205,16 +232,29 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
       .slice(0, 3);
   }, []);
 
+  // Set of email ids whose linked task is being rendered as a paired row
+  // directly beneath the email — those tasks must NOT appear again in the
+  // standalone task slot.
+  const pairedTaskIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of todayEmails) {
+      const pair = findLinkedTask(e.id, e.linkedTaskId);
+      if (pair) set.add(pair.task.id);
+    }
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayEmails, manualTasks, linkedDocTasks]);
+
   // Pick most urgent uncompleted manual tasks by deadline. Linked document
-  // tasks are excluded — they share a time block with their email and the
-  // email row already represents the work in the daily plan.
+  // tasks and tasks already paired to a top email are excluded — those
+  // share a time block with the email row above them.
   const todayTasks = useMemo(() => {
     return [...manualTasks]
-      .filter(t => !t.done && !isLinkedDocTask(t))
+      .filter(t => !t.done && !isLinkedDocTask(t) && !pairedTaskIds.has(t.id))
       .sort((a, b) => a.deadline - b.deadline)
       .slice(0, 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualTasks, linkedDocTasks]);
+  }, [manualTasks, linkedDocTasks, pairedTaskIds]);
 
   const handleEmailClick = (id: number) => {
     setHandledEmailIds(prev => new Set(prev).add(id));
@@ -343,14 +383,43 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     setRecToast(null);
   };
 
-  // Flat ordered render list.
+  // Flat ordered render list. An email row may carry an inline `linked` payload
+  // — in that case we render the email row, then a second indented row for
+  // the linked task, sharing one position number and one combined time pill.
+  type LinkedPair = {
+    task: ManualTask | LinkedDocTask;
+    isLinkedDoc: boolean;
+    combinedMin: number;
+    statusHint: string | null;
+  };
   type Row =
-    | { kind: 'email'; email: Email }
+    | { kind: 'email'; email: Email; linked: LinkedPair | null }
     | { kind: 'task'; task: ManualTask }
     | { kind: 'sidebar'; task: SidebarTask };
 
   const rows: Row[] = [
-    ...todayEmails.map(email => ({ kind: 'email' as const, email })),
+    ...todayEmails.map(email => {
+      const pair = findLinkedTask(email.id, email.linkedTaskId);
+      let linked: LinkedPair | null = null;
+      if (pair) {
+        const emailReplied = acknowledged.has(email.id) || archived.has(email.id);
+        const taskDone = !!pair.task.done;
+        // For auto-detected document tasks, the email's estMin already
+        // covers the combined work (20/30 min). For hand-authored linked
+        // tasks, both estimates are independent and must be summed.
+        const combinedMin = pair.isLinkedDoc
+          ? email.estMin
+          : email.estMin + pair.task.estMin;
+        let statusHint: string | null = null;
+        if (taskDone && !emailReplied) {
+          statusHint = 'Document done — reply still needed';
+        } else if (emailReplied && !taskDone) {
+          statusHint = 'Email replied to — document still needed';
+        }
+        linked = { task: pair.task, isLinkedDoc: pair.isLinkedDoc, combinedMin, statusHint };
+      }
+      return { kind: 'email' as const, email, linked };
+    }),
     ...todayTasks.map(task => ({ kind: 'task' as const, task })),
     ...sidebarTasks.filter(t => !t.done).filter(t => t.priority === 'high').map(task => ({ kind: 'sidebar' as const, task })),
     ...sidebarTasks.filter(t => !t.done).filter(t => t.priority === 'normal').map(task => ({ kind: 'sidebar' as const, task })),
@@ -573,46 +642,116 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
                 const e = row.email;
                 const handled = handledEmailIds.has(e.id);
                 const priority = getEmailPriority(e);
+                const linked = row.linked;
                 return (
                   <li
                     key={`email-${e.id}`}
-                    onClick={() => handleEmailClick(e.id)}
-                    className={cn(
-                      "flex items-start gap-4 px-6 py-4 transition-colors cursor-pointer hover:bg-slate-50",
-                      handled && "opacity-60"
-                    )}
+                    className="block"
                     data-testid={`plan-email-${e.id}`}
                   >
-                    <span className={cn(
-                      "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
-                      handled ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
-                    )}>
-                      {handled ? <Check size={12} /> : idx + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Mail size={12} className="text-muted-foreground flex-shrink-0" />
-                        <p className={cn("text-sm font-semibold truncate", handled && "line-through")}>
-                          {e.subject}
+                    <div
+                      onClick={() => handleEmailClick(e.id)}
+                      className={cn(
+                        "flex items-start gap-4 px-6 py-4 transition-colors cursor-pointer hover:bg-slate-50",
+                        handled && "opacity-60",
+                        linked && "pb-2"
+                      )}
+                    >
+                      <span className={cn(
+                        "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
+                        handled ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
+                      )}>
+                        {handled ? <Check size={12} /> : idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Mail size={12} className="text-muted-foreground flex-shrink-0" />
+                          <p className={cn("text-sm font-semibold truncate", handled && "line-through")}>
+                            {e.subject}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          From <strong className="text-foreground">{e.from}</strong> · {e.date}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <span className="font-medium">Why:</span> {getEmailWhy(e)}
                         </p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        From <strong className="text-foreground">{e.from}</strong> · {e.date}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        <span className="font-medium">Why:</span> {getEmailWhy(e)}
-                      </p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={cn(
+                          "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                          PRIORITY_PILL[priority]
+                        )}>
+                          {priority}
+                        </span>
+                        {linked ? (
+                          <span
+                            className="text-xs text-primary font-semibold whitespace-nowrap"
+                            title="Combined estimate for the email + linked document"
+                          >
+                            ~{linked.combinedMin}min total
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{e.estMin}min</span>
+                        )}
+                        <ChevronRight size={14} className="text-muted-foreground" />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={cn(
-                        "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
-                        PRIORITY_PILL[priority]
-                      )}>
-                        {priority}
-                      </span>
-                      <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{e.estMin}min</span>
-                      <ChevronRight size={14} className="text-muted-foreground" />
-                    </div>
+
+                    {linked && (() => {
+                      const t = linked.task;
+                      const taskDone = !!t.done;
+                      const isLinkedDoc = linked.isLinkedDoc;
+                      return (
+                        <div
+                          onClick={() => {
+                            if (!isLinkedDoc) handleTaskClick(t.id);
+                            else onNavigate('Tasks');
+                          }}
+                          className="relative ml-12 mr-6 mb-3 pl-4 pr-3 py-2.5 rounded-lg bg-slate-50/70 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors flex items-start gap-3"
+                          data-testid={`plan-linked-task-${t.id}`}
+                        >
+                          {/* connector line + link icon, anchored above the row */}
+                          <span
+                            aria-hidden
+                            className="absolute -top-2 left-3 w-px h-2 bg-slate-300"
+                          />
+                          <span
+                            className="flex-shrink-0 w-5 h-5 rounded-full bg-white border border-slate-300 flex items-center justify-center mt-0.5"
+                            aria-label="Linked to email above"
+                          >
+                            <Link2 size={10} className="text-slate-500" />
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <FileText size={11} className="text-muted-foreground flex-shrink-0" />
+                              <p className={cn(
+                                "text-xs font-semibold truncate",
+                                taskDone && "line-through text-muted-foreground"
+                              )}>
+                                {t.title}
+                              </p>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Email + document: approx {linked.combinedMin} min total
+                            </p>
+                            {linked.statusHint && (
+                              <span className="inline-block mt-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                {linked.statusHint}
+                              </span>
+                            )}
+                          </div>
+                          {taskDone && (
+                            <span
+                              className="flex-shrink-0 w-5 h-5 rounded-full bg-green-100 flex items-center justify-center mt-0.5"
+                              aria-label="Document done"
+                            >
+                              <Check size={11} className="text-green-600" />
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </li>
                 );
               }

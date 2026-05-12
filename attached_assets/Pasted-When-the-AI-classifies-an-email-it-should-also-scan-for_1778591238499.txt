@@ -1,0 +1,116 @@
+When the AI classifies an email, it should also scan for anything that might need a follow-up action beyond just replying. If it detects something that could become a task, it should prompt the clinician — never create a task automatically without asking first.
+The only exception is document requests (NDIS reports, letters, forms etc) which already have their own task creation logic. Everything else goes through this prompt system.
+
+WHAT COUNTS AS A POTENTIAL TASK
+Scan every email for these indicators:
+Phone calls
+
+"Could you give us a call"
+"Please call me"
+"I tried to reach you"
+"Would you be able to phone"
+
+Appointments
+
+"Can we book an appointment"
+"We would like to come in"
+"When is the next available"
+"We need to be seen"
+
+Results to review
+
+"Blood results are attached"
+"Please review the attached results"
+"Results are back"
+"Pathology is ready"
+
+Follow-ups
+
+"Following up on our last appointment"
+"Just checking in"
+"We haven't heard back"
+"Wanted to follow up"
+
+Referrals
+
+"Could you refer us to"
+"We would like a referral"
+"Can you send a referral"
+
+Prescriptions or medication actions
+
+"We need a repeat prescription"
+"Can you renew"
+"We have run out of"
+
+Anything with a deadline
+
+Any date mentioned in the context of something needing to be done
+"By Friday", "before the end of term", "deadline is", "due by"
+
+
+THE PROMPT
+When a potential task is detected, show a clean prompt directly on the email — not a popup, not a separate page. It sits below the draft reply, above the mini chat box.
+It should look like this:
+💡 Possible task detected
+
+This email might need a follow-up action:
+"Call the family back"
+
+Do you want to add this as a task?
+
+[Yes — add task]   [No — not needed]
+Rules for the prompt:
+
+Use plain language to describe the detected task — not technical labels
+One prompt per detected action — if multiple actions are detected, show them one at a time or as a simple list with individual yes/no buttons for each
+The prompt disappears once the clinician responds either way
+If the clinician clicks No, the prompt is dismissed and never shown again for that email
+If the clinician clicks Yes, open a pre-filled task creation panel
+
+
+WHEN THE CLINICIAN CLICKS YES
+Open a task panel pre-filled with everything the AI could detect from the email:
+Task title:      Call Mrs Foster back re Ella's appointment
+Type:            Phone call
+Priority:        [inherited from email priority]
+Due:             [deadline from email if found, otherwise blank]
+Patient:         [patient name if detectable]
+Linked email:    [this email — shown as a reference]
+Est. time:       [based on task type — see below]
+Notes:           [brief context pulled from the email]
+The clinician can edit any field before saving. Then one button: "Add to my tasks"
+
+TIME ESTIMATES FOR PROMPTED TASKS
+Task typeDefault estimatePhone call10 minutesBook appointment (delegate to admin)2 minutesReview results5 minutesWrite referral15 minutesRepeat prescription3 minutesFollow-up action (general)10 minutes
+
+LINKING THE TASK TO THE EMAIL
+Tasks created through this prompt are linked to the email they came from:
+
+The task shows: "Created from email — [email subject]" with a link back to the email
+The email shows: "Task created — [task title]" with a link to the task
+When the task is marked as done, prompt: "Do you also want to mark the original email as done? [Yes] [No]"
+When the email is marked as done, prompt: "You have a linked task still open — [task title]. Do you want to complete it too? [Yes] [No — keep it open]"
+
+
+IMPORTANT RULES
+
+Never create a task without the clinician explicitly clicking Yes
+Never show the task prompt for NONE category emails — if it is truly no action required, do not suggest tasks
+For CPD emails, use the existing CPD task logic instead of this prompt
+For document requests, use the existing document task logic instead of this prompt
+This prompt is for everything else — phone calls, appointments, results, referrals, follow-ups, prescriptions, deadlines
+Keep the prompt short and friendly — one or two lines maximum describing the detected action
+The clinician should never feel like the app is creating work for them — the tone should always be "just checking — do you need this?"
+
+
+Please implement this and test it against these example scenarios:
+Example 1 — should detect a phone call task:
+"Hi Dr Patterson, could you give us a call when you get a chance? We have some questions about Darcy's medication."
+Example 2 — should detect an appointment task:
+"Dear Dr Patterson, we would like to book an appointment to discuss the recent assessment. When would you be available?"
+Example 3 — should detect a results review task:
+"Dear Dr Patterson, Darcy's blood results are back and attached to this email for your review."
+Example 4 — should detect nothing and show no prompt:
+"Hi, just wanted to say thank you so much for everything. Darcy is doing really well."
+Confirm that Examples 1, 2, and 3 each show the task prompt and Example 4 shows nothing.
