@@ -7,6 +7,7 @@ import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import TimelineTab from '../tabs/TimelineTab';
+import ForecastTab from '../tabs/ForecastTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
@@ -147,7 +148,7 @@ export default function ClinAdmin() {
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'High-Risk Patients': return <HighRiskTab />;
       case 'Backlog Recovery': return <CatchUpTab />;
-      case 'Forecast': return <TimelineTab />;
+      case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Tasks': return (
