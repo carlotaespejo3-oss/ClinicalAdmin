@@ -143,6 +143,11 @@ export interface AiClassification {
   requiresDocument: boolean;
   documentType: string | null;       // e.g. "NDIS report", "EHCP letter"
   documentDueDays: number | null;    // days from now if the email mentions a deadline
+  // Deterministic prescription / script request detection. When non-null
+  // the combiner forces category=CLINICAL and bumps priority based on
+  // the deadline (≤7 days → URGENT). Drives the prescription-specific
+  // banner, controlled-drug warning, and rich task pre-fill in the UI.
+  prescriptionRequest: import('./prescriptionDetect').PrescriptionRequest | null;
 }
 
 export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';

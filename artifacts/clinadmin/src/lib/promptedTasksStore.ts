@@ -23,6 +23,13 @@ export interface PromptedTask {
   notes: string;
   createdAt: number;
   done: boolean;
+  // Prescription metadata — only set for kind='prescription' tasks
+  // created via the rich prescription detector. Drives the controlled
+  // drug warning badge in the Tasks tab and any future filtering.
+  controlledDrug?: boolean;
+  medicationName?: string | null;
+  medicationDose?: string | null;
+  travelMentioned?: boolean;
 }
 
 interface PromptedState {
@@ -86,6 +93,10 @@ export interface AddPromptedTaskInput {
   patientName: string | null;
   dueDays: number | null;
   notes: string;
+  controlledDrug?: boolean;
+  medicationName?: string | null;
+  medicationDose?: string | null;
+  travelMentioned?: boolean;
 }
 
 export function addPromptedTask(input: AddPromptedTaskInput): PromptedTask | null {

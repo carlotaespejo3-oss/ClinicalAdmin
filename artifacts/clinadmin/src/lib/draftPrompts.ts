@@ -206,6 +206,48 @@ ${returnOnlyBody()}
 ${emailBodyBlock(email)}`;
 }
 
+// ---- Prescription / script request ----
+// Used INSTEAD of buildClinicalPrompt when a prescription request was
+// detected deterministically. Bakes in:
+//   - confirmation that the script will be arranged
+//   - an expected-by date one day before the family's deadline
+//   - controlled-drug acknowledgement (no dosing in the reply)
+//   - international travel note when the email hints at travel abroad
+export function buildPrescriptionPrompt(email: Email, c?: AiClassification): string {
+  const p = c?.prescriptionRequest;
+  const med = p
+    ? [p.medicationName, p.medicationDose].filter(Boolean).join(' ')
+    : 'the requested medication';
+  const patient = p?.patientName ?? c?.patientName ?? null;
+  const flavour = p?.flavour ?? 'repeat';
+  const verb = flavour === 'lost' ? 'reissue' : flavour === 'early' ? 'arrange an early' : 'arrange a repeat';
+  const deadlineLine = p?.deadlineLabel
+    ? `\n- Confirm they will receive the script BEFORE ${p.deadlineLabel} (i.e. one day earlier where possible, as a safety buffer).`
+    : '\n- Give a realistic expected timeframe (within the next working day or two).';
+  const controlledLine = p?.controlledDrug
+    ? '\n- This is a controlled drug — do NOT include any dosing information in the reply. Acknowledge the request and confirm the script will be reviewed and issued.'
+    : '';
+  const travelLine = p?.travelMentioned
+    ? '\n- Add a short note: "If you are travelling internationally, please let us know — some medications have additional requirements for travel."'
+    : '';
+  const patientLine = patient ? `\nPatient name (use as it appears): ${patient}` : '';
+  return `${COMMON_HEADER}
+
+Draft a warm, practical reply confirming the prescription request will be handled.
+
+Rules:
+- Thank them for letting us know.
+- Confirm that you will ${verb} script for ${med}${patient ? ` for ${patient}` : ''}.${deadlineLine}${controlledLine}${travelLine}
+- Keep it to a few short sentences — warm and reassuring, not clinical.
+- Invite them to contact the practice if the script has not arrived by the expected date.
+- End with EXACTLY this sign-off:
+${signOffFor(email)}${styleBlockFor(email)}${patientLine}
+
+${returnOnlyBody()}
+
+${emailBodyBlock(email)}`;
+}
+
 // ---- Mini chat box: ad-hoc additional draft from clinician's own instruction ----
 export function buildExtraDraftPrompt(email: Email, instruction: string): string {
   return `${COMMON_HEADER}

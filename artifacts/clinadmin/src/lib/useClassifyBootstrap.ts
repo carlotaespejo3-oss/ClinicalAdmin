@@ -46,6 +46,7 @@ export function useClassifyBootstrap(): void {
           requiresDocument: false,
           documentType: null,
           documentDueDays: null,
+        prescriptionRequest: null,
         });
       },
     });

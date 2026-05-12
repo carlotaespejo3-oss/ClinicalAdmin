@@ -20,6 +20,7 @@ import {
   buildUrgentClinicalFamilyPrompt,
   buildUrgentClinicalAdminPrompt,
   buildClinicalPrompt,
+  buildPrescriptionPrompt,
   buildProfessionalPrompt,
   buildAdminPrompt,
   buildAcknowledgementPrompt,
@@ -224,6 +225,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         requiresDocument: false,
         documentType: null,
         documentDueDays: null,
+        prescriptionRequest: null,
       });
     }
   };
@@ -254,6 +256,11 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       return null;
     }
     if (mode === 'single' && slot === 'single') {
+      // Prescription requests get a dedicated draft prompt (warm,
+      // practical, confirms the script will be arranged, bakes in
+      // controlled-drug + travel notes). Wins over the generic
+      // CLINICAL prompt when the deterministic detector fired.
+      if (cls.prescriptionRequest) return buildPrescriptionPrompt(email, cls);
       if (cls.category === 'CLINICAL') return buildClinicalPrompt(email);
       if (cls.category === 'PROFESSIONAL') return buildProfessionalPrompt(email, cls);
       if (cls.category === 'ADMIN') return buildAdminPrompt(email);

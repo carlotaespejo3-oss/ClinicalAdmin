@@ -1,11 +1,20 @@
 import { useMemo, useState } from 'react';
-import { Lightbulb, Check, X, Plus, CheckCircle2, Link2, Clock } from 'lucide-react';
+import { Lightbulb, Check, X, Plus, CheckCircle2, Link2, Clock, AlertTriangle, Pill, Zap } from 'lucide-react';
 import type { Email, AiClassification } from '@/lib/types';
 import {
   detectPotentialTasks,
   type PotentialTask,
   type PotentialTaskKind,
 } from '@/lib/potentialTaskDetect';
+import {
+  estimateMinutes as prescriptionMinutes,
+  suggestedTaskTitle as prescriptionTitle,
+  taskDueDays as prescriptionDueDays,
+  urgencyFor as prescriptionUrgency,
+  todayLabel,
+  CONTROLLED_DRUG_WARNING,
+  type PrescriptionRequest,
+} from '@/lib/prescriptionDetect';
 import {
   addPromptedTask,
   dismissPrompt,
@@ -39,8 +48,13 @@ function priorityFromAi(p: AiClassification['priority'] | undefined): 'high' | '
 //  - LEGAL / UNCLEAR: clinician must classify or handle manually first
 //  - Any documentDirection (outgoing/incoming/unclear): document detection
 //    owns this email's task creation flow
+//
+// EXCEPTION: prescription requests bypass these skip rules — the
+// clinician must always see them per the spec, even if the AI
+// (mis)classified the email as ADMIN/UNCLEAR/etc.
 function shouldSkip(cls: AiClassification | undefined): boolean {
   if (!cls) return true;
+  if (cls.prescriptionRequest) return false;
   if (cls.category === 'NONE') return true;
   if (cls.category === 'CPD') return true;
   if (cls.category === 'LEGAL') return true;
@@ -78,6 +92,47 @@ function buildInitialForm(p: PotentialTask, cls: AiClassification | undefined, e
   };
 }
 
+// Pre-fill builder for the rich prescription detector. Per spec:
+//   - Title:    "Write early script — Ritalin 54mg — James" (or repeat/lost variant)
+//   - Type:     Prescription
+//   - Priority: URGENT when deadline ≤3 days, else high/medium per urgency
+//   - Due:      ONE DAY BEFORE the family's deadline (safety buffer)
+//   - Est:      3 / 5 / 8 / 5 minutes per the time-estimate table
+//   - Notes:    travel context + controlled drug reminder where applicable
+function buildPrescriptionForm(p: PrescriptionRequest, email: Email): FormDraft {
+  const urgency = prescriptionUrgency(p);
+  const priority: 'high' | 'medium' | 'low' =
+    urgency === 'critical' || urgency === 'urgent' ? 'high' : 'medium';
+  const noteParts: string[] = [];
+  if (p.travelMentioned && p.deadlineLabel) {
+    noteParts.push(`Family travelling — leaving on ${p.deadlineLabel}.`);
+  } else if (p.deadlineLabel) {
+    noteParts.push(`Family needs script before ${p.deadlineLabel}.`);
+  }
+  if (p.flavour === 'early') {
+    const med = [p.medicationName, p.medicationDose].filter(Boolean).join(' ');
+    const qty = p.medicationQuantity ?? 'standard supply';
+    if (med) noteParts.push(`Early script for ${qty} of ${med} requested.`);
+  } else if (p.flavour === 'lost') {
+    noteParts.push('Reissue requested — original prescription lost.');
+  } else {
+    noteParts.push('Repeat prescription requested.');
+  }
+  if (p.travelMentioned) {
+    noteParts.push('Family travelling — confirm whether travel letter or additional documentation is needed.');
+  }
+  if (p.controlledDrug) noteParts.push(`⚠️ ${CONTROLLED_DRUG_WARNING}.`);
+  return {
+    title: prescriptionTitle(p),
+    type: 'Prescription',
+    estMin: String(prescriptionMinutes(p)),
+    priority,
+    patientName: p.patientName ?? '',
+    dueDays: prescriptionDueDays(p) !== null ? String(prescriptionDueDays(p)) : '',
+    notes: noteParts.join(' '),
+  };
+}
+
 export default function PotentialTaskPanel({ email, classification, onOpenTasksTab }: Props) {
   // Subscribe to the prompted-tasks store so the panel reacts to
   // dismiss/create actions without needing local refresh logic.
@@ -86,10 +141,17 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
   // and is now editing. Keyed by kind.
   const [openForms, setOpenForms] = useState<Partial<Record<PotentialTaskKind, FormDraft>>>({});
 
+  // When the rich prescription detector fires, we suppress the generic
+  // 'prescription' kind from the heuristic detector (it produces a
+  // weaker prompt without medication / patient / deadline context) and
+  // render a dedicated prescription card instead.
+  const prescription = classification?.prescriptionRequest ?? null;
+
   const detected = useMemo<PotentialTask[]>(() => {
     if (shouldSkip(classification)) return [];
-    return detectPotentialTasks({ from: email.from, subject: email.subject, body: email.body });
-  }, [email.id, email.from, email.subject, email.body, classification]);
+    const all = detectPotentialTasks({ from: email.from, subject: email.subject, body: email.body });
+    return prescription ? all.filter((p) => p.kind !== 'prescription') : all;
+  }, [email.id, email.from, email.subject, email.body, classification, prescription]);
 
   // Filter out prompts the clinician already responded to (created or
   // dismissed). Note: we still render the "Task created" confirmation
@@ -109,10 +171,72 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
   );
 
   if (shouldSkip(classification)) return null;
-  if (pending.length === 0 && created.length === 0) return null;
+
+  // Prescription card visibility is independent of the generic prompts —
+  // it shows even if every other prompt has been dismissed/created,
+  // until the prescription task itself is created or dismissed.
+  const prescriptionDismissed = prescription
+    ? isPromptDismissed(email.id, 'prescription')
+    : false;
+  const prescriptionCreated = prescription
+    ? hasPromptedTaskForKind(email.id, 'prescription')
+    : false;
+  const showPrescriptionPrompt = !!prescription && !prescriptionDismissed && !prescriptionCreated;
+  void state; // pull in store reactivity for the two flags above
+
+  if (
+    pending.length === 0 &&
+    created.length === 0 &&
+    !showPrescriptionPrompt
+  ) {
+    return null;
+  }
 
   const handleYes = (p: PotentialTask) => {
     setOpenForms((f) => ({ ...f, [p.kind]: buildInitialForm(p, classification, email) }));
+  };
+
+  const handlePrescriptionYes = () => {
+    if (!prescription) return;
+    setOpenForms((f) => ({ ...f, prescription: buildPrescriptionForm(prescription, email) }));
+  };
+
+  const handlePrescriptionNo = () => {
+    dismissPrompt(email.id, 'prescription');
+  };
+
+  const handlePrescriptionSave = () => {
+    if (!prescription) return;
+    const f = openForms.prescription;
+    if (!f || !f.title.trim()) return;
+    addPromptedTask({
+      emailId: email.id,
+      kind: 'prescription',
+      title: f.title.trim(),
+      type: f.type.trim() || 'Prescription',
+      estMin: Math.max(1, parseInt(f.estMin, 10) || prescriptionMinutes(prescription)),
+      priority: f.priority,
+      patientName: f.patientName.trim() || null,
+      dueDays: f.dueDays.trim() === '' ? null : Math.max(0, parseInt(f.dueDays, 10) || 0),
+      notes: f.notes.trim(),
+      controlledDrug: prescription.controlledDrug,
+      medicationName: prescription.medicationName,
+      medicationDose: prescription.medicationDose,
+      travelMentioned: prescription.travelMentioned,
+    });
+    setOpenForms((curr) => {
+      const { prescription: _drop, ...rest } = curr;
+      void _drop;
+      return rest;
+    });
+  };
+
+  const handlePrescriptionCancel = () => {
+    setOpenForms((curr) => {
+      const { prescription: _drop, ...rest } = curr;
+      void _drop;
+      return rest;
+    });
   };
 
   const handleNo = (p: PotentialTask) => {
@@ -167,6 +291,25 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
           Possible task detected
         </h4>
       </div>
+
+      {showPrescriptionPrompt && prescription && (
+        <PrescriptionPromptCard
+          prescription={prescription}
+          form={openForms.prescription}
+          updateForm={(patch) =>
+            setOpenForms((f) => {
+              const curr = f.prescription;
+              if (!curr) return f;
+              return { ...f, prescription: { ...curr, ...patch } };
+            })
+          }
+          onYes={handlePrescriptionYes}
+          onNo={handlePrescriptionNo}
+          onSave={handlePrescriptionSave}
+          onCancel={handlePrescriptionCancel}
+          emailSubject={email.subject}
+        />
+      )}
 
       {pending.map((p) => {
         const form = openForms[p.kind];
@@ -351,6 +494,213 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- Prescription prompt card ----------------------------------------------
+// Dedicated card for prescription/script requests detected by the
+// deterministic prescriptionDetect module. Renders:
+//   - the time-sensitive red banner (urgency='critical', ≤3 days)
+//   - the controlled-drug warning chip (Ritalin/Concerta/etc)
+//   - a spec-format prompt: "{patient} needs {flavour} {med} script before {deadline}"
+//   - Yes / No buttons; Yes opens the same edit form used by the
+//     generic prompts but pre-filled with rich data (due date one
+//     day before the family's deadline).
+function PrescriptionPromptCard({
+  prescription,
+  form,
+  updateForm,
+  onYes,
+  onNo,
+  onSave,
+  onCancel,
+  emailSubject,
+}: {
+  prescription: PrescriptionRequest;
+  form: FormDraft | undefined;
+  updateForm: (patch: Partial<FormDraft>) => void;
+  onYes: () => void;
+  onNo: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  emailSubject: string;
+}) {
+  const urgency = prescriptionUrgency(prescription);
+  const isCritical = urgency === 'critical';
+  const med = [prescription.medicationName, prescription.medicationDose].filter(Boolean).join(' ');
+  const patient = prescription.patientName ?? 'The patient';
+  const flavourWord =
+    prescription.flavour === 'early' ? 'an early'
+    : prescription.flavour === 'lost' ? 'a replacement'
+    : 'a repeat';
+  const deadlinePhrase = prescription.deadlineLabel ? ` before ${prescription.deadlineLabel}` : '';
+  // Avoid "script script" when no medication name was detected — fall
+  // back to a single "script" instead of "{med} script".
+  const subject = med ? `${med} script` : 'script';
+  const promptLine = `${patient} needs ${flavourWord} ${subject}${deadlinePhrase}.`;
+
+  return (
+    <div
+      className="bg-white border border-amber-200/70 rounded-xl p-3 mb-2"
+      data-testid="prescription-prompt"
+    >
+      {isCritical && prescription.deadlineLabel && (
+        <div
+          className="flex items-start gap-2 mb-3 bg-red-50 border border-red-200 rounded-lg p-2.5"
+          data-testid="prescription-time-sensitive-banner"
+        >
+          <Zap size={14} className="text-red-600 mt-0.5 flex-shrink-0" />
+          <div className="text-[12px] leading-snug">
+            <p className="font-bold text-red-800">Time sensitive</p>
+            <p className="text-red-700">
+              This family needs a script before {prescription.deadlineLabel}. Today is {todayLabel()}.
+            </p>
+          </div>
+        </div>
+      )}
+      {prescription.controlledDrug && (
+        <div
+          className="flex items-start gap-2 mb-3 bg-orange-50 border border-orange-200 rounded-lg p-2.5"
+          data-testid="prescription-controlled-drug-warning"
+        >
+          <AlertTriangle size={13} className="text-orange-600 mt-0.5 flex-shrink-0" />
+          <p className="text-[12px] text-orange-800 leading-snug">
+            <span className="font-bold">⚠️ Controlled drug</span> — check prescribing rules and patient record before issuing.
+          </p>
+        </div>
+      )}
+
+      {!form ? (
+        <>
+          <div className="flex items-center gap-2 mb-1">
+            <Pill size={13} className="text-amber-700" />
+            <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide">
+              Prescription task detected
+            </p>
+          </div>
+          <p className="text-sm font-bold text-amber-900 mb-3">{promptLine}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onYes}
+              className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-1.5"
+              data-testid="prescription-yes"
+            >
+              <Check size={13} /> Yes — add task
+            </button>
+            <button
+              type="button"
+              onClick={onNo}
+              className="text-xs font-bold bg-white border border-amber-300 text-amber-800 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5"
+              data-testid="prescription-no"
+            >
+              <X size={13} /> No — not needed
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">
+            New prescription task — review and edit before saving
+          </p>
+          <Field label="Task title">
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => updateForm({ title: e.target.value })}
+              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+              data-testid="prescription-form-title"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Type">
+              <input
+                type="text"
+                value={form.type}
+                onChange={(e) => updateForm({ type: e.target.value })}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+              />
+            </Field>
+            <Field label="Est. minutes">
+              <input
+                type="number"
+                min={1}
+                value={form.estMin}
+                onChange={(e) => updateForm({ estMin: e.target.value })}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                data-testid="prescription-form-estmin"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Priority">
+              <select
+                value={form.priority}
+                onChange={(e) => updateForm({ priority: e.target.value as 'high' | 'medium' | 'low' })}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+              >
+                <option value="high">High / Urgent</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </Field>
+            <Field label={`Due in days (one day before ${prescription.deadlineLabel ?? 'family deadline'})`}>
+              <input
+                type="number"
+                min={0}
+                value={form.dueDays}
+                onChange={(e) => updateForm({ dueDays: e.target.value })}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                data-testid="prescription-form-duedays"
+              />
+            </Field>
+          </div>
+          <Field label="Patient">
+            <input
+              type="text"
+              value={form.patientName}
+              onChange={(e) => updateForm({ patientName: e.target.value })}
+              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+            />
+          </Field>
+          <Field label="Notes">
+            <textarea
+              value={form.notes}
+              onChange={(e) => updateForm({ notes: e.target.value })}
+              rows={3}
+              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-y"
+            />
+          </Field>
+          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            <Link2 size={10} /> Linked to: <span className="font-semibold text-foreground">{emailSubject}</span>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!form.title.trim()}
+              className={cn(
+                'text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors',
+                form.title.trim()
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed',
+              )}
+              data-testid="prescription-save"
+            >
+              <Plus size={13} /> Add to my tasks
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="text-xs font-bold bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+              data-testid="prescription-cancel"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

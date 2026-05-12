@@ -1,5 +1,6 @@
 import type { Email, AiClassification, AiCategory, AiPriority } from './types';
 import { detectDocumentRequest } from './documentDetect';
+import { detectPrescriptionRequest, urgencyFor } from './prescriptionDetect';
 
 const VALID_CATEGORIES: readonly AiCategory[] = [
   'SAFEGUARDING',
@@ -167,10 +168,30 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     : null;
   const documentDueDays = requiresDocument ? (aiDocDue ?? heuristic.documentDueDays) : null;
 
+  // Prescription / script request override (deterministic, per spec).
+  // When the rich detector fires, force category=CLINICAL and choose
+  // priority based on the deadline distance. We do NOT override when a
+  // document is being produced (documentDirection='outgoing') because
+  // those flows have their own task-creation path that takes priority.
+  const prescriptionRequest = requiresDocument ? null : detectPrescriptionRequest(email);
+  let finalCategory = category;
+  let finalPriority = priority;
+  if (prescriptionRequest) {
+    finalCategory = 'CLINICAL';
+    const urgency = urgencyFor(prescriptionRequest);
+    if (urgency === 'critical' || urgency === 'urgent') {
+      finalPriority = 'URGENT';
+    } else if (priority === 'UNCLEAR' || priority === 'LOW') {
+      // Spec: default priority MEDIUM when no urgent deadline. Don't
+      // downgrade an AI-determined URGENT — only nudge LOW/UNCLEAR up.
+      finalPriority = 'MEDIUM';
+    }
+  }
+
   return {
     emailId: email.id,
-    category,
-    priority,
+    category: finalCategory,
+    priority: finalPriority,
     confidence,
     reasoning: asString(parsed?.reasoning as unknown) ?? '',
     classifiedAt: Date.now(),
@@ -183,6 +204,7 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     requiresDocument,
     documentType,
     documentDueDays,
+    prescriptionRequest,
   };
 }
 

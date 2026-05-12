@@ -50,6 +50,7 @@ function makeClassification(
     requiresDocument: false,
     documentType: null,
     documentDueDays: null,
+        prescriptionRequest: null,
     ...overrides,
   };
 }
