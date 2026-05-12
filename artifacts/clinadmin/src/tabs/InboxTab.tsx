@@ -272,44 +272,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // Regenerate bypasses this ref entirely.
   const autoDraftedRef = useRef<Set<string>>(new Set());
 
-  // ---- Auto-classify on first inbox open ----
-  // Per the spec: "runs once per email when you first open the inbox". The AI
-  // reads each email body and assigns a category + priority. Results are cached
-  // in localStorage so we don't re-bill on subsequent renders or sessions.
-  // Concurrency limited to 3 so we don't fan out 50+ requests at once.
-  const classifyKickoffRef = useRef(false);
-  useEffect(() => {
-    if (classifyKickoffRef.current) return;
-    classifyKickoffRef.current = true;
-    const unclassified = emails.filter((e) => !classifications.has(e.id));
-    if (unclassified.length === 0) return;
-    const runPrompt = async (prompt: string) => {
-      const res = await aiComplete.mutateAsync({ data: { prompt } });
-      return res.text ?? '';
-    };
-    void classifyQueue(unclassified, runPrompt, (c) => setClassification(c), {
-      concurrency: 3,
-      // On classification failure, store an UNCLEAR fallback so the row's
-      // "Classifying…" shimmer resolves and the user can re-classify later.
-      // Without this, the row would spin forever for that session.
-      onError: (id) => {
-        setClassification({
-          emailId: id,
-          category: 'UNCLEAR',
-          priority: 'UNCLEAR',
-          confidence: 0,
-          reasoning: 'Classification failed — please re-classify.',
-          classifiedAt: Date.now(),
-          professionalSubType: null,
-          patientName: null,
-          documentRequested: null,
-          eventDate: null,
-          registrationDeadline: null,
-        });
-      },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Classification bootstrap is now lifted to ClinAdmin (useClassifyBootstrap)
+  // so tabs other than the inbox (e.g. High-Risk) get a populated classification
+  // store on first open instead of an empty one.
 
   // Auto-draft based on the AI category, as soon as the classification lands
   // for the currently-selected email:

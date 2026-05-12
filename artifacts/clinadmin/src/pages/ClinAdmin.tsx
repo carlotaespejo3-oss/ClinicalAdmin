@@ -9,6 +9,7 @@ import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
 import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
+import { useClassifyBootstrap } from '@/lib/useClassifyBootstrap';
 import TimelineTab from '../tabs/TimelineTab';
 import ForecastTab from '../tabs/ForecastTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
@@ -59,6 +60,10 @@ function getWeekKey() {
 }
 
 export default function ClinAdmin() {
+  // Kick off AI classification for every inbox email once per session, no
+  // matter which tab the user opens first. High-Risk and any future
+  // classification-driven tab depend on this running early.
+  useClassifyBootstrap();
   const [activeTab, setActiveTab] = useState<TabType>('Home');
   const [sidebarTasks, setSidebarTasks] = useState<SidebarTask[]>(defaultSidebarTasks);
   const [manualTaskList, setManualTaskList] = useState<ManualTask[]>(initialManualTasks);
@@ -161,7 +166,7 @@ export default function ClinAdmin() {
       case 'Detailed View': return <TodayTab />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'Archive': return <ArchiveTab />;
-      case 'High-Risk Patients': return <HighRiskTab />;
+      case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
       case 'Backlog Recovery': return <CatchUpTab />;
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
