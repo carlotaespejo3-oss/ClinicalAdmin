@@ -1,0 +1,260 @@
+
+
+I want to redesign how the app classifies and handles emails. Please read the current classification system and replace it completely with the following. This is the full spec — implement it exactly, category by category.
+
+PART 1 — TRIAGE PRIORITY
+Every email gets one of these four priority levels:
+URGENT
+
+Medication side effect query
+Mental health or safety concern
+Behavioural escalation
+Physical symptoms
+Any safeguarding concern
+
+MEDIUM
+
+Medication dose adjustment request
+Blood test or result query
+Complaint or dissatisfaction
+Communication from allied health, GP, school, or other doctors
+Legal or medico-legal correspondence
+
+LOW
+
+Prescription request
+Lost or misplaced medication request
+School letter request
+NDIS, report, or form request
+Appointment request
+Billing or admin question
+Triage requests
+General admin
+
+UNCLEAR
+
+Does not fit any category above
+Always flag immediately for clinician review before anything else
+Never auto-draft for unclear emails
+If unreviewed for more than 48 hours, escalate to urgent visibility and show: "This unclassified email has been waiting X days for your review"
+
+
+PART 2 — EMAIL CATEGORIES
+Every email gets one of these category labels:
+SAFEGUARDING
+Any mention of self-harm, suicidal ideation, abuse, neglect, risk to a child or vulnerable person, or a family expressing acute distress about safety. This takes priority over all other categories — if there is any doubt, classify as SAFEGUARDING.
+URGENT_CLINICAL
+Severe symptoms, severe behavioural escalation, family appears distressed or in crisis — but no safeguarding concern identified.
+CLINICAL
+Clinical questions about symptoms, adjusting or checking medication doses, script renewals, dose checks, simple clinical advice, routine clinical decisions.
+PROFESSIONAL
+Emails from colleagues waiting on the clinician — psychology, GP, school mental health lead, allied health, other doctors. Detect sub-type:
+
+Waiting on clinical input → draft a clinical reply
+Waiting on a document (report, letter, referral) → prompt "Do you want to add a task to write this?" and draft a holding reply saying it is in progress
+Meeting or coordination → treat like ADMIN
+
+ADMIN
+Bookings, room changes, rota changes, forms, scheduling.
+LEGAL
+Medico-legal correspondence, complaints with legal implications, court-related.
+NONE
+No action required — newsletters, bulletins, FYI threads, cc'd threads, marketing.
+CPD
+Upcoming meetings, conferences, courses, or other continuing professional development activities. Extract any registration deadline mentioned and use it as the task due date.
+DONE
+DONE is not an AI classification. It is a manual status the clinician applies by clicking "Mark as done" on any email. Remove DONE from the AI classification list entirely. Once marked done, the email moves to an archive view.
+UNCLEAR
+Does not fit any category. Flag for human review. Show a prominent yellow warning: "This email needs your review before we can classify it." Allow the clinician to manually select the correct category. Once selected, apply the behaviour for that category.
+
+PART 3 — WHAT THE APP DOES FOR EACH CATEGORY
+SAFEGUARDING
+Show immediately when the email is opened:
+
+A large red banner at the top of the email:
+"⚠️ SAFEGUARDING CONCERN DETECTED — Clinical review strongly recommended. Responding with clinical advice by email is not appropriate. See drafts below."
+Auto-generate Draft 1 — To the family:
+Warm, supportive, non-clinical holding response. Must include:
+
+
+Acknowledgement that you have received their message and you can hear how worried they are
+Basic safety guidance appropriate to the concern. For self-harm or suicidal ideation: remove or lock away sharp objects and medications from the young person's reach, stay with the young person, do not leave them alone if acutely at risk
+Emergency numbers: Lifeline (13 11 14), Kids Helpline (1800 55 1800), and "call 000 or present to your nearest emergency department if you are concerned for their immediate safety"
+Clear statement that clinical review is needed and that you will be arranging an appointment as a priority
+Warm, human close — not dismissive, not overly clinical
+Tone: the kind of email a trusted, calm doctor would write to a frightened parent. Warm, clear, human, not bureaucratic.
+If the concern involves suspected abuse or neglect rather than self-harm: focus on acknowledgement and appointment booking only — omit the self-harm safety guidance
+
+
+Auto-generate Draft 2 — To admin:
+
+
+Subject line: URGENT — Appointment needed — [patient name if detectable]
+Body: brief, marked as urgent, requests appointment within 24–48 hours, notes that a safeguarding concern has been identified and clinical review is time-sensitive
+
+
+Mini chat box below both drafts:
+
+
+Placeholder: "Need anything else? e.g. 'draft a safeguarding referral' or 'draft a note for the clinical record'"
+
+Rules for SAFEGUARDING:
+
+Both drafts appear automatically when the email is opened — no button needed
+The red banner always appears above the drafts, never hidden
+The clinician must review and edit both drafts before sending — never auto-send
+The family draft must never contain specific clinical diagnosis, medication advice, or anything beyond safety netting and warm support
+
+
+URGENT_CLINICAL
+Show immediately when the email is opened:
+
+Auto-generate Draft 1 — To the family:
+Warm, reassuring, clear. Acknowledges their concern, confirms you have seen it, and tells them what happens next.
+Auto-generate Draft 2 — To admin:
+
+
+Subject line: URGENT — Appointment needed — [patient name if detectable]
+Requests appointment within 24–48 hours
+Notes urgency clearly
+
+
+Mini chat box:
+
+
+Placeholder: "Need anything else? e.g. 'draft a referral letter' or 'email to the GP'"
+
+
+CLINICAL
+Show immediately when the email is opened:
+
+Auto-generate a draft reply to the family or sender.
+
+
+Addresses the clinical question at an appropriate level
+Warm and clear for families, professional for colleagues
+Labelled: "Draft — review carefully before sending. Contains clinical content."
+
+
+Mini chat box:
+
+
+Placeholder: "Need anything else? e.g. 'draft an email to admin to book a follow-up' or 'draft a referral to the GP'"
+
+
+PROFESSIONAL
+Show immediately when the email is opened:
+
+Auto-generate a draft reply to the colleague.
+
+
+Professional, collegial, direct
+If they are waiting on a document: draft a holding reply confirming it is in progress and give an expected timeframe. Also show a prompt: "Do you want to add a task to write this document?" with a pre-filled task.
+
+
+Mini chat box:
+
+
+Placeholder: "Need anything else? e.g. 'draft a referral letter' or 'email to admin to book a joint appointment'"
+
+
+ADMIN
+Show immediately when the email is opened:
+
+Auto-generate a draft reply.
+
+
+Brief and practical
+
+
+Mini chat box:
+
+
+Placeholder: "Need anything else? e.g. 'email to admin to confirm the room change'"
+
+
+LEGAL
+Show immediately when the email is opened:
+
+Do NOT auto-draft a reply.
+Show a prominent amber warning:
+"This email may have legal implications. Clinician review is required before any response. Do not reply without considering your obligations."
+Show a prompt asking the clinician to decide what action to take.
+Mini chat box:
+
+
+Placeholder: "When you are ready: e.g. 'draft a neutral acknowledgement' or 'draft a response for my medical defence organisation'"
+
+
+NONE
+Show when the email is opened:
+
+A clear "Acknowledge — no action" button. When clicked, marks the email as done.
+Auto-generate a brief, warm acknowledgement email draft in case the clinician decides they want to send one.
+No other actions.
+
+
+CPD
+Show when the email is opened:
+
+An "Acknowledge — no action" button.
+An "Add to tasks" button. When clicked, prompt the clinician:
+"What would you like to remember? e.g. Sign up before deadline / Attend on [date]"
+Pre-fill the task with: event title, event date if found, and registration deadline as the due date if found in the email. If no deadline is found, ask: "When do you need to register by?"
+Auto-generate a brief acknowledgement email draft in case they want to reply.
+
+
+UNCLEAR
+Show when the email is opened:
+
+A prominent yellow warning:
+"This email needs your review before we can classify it. Please select a category below."
+A dropdown or button set allowing the clinician to manually select the correct category from the full list above.
+Once a category is selected, apply the correct behaviour for that category immediately.
+Do NOT auto-draft anything until the clinician has classified it.
+If unreviewed for more than 48 hours, escalate to urgent visibility with a warning: "This unclassified email has been waiting X days for your review."
+
+
+PART 4 — GENERAL RULES FOR ALL DRAFTS
+
+All drafts appear automatically when an email is opened — the clinician should never have to click a button to generate a draft
+Every draft is clearly labelled "Draft — review before sending"
+Drafts containing clinical content are additionally labelled "This draft contains clinical content — review carefully"
+The clinician can edit any draft before sending
+The clinician can completely replace a draft with their own text
+Never send anything automatically — the clinician always approves and sends manually
+Drafts should match the clinician's writing style profile if one has been built in the app
+Tone guidelines:
+
+For families: warm, clear, jargon-free, human
+For colleagues: professional, collegial, direct
+For admin: brief and practical
+For legal: neutral, factual, careful — only if clinician requests
+
+
+
+
+PART 5 — THE MINI CHAT BOX
+For categories that include a mini chat box (SAFEGUARDING, URGENT_CLINICAL, CLINICAL, PROFESSIONAL, ADMIN, LEGAL):
+
+Show a small text input below the drafts
+Placeholder text is specified per category above
+When the clinician types a request and submits, generate that additional draft and show it below the others
+Each additional draft can be edited or discarded independently
+No limit on how many additional drafts can be requested
+If a mini chat box request involves clinical advice or medication: add a warning label to that draft — "This draft contains clinical content — review carefully before sending"
+The mini chat box cannot override the category rules — for example if the email is SAFEGUARDING, the chat box cannot be used to draft a clinical reply to the family, only supporting documents
+
+
+PART 6 — IMPLEMENTATION INSTRUCTIONS
+Please implement this in the following order:
+
+First read all current classification and draft generation code and summarise what you find
+Update the AI classification prompt to use the new categories and priority levels above
+Implement the draft auto-generation logic for each category — starting with SAFEGUARDING, then URGENT_CLINICAL, then CLINICAL
+Implement the mini chat box component
+Implement PROFESSIONAL, ADMIN, LEGAL, NONE, CPD, UNCLEAR
+Update the DONE status to be manual only — remove it from AI classification
+Test each category with the existing mock emails and confirm it works before moving to the next
+
+After each step, pause and tell me what you did and what to test. Do not move to the next step until I confirm it is working.
