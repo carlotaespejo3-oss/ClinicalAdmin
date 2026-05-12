@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, TrendingUp, CheckCircle2, Sparkles, Loader2, Mail } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { emails } from '@/lib/data';
+import { emails, CAT } from '@/lib/data';
 import { cn, getEmailPriority } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
@@ -35,22 +35,34 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
 
   // ---- Backlog by priority (using each email's actual estMin) ----
   // Acknowledged emails are excluded — they don't need clinician time.
+  // CAT.NONE ("No action required") emails are noise that should be cleared with
+  // the Acknowledge button — they're shown in the inbox count but excluded from
+  // time totals because they don't warrant a written reply.
+  const SLA_DUE_SOON_DAYS = 7; // anything with ≤7 days remaining must clear this week or it breaches 14-day SLA before next session
+
   const backlog = useMemo(() => {
-    const active = emails.filter(e => !acknowledged.has(e.id));
-    const groups = { High: [] as typeof emails, Medium: [] as typeof emails, Low: [] as typeof emails };
+    const active = emails.filter(e => !acknowledged.has(e.id) && e.cat !== CAT.NONE);
+    const groups = { High: [] as typeof emails, Medium: [] as typeof emails, LowDueSoon: [] as typeof emails, LowDeferrable: [] as typeof emails };
     for (const e of active) {
-      groups[getEmailPriority(e)].push(e);
+      const p = getEmailPriority(e);
+      if (p === 'High') groups.High.push(e);
+      else if (p === 'Medium') groups.Medium.push(e);
+      else if (e.deadline !== null && e.deadline <= SLA_DUE_SOON_DAYS) groups.LowDueSoon.push(e);
+      else groups.LowDeferrable.push(e);
     }
     const sumMin = (arr: typeof emails) => arr.reduce((a, e) => a + e.estMin, 0);
     return {
       High: { count: groups.High.length, mins: sumMin(groups.High) },
       Medium: { count: groups.Medium.length, mins: sumMin(groups.Medium) },
-      Low: { count: groups.Low.length, mins: sumMin(groups.Low) },
+      LowDueSoon: { count: groups.LowDueSoon.length, mins: sumMin(groups.LowDueSoon) },
+      LowDeferrable: { count: groups.LowDeferrable.length, mins: sumMin(groups.LowDeferrable) },
     };
   }, [acknowledged]);
 
-  const totalBacklogMin = backlog.High.mins + backlog.Medium.mins + backlog.Low.mins;
-  const totalBacklogCount = backlog.High.count + backlog.Medium.count + backlog.Low.count;
+  const lowTotal = { count: backlog.LowDueSoon.count + backlog.LowDeferrable.count, mins: backlog.LowDueSoon.mins + backlog.LowDeferrable.mins };
+  const totalBacklogMin = backlog.High.mins + backlog.Medium.mins + lowTotal.mins;
+  const totalBacklogCount = backlog.High.count + backlog.Medium.count + lowTotal.count;
+  const noiseCount = useMemo(() => emails.filter(e => !acknowledged.has(e.id) && e.cat === CAT.NONE).length, [acknowledged]);
 
   // ---- Average minutes per email by priority (used to project incoming workload) ----
   const avgMin = useMemo(() => {
@@ -58,9 +70,9 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
     return {
       High: safe(backlog.High.mins, backlog.High.count, 15),
       Medium: safe(backlog.Medium.mins, backlog.Medium.count, 8),
-      Low: safe(backlog.Low.mins, backlog.Low.count, 3),
+      Low: safe(lowTotal.mins, lowTotal.count, 5),
     };
-  }, [backlog]);
+  }, [backlog, lowTotal]);
 
   // ---- Mix of incoming emails: assume the new 60/wk follow the same priority mix as backlog ----
   const mix = useMemo(() => {
@@ -68,9 +80,9 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
     return {
       High: backlog.High.count / total,
       Medium: backlog.Medium.count / total,
-      Low: backlog.Low.count / total,
+      Low: lowTotal.count / total,
     };
-  }, [backlog, totalBacklogCount]);
+  }, [backlog, lowTotal, totalBacklogCount]);
 
   const incomingPerWeek = useMemo(() => {
     const high = NEW_PER_WEEK * mix.High;
@@ -84,23 +96,24 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   }, [mix, avgMin]);
 
   // ---- Realistic ask for THIS week ----
-  // High (5-day clinical SLA) MUST clear this week.
-  // Medium SHOULD clear this week (7-day SLA, but better not to let it slip).
-  // Low (14-day SLA) is safe to defer to next week — only do as much as fits after High+Medium.
-  // The headline number is High + Medium ONLY. Low is shown separately as "and there's X of low-priority work that can wait until next week."
-  const requiredThisWeekMin = backlog.High.mins + backlog.Medium.mins;
+  // We compute "what must be done this week to keep every email inside its 14-day SLA":
+  //   - All High (5-day clinical SLA) — clearly this week.
+  //   - All Medium (7-day SLA) — this week.
+  //   - All Low items whose deadline is ≤ 7 days — if these aren't done this
+  //     week, they breach 14 days before the next admin session.
+  // Low items with deadline > 7 days (or no deadline) are safe to defer.
+  const requiredThisWeekMin = backlog.High.mins + backlog.Medium.mins + backlog.LowDueSoon.mins;
   const minimumSafeThisWeekMin = backlog.High.mins; // bare minimum to avoid clinical SLA breach
   const gapThisWeekMin = Math.max(0, requiredThisWeekMin - weeklyCapacityMin);
-  // Spillover Low after this week's capacity is used on High+Medium first
-  const lowDeferrableMin = backlog.Low.mins;
+  const lowDeferrableMin = backlog.LowDeferrable.mins;
 
   // ---- Will any Low priority breach 14 days? ----
-  // After 2 weeks of capacity at weeklyCapacityMin, can we clear (current Low + 2 weeks of incoming Low + High + Medium)?
+  // After 2 weeks of capacity at weeklyCapacityMin, can we clear all current backlog + 2 weeks of incoming?
   const twoWeekCapacityMin = weeklyCapacityMin * 2;
   const twoWeekDemandMin =
     backlog.High.mins +
     backlog.Medium.mins +
-    backlog.Low.mins +
+    lowTotal.mins +
     incomingPerWeek.mins.High +
     incomingPerWeek.mins.Medium +
     incomingPerWeek.mins.Low;
@@ -115,7 +128,7 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   const weeks = useMemo(() => {
     let curHigh = backlog.High.mins;
     let curMed = backlog.Medium.mins;
-    let curLow = backlog.Low.mins;
+    let curLow = lowTotal.mins;
     const out: Array<{
       label: string;
       capacityMin: number;
@@ -153,24 +166,25 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
       });
     }
     return out;
-  }, [backlog, weeklyCapacityMin, incomingPerWeek]);
+  }, [backlog, lowTotal, weeklyCapacityMin, incomingPerWeek]);
 
   const generateNarrative = async () => {
     setAiError('');
     setAiNote('');
     const facts = `
 Workload snapshot for Dr. A. Patterson (NHS CAMHS):
-- ${totalBacklogCount} emails in backlog (${fmtH(totalBacklogMin)} of work)
+- ${totalBacklogCount} actionable emails in backlog (${fmtH(totalBacklogMin)} of work). ${noiseCount} additional no-action emails to acknowledge.
 - High priority: ${backlog.High.count} emails, ${fmtH(backlog.High.mins)}
 - Medium priority: ${backlog.Medium.count} emails, ${fmtH(backlog.Medium.mins)}
-- Low priority: ${backlog.Low.count} emails, ${fmtH(backlog.Low.mins)}
+- Low priority due within 7 days (must clear this week to stay inside 14-day SLA): ${backlog.LowDueSoon.count} emails, ${fmtH(backlog.LowDueSoon.mins)}
+- Low priority with more than 7 days left (safe to defer to next week): ${backlog.LowDeferrable.count} emails, ${fmtH(backlog.LowDeferrable.mins)}
 - Weekly admin capacity: ${weeklyCapacityH}h
 - Expected new emails per week: ${NEW_PER_WEEK}
 - SLA: high-risk clinical replies within 5 days, low priority within 14 days
-- Required this week to clear High + Medium ONLY (Low can defer to next week, still inside 14-day SLA): ${fmtH(requiredThisWeekMin)}
+- Required this week to keep ALL emails inside SLA = High + Medium + Low items already due within 7 days: ${fmtH(requiredThisWeekMin)}
 - Capacity gap this week: ${gapThisWeekMin > 0 ? fmtH(gapThisWeekMin) + ' short' : 'none'}
-- Low priority that can safely wait until next week: ${fmtH(lowDeferrableMin)} (${backlog.Low.count} emails)
-- Two-week SLA breach risk for Low priority: ${willBreachLowSla ? `Yes — about ${fmtH(lowBreachMin)} of work will spill past 14 days` : 'No'}
+- Low priority that can safely wait until next week: ${fmtH(lowDeferrableMin)} (${backlog.LowDeferrable.count} emails)
+- Two-week SLA breach risk: ${willBreachLowSla ? `Yes — about ${fmtH(lowBreachMin)} of work will spill past 14 days` : 'No'}
 - High-risk SLA risk this week: ${highSlaAtRisk ? 'Yes' : 'No'}
 `;
     const prompt = `You are writing a short, plain-English workload summary for a busy NHS CAMHS consultant. British spelling. No jargon. 4-6 sentences max.\n\nUsing the facts below, write a calm, direct paragraph that:\n1. Tells her how many hours she realistically needs this week to stay safe.\n2. Tells her if there is a gap and how to handle it (carry low-priority into next week is fine; high-risk clinical work cannot wait).\n3. If a 14-day low-priority breach is likely, flag it once, gently, and suggest the simplest mitigation (e.g. add 1-2 hours next week, or accept the breach and document why).\n4. End with one specific concrete action she can do today.\n\nDo NOT repeat the numbers verbatim — interpret them. Speak to her as "you".\n\nFacts:\n${facts}`;
@@ -210,18 +224,24 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Workload forecast</p>
               <h2 className="text-xl font-bold mb-2">
-                You realistically need <span className="text-primary">{headlineNeedH.toFixed(1)} hours</span> this week to clear High and Medium priority emails.
+                You realistically need <span className="text-primary">{headlineNeedH.toFixed(1)} hours</span> this week to keep every email inside its 14-day window.
               </h2>
+              <p className="text-sm text-muted-foreground mb-2">
+                That covers <strong className="text-foreground">{backlog.High.count} high-risk</strong>, <strong className="text-foreground">{backlog.Medium.count} medium</strong>, and <strong className="text-foreground">{backlog.LowDueSoon.count} low-priority emails already approaching their deadline</strong>{backlog.LowDueSoon.count > 0 ? ` (${fmtH(backlog.LowDueSoon.mins)} of low-priority work that can't wait another week)` : ''}.
+              </p>
               <p className="text-sm text-muted-foreground">
                 You have <strong className="text-foreground">{weeklyCapacityH} hours</strong> scheduled
                 {weekSetup?.days?.length ? <> across {weekSetup.days.join(', ')}</> : ''}.
                 {' '}
-                {status === 'ok' && <span className="text-green-700 font-semibold">That's enough for everything urgent this week.</span>}
-                {status === 'tight' && <span className="text-amber-700 font-semibold">That covers the high-risk clinical work; some medium-priority items will slip into next week.</span>}
+                {status === 'ok' && <span className="text-green-700 font-semibold">That's enough — every item stays inside SLA.</span>}
+                {status === 'tight' && <span className="text-amber-700 font-semibold">That covers the high-risk clinical work; some medium or older low-priority items will slip and risk breaching SLA.</span>}
                 {status === 'short' && <span className="text-red-700 font-semibold">Even the urgent clinical replies won't all fit — see suggestions below.</span>}
                 {' '}
-                {backlog.Low.count > 0 && (
-                  <span>The <strong className="text-foreground">{fmtH(lowDeferrableMin)}</strong> of low-priority work ({backlog.Low.count} emails) is safe to defer to next week — still inside the 14-day window.</span>
+                {backlog.LowDeferrable.count > 0 && (
+                  <span>A further <strong className="text-foreground">{fmtH(lowDeferrableMin)}</strong> of low-priority work ({backlog.LowDeferrable.count} emails) has more than 7 days left — safe to defer to next week.</span>
+                )}
+                {noiseCount > 0 && (
+                  <span> Plus <strong className="text-foreground">{noiseCount} no-action emails</strong> to clear with the Acknowledge button (no time budget needed).</span>
                 )}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -262,29 +282,34 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
       )}
 
       {/* Priority breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {([
-          { key: 'High', label: 'High priority', sla: '5-day window', tone: 'red', data: backlog.High },
-          { key: 'Medium', label: 'Medium priority', sla: '7-day window', tone: 'amber', data: backlog.Medium },
-          { key: 'Low', label: 'Low priority', sla: '14-day window', tone: 'slate', data: backlog.Low },
+          { key: 'High', label: 'High priority', sla: '5-day window', tone: 'red', data: backlog.High, mustDoThisWeek: true },
+          { key: 'Medium', label: 'Medium priority', sla: '7-day window', tone: 'amber', data: backlog.Medium, mustDoThisWeek: true },
+          { key: 'LowDueSoon', label: 'Low — due ≤ 7d', sla: 'will breach if deferred', tone: 'orange', data: backlog.LowDueSoon, mustDoThisWeek: true },
+          { key: 'LowDeferrable', label: 'Low — > 7d left', sla: 'safe to defer', tone: 'slate', data: backlog.LowDeferrable, mustDoThisWeek: false },
         ] as const).map((row) => (
-          <Card key={row.key} className="border-border/50">
+          <Card key={row.key} className={cn("border-border/50", row.mustDoThisWeek && "ring-1 ring-primary/10")}>
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-2">
                 <span className={cn(
                   "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded",
                   row.tone === 'red' && "bg-red-100 text-red-700",
                   row.tone === 'amber' && "bg-amber-100 text-amber-700",
+                  row.tone === 'orange' && "bg-orange-100 text-orange-700",
                   row.tone === 'slate' && "bg-slate-100 text-slate-700",
                 )}>
                   {row.label}
                 </span>
-                <span className="text-[10px] text-muted-foreground">{row.sla}</span>
               </div>
               <p className="text-3xl font-bold tabular-nums">{row.data.count}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                emails · <strong className="text-foreground">{fmtH(row.data.mins)}</strong> of work
+                emails · <strong className="text-foreground">{fmtH(row.data.mins)}</strong>
               </p>
+              <p className={cn("text-[10px] mt-2 font-semibold", row.mustDoThisWeek ? "text-primary" : "text-muted-foreground")}>
+                {row.mustDoThisWeek ? '✓ counted in this week' : '↪ deferred to next week'}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{row.sla}</p>
             </CardContent>
           </Card>
         ))}
@@ -355,8 +380,8 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
           <p>· Each email's time estimate is based on its category and complexity (current average: <strong>{avgMin.High.toFixed(0)}min</strong> high, <strong>{avgMin.Medium.toFixed(0)}min</strong> medium, <strong>{avgMin.Low.toFixed(0)}min</strong> low).</p>
           <p>· Forecast assumes ~{NEW_PER_WEEK} new emails arrive each week in the same priority mix as your current backlog.</p>
           <p>· SLA targets: high-risk clinical {HIGH_SLA_DAYS} days, low priority {LOW_SLA_DAYS} days.</p>
-          <p>· "Required this week" = all High + all Medium. Low priority is safe to defer to next week (still inside the 14-day SLA).</p>
-          <p>· Acknowledged emails (the "no action" button in the inbox) are excluded from these numbers.</p>
+          <p>· "Required this week" = all High + all Medium + any Low priority email with ≤ 7 days left on its SLA clock. Anything else is deferred to next week and still safely inside the 14-day window.</p>
+          <p>· Acknowledged emails and no-action ("Acknowledge — no action") items are excluded from the time budget — they don't need a written reply.</p>
         </CardContent>
       </Card>
     </div>
