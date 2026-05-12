@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, FileText, CheckSquare, Settings, User } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
@@ -9,7 +9,6 @@ import TimelineTab from '../tabs/TimelineTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
-import DraftsTab from '../tabs/DraftsTab';
 import TasksTab from '../tabs/TasksTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
 import { TabType, SidebarTask, ManualTask, GeneratedPlan } from '@/lib/types';
@@ -26,7 +25,6 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
   { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
-  { id: 'Drafts', icon: FileText, label: 'Drafts' },
   { id: 'Tasks', icon: CheckSquare, label: 'Tasks' },
   { id: 'Backlog Recovery', icon: RefreshCcw, label: 'Backlog Recovery' },
   { id: 'Forecast', icon: BarChart2, label: 'Forecast' },
@@ -155,7 +153,6 @@ export default function ClinAdmin() {
           onOpenEmail={(id) => setOpenEmailId(id)}
         />
       );
-      case 'Drafts': return <DraftsTab />;
       case 'Settings':
         return (
           <div className="flex items-center justify-center h-64 text-muted-foreground">
