@@ -27,8 +27,14 @@ const KIND_COLOUR: Record<string, string> = {
   none: 'bg-slate-50 text-slate-500 border-slate-200',
 };
 
-export default function InboxTab() {
-  const [selectedId, setSelectedId] = useState<number | null>(emails[0]?.id || null);
+interface InboxTabProps {
+  initialSelectedId?: number | null;
+}
+
+export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
+  const [selectedId, setSelectedId] = useState<number | null>(
+    initialSelectedId ?? emails[0]?.id ?? null
+  );
   const [aiAnalysis, setAiAnalysis] = useState<Record<number, string>>({});
   const [aiDrafts, setAiDrafts] = useState<Record<number, string>>({});
 

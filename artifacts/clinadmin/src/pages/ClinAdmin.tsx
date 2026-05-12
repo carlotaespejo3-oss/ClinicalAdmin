@@ -9,8 +9,10 @@ import TimelineTab from '../tabs/TimelineTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
+import TasksTab from '../tabs/TasksTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
-import { TabType, SidebarTask, GeneratedPlan } from '@/lib/types';
+import { TabType, SidebarTask, ManualTask, GeneratedPlan } from '@/lib/types';
+import { manualTasks as initialManualTasks } from '@/lib/data';
 
 export interface WeekSetup {
   hours: number;
@@ -47,6 +49,8 @@ function getWeekKey() {
 export default function ClinAdmin() {
   const [activeTab, setActiveTab] = useState<TabType>('Home');
   const [sidebarTasks, setSidebarTasks] = useState<SidebarTask[]>(defaultSidebarTasks);
+  const [manualTaskList, setManualTaskList] = useState<ManualTask[]>(initialManualTasks);
+  const [openEmailId, setOpenEmailId] = useState<number | null>(null);
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskMins, setNewTaskMins] = useState('15');
@@ -111,18 +115,38 @@ export default function ClinAdmin() {
     setSidebarTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
   };
 
+  const toggleManualTask = (id: string) => {
+    setManualTaskList(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  };
+
+  const addSidebarTask = (title: string, mins: number, priority: 'high' | 'normal') => {
+    const task: SidebarTask = { id: `s${Date.now()}`, title, estMin: mins, priority, done: false };
+    setSidebarTasks(prev => [...prev, task]);
+  };
+
   const renderTab = () => {
     switch (activeTab) {
       case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onNavigate={setActiveTab} />;
       case 'Detailed View': return <TodayTab />;
-      case 'Emails': return <InboxTab />;
+      case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'High-Risk Patients': return <HighRiskTab />;
       case 'Backlog Recovery': return <CatchUpTab />;
       case 'Forecast': return <TimelineTab />;
       case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
+      case 'Tasks': return (
+        <TasksTab
+          manualTasks={manualTaskList}
+          sidebarTasks={sidebarTasks}
+          onToggleManualTask={toggleManualTask}
+          onToggleSidebarTask={toggleTask}
+          onRemoveSidebarTask={removeTask}
+          onAddSidebarTask={addSidebarTask}
+          onNavigate={setActiveTab}
+          onOpenEmail={(id) => setOpenEmailId(id)}
+        />
+      );
       case 'Drafts':
-      case 'Tasks':
       case 'Settings':
         return (
           <div className="flex items-center justify-center h-64 text-muted-foreground">
