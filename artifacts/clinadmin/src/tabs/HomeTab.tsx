@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw } from 'lucide-react';
-import { homePlan, weekData, emails } from '@/lib/data';
+import { homePlan, weekData, emails, CAT } from '@/lib/data';
 import { HomePlanItem, SidebarTask, TabType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
@@ -12,6 +12,7 @@ interface Props {
   onOpenWeeklySetup: () => void;
   onUpdateAvailability: (hours: number, days: string[]) => void;
   onNavigate: (tab: TabType) => void;
+  onOpenEmail: (emailId: number) => void;
 }
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -33,7 +34,7 @@ type PlanEntry =
   | { kind: 'base'; item: HomePlanItem }
   | { kind: 'manual'; task: SidebarTask };
 
-export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate }: Props) {
+export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
   const [plan, setPlan] = useState(homePlan);
   const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
   const [editedDrafts, setEditedDrafts] = useState<Record<number, string>>({});
@@ -82,7 +83,16 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
   };
 
   const openEmail = (item: HomePlanItem) => {
-    if (item.emailId) setOpenItem(item);
+    if (!item.emailId) return;
+    const linked = emails.find(e => e.id === item.emailId);
+    // UNSAFE emails get the dual compassionate-draft flow in the Emails tab —
+    // the home slide-over's single hard-coded draft would mislead the clinician.
+    if (linked?.cat === CAT.UNSAFE) {
+      onOpenEmail(item.emailId);
+      onNavigate('Emails');
+      return;
+    }
+    setOpenItem(item);
   };
 
   const requestCloseDraft = () => {

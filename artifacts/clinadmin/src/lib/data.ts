@@ -236,8 +236,8 @@ export const manualTasks: ManualTask[] = [
 export const homePlan: HomePlanItem[] = [
   {
     id: 1,
-    title: 'Review Poppy K. high-risk email',
-    why: 'Complex patient, unanswered since Thursday.',
+    title: 'Review Mia C. high-risk email — suicidal ideation flag',
+    why: 'Suicidal-risk wording from parent — needs compassionate dual draft, not a standard reply.',
     time: '15 min',
     done: false,
     emailId: 1,
