@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
-import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw } from 'lucide-react';
-import { homePlan, weekData, emails, CAT } from '@/lib/data';
-import { HomePlanItem, SidebarTask, TabType } from '@/lib/types';
+import { useState, useEffect, useMemo } from 'react';
+import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw, ShieldAlert, FileText, ExternalLink } from 'lucide-react';
+import { weekData, emails, CAT } from '@/lib/data';
+import { Email, ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
 
 interface Props {
   sidebarTasks: SidebarTask[];
   onToggleSidebarTask: (id: string) => void;
+  manualTasks: ManualTask[];
   weekSetup: WeekSetup | null;
   onOpenWeeklySetup: () => void;
   onUpdateAvailability: (hours: number, days: string[]) => void;
@@ -26,24 +27,43 @@ function fmtMins(min: number) {
 }
 
 const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
-const taskMins = 88;
 const projectedExtra = 45;
-const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
 
-type PlanEntry =
-  | { kind: 'base'; item: HomePlanItem }
-  | { kind: 'manual'; task: SidebarTask };
+function emailWhy(e: Email): string {
+  if (e.cat === CAT.UNSAFE) return 'Suicidal-risk wording from parent — compassionate dual draft needed.';
+  if (e.cat === CAT.URGENT) return 'Urgent clinical — your input required.';
+  if (e.isProfessional) return 'Colleague awaiting your reply.';
+  if (e.isMeeting) return 'Meeting / event — deadline approaching.';
+  if (e.kind === 'script') return 'Script request — quick triage.';
+  if (e.kind === 'complex') return 'Complex case — has a linked task.';
+  if (e.kind === 'triage') return 'Quick triage decision.';
+  if (e.kind === 'admin') return 'Admin response.';
+  return 'Needs review.';
+}
 
-export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
-  const [plan, setPlan] = useState(homePlan);
-  const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
-  const [editedDrafts, setEditedDrafts] = useState<Record<number, string>>({});
-  const [copied, setCopied] = useState(false);
+function emailRowBadge(e: Email): { label: string; cls: string; Icon: typeof Users } | null {
+  if (e.cat === CAT.UNSAFE) return { label: 'Compassionate dual draft', cls: 'text-amber-700 bg-amber-50 border-amber-200', Icon: ShieldAlert };
+  if (e.isProfessional) return { label: 'Professional colleague', cls: 'text-purple-700 bg-purple-50 border-purple-200', Icon: Users };
+  if (e.isMeeting) return { label: 'Deadline approaching', cls: 'text-orange-700 bg-orange-50 border-orange-200', Icon: CalendarClock };
+  if (e.cat === CAT.URGENT) return { label: 'Urgent clinical', cls: 'text-red-700 bg-red-50 border-red-200', Icon: AlertTriangle };
+  return null;
+}
+
+function taskWhy(t: ManualTask): string {
+  if (t.deadline <= 1) return `Due ${t.deadline === 0 ? 'today' : 'tomorrow'} — ${t.type.toLowerCase()}.`;
+  if (t.deadline <= 3) return `Due in ${t.deadline}d — ${t.type.toLowerCase()}.`;
+  return `${t.type} — due in ${t.deadline}d.`;
+}
+
+export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
+  // Derived from live task state so completion in Tasks tab propagates here.
+  const taskMins = manualTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
+  const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
   const [showWhyRec, setShowWhyRec] = useState(false);
-
-  const currentDraftBody = openItem
-    ? editedDrafts[openItem.id] ?? openItem.draftReply ?? ''
-    : '';
+  // Local "handled today" tracking for visual progress only — the real
+  // source of truth lives in the Emails / Tasks tabs.
+  const [handledEmailIds, setHandledEmailIds] = useState<Set<number>>(new Set());
+  const [handledTaskIds, setHandledTaskIds] = useState<Set<string>>(new Set());
 
   const [draftHours, setDraftHours] = useState<number>(weekSetup?.hours ?? 4);
   const [draftDays, setDraftDays] = useState<string[]>(weekSetup?.days ?? ['Tue', 'Wed', 'Thu']);
@@ -77,81 +97,53 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
     setDraftDays(weekSetup.days);
   };
 
-  const toggleBase = (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPlan(plan.map(item => item.id === id ? { ...item, done: !item.done } : item));
+  // ---- Derive today's plan from real data ----
+  // Pick top priority emails (UNSAFE first, then by deadline asc, skip pure-admin/none).
+  const todayEmails = useMemo(() => {
+    const catRank = (e: Email) => {
+      if (e.cat === CAT.UNSAFE) return 0;
+      if (e.cat === CAT.URGENT) return 1;
+      if (e.isProfessional || e.isMeeting) return 2;
+      return 3;
+    };
+    return [...emails]
+      .filter(e => e.cat !== CAT.NONE)
+      .sort((a, b) => {
+        const r = catRank(a) - catRank(b);
+        if (r !== 0) return r;
+        const da = a.deadline ?? 99;
+        const db = b.deadline ?? 99;
+        return da - db;
+      })
+      .slice(0, 3);
+  }, []);
+
+  // Pick most urgent uncompleted manual tasks by deadline.
+  const todayTasks = useMemo(() => {
+    return [...manualTasks].filter(t => !t.done).sort((a, b) => a.deadline - b.deadline).slice(0, 2);
+  }, [manualTasks]);
+
+  const handleEmailClick = (id: number) => {
+    setHandledEmailIds(prev => new Set(prev).add(id));
+    onOpenEmail(id);
+    onNavigate('Emails');
   };
 
-  const openEmail = (item: HomePlanItem) => {
-    if (!item.emailId) return;
-    const linked = emails.find(e => e.id === item.emailId);
-    // UNSAFE emails get the dual compassionate-draft flow in the Emails tab —
-    // the home slide-over's single hard-coded draft would mislead the clinician.
-    if (linked?.cat === CAT.UNSAFE) {
-      onOpenEmail(item.emailId);
-      onNavigate('Emails');
-      return;
-    }
-    setOpenItem(item);
+  const handleTaskClick = (id: string) => {
+    setHandledTaskIds(prev => new Set(prev).add(id));
+    onNavigate('Tasks');
   };
 
-  const requestCloseDraft = () => {
-    if (!openItem) return;
-    const original = openItem.draftReply ?? '';
-    const edited = editedDrafts[openItem.id];
-    const hasUnsavedEdits = edited !== undefined && edited !== original;
-    if (hasUnsavedEdits) {
-      const confirmed = window.confirm('Discard your edits to this draft? Your changes will be lost.');
-      if (!confirmed) return;
-      setEditedDrafts(prev => {
-        const next = { ...prev };
-        delete next[openItem.id];
-        return next;
-      });
-    }
-    setOpenItem(null);
-  };
+  // ---- Stats ----
+  const planMins = todayEmails.reduce((a, e) => a + e.estMin, 0) + todayTasks.reduce((a, t) => a + t.estMin, 0);
+  const sidebarMins = sidebarTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
+  const totalMins = planMins + sidebarMins;
 
-  const handleCopy = () => {
-    if (openItem) {
-      navigator.clipboard.writeText(currentDraftBody);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleSend = () => {
-    if (openItem) {
-      setPlan(plan.map(item => item.id === openItem.id ? { ...item, done: true } : item));
-      setEditedDrafts(prev => {
-        const next = { ...prev };
-        delete next[openItem.id];
-        return next;
-      });
-      setOpenItem(null);
-    }
-  };
-
-  const sourceEmail = openItem?.emailId ? emails.find(e => e.id === openItem.emailId) : null;
-
-  const highManual = sidebarTasks.filter(t => !t.done && t.priority === 'high');
-  const normalManual = sidebarTasks.filter(t => !t.done && t.priority === 'normal');
-  const doneManual = sidebarTasks.filter(t => t.done);
-
-  const entries: PlanEntry[] = [
-    ...plan.map(item => ({ kind: 'base' as const, item })),
-    ...highManual.map(task => ({ kind: 'manual' as const, task })),
-    ...normalManual.map(task => ({ kind: 'manual' as const, task })),
-    ...doneManual.map(task => ({ kind: 'manual' as const, task })),
-  ];
-
-  const planMins = plan.reduce((a, i) => a + parseInt(i.time), 0);
-  const totalMins = planMins + sidebarTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
-
-  const completedBase = plan.filter(t => t.done).length;
-  const completedManual = sidebarTasks.filter(t => t.done).length;
-  const totalItems = plan.length + sidebarTasks.length;
-  const totalDone = completedBase + completedManual;
+  const totalItems = todayEmails.length + todayTasks.length + sidebarTasks.length;
+  const totalDone =
+    todayEmails.filter(e => handledEmailIds.has(e.id)).length +
+    todayTasks.filter(t => handledTaskIds.has(t.id)).length +
+    sidebarTasks.filter(t => t.done).length;
 
   const allocatedMins = weekSetup ? Math.round(weekSetup.hours * 60) : weekData.reduce((a, d) => a + d.planned, 0);
   const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
@@ -160,7 +152,19 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
   const isAtRisk = allocatedMins < recommendedMins;
   const shortfall = recommendedMins - allocatedMins;
 
-  const scheduledTasks = sidebarTasks.filter(t => !t.done).length;
+  // Flat ordered render list.
+  type Row =
+    | { kind: 'email'; email: Email }
+    | { kind: 'task'; task: ManualTask }
+    | { kind: 'sidebar'; task: SidebarTask };
+
+  const rows: Row[] = [
+    ...todayEmails.map(email => ({ kind: 'email' as const, email })),
+    ...todayTasks.map(task => ({ kind: 'task' as const, task })),
+    ...sidebarTasks.filter(t => !t.done).filter(t => t.priority === 'high').map(task => ({ kind: 'sidebar' as const, task })),
+    ...sidebarTasks.filter(t => !t.done).filter(t => t.priority === 'normal').map(task => ({ kind: 'sidebar' as const, task })),
+    ...sidebarTasks.filter(t => t.done).map(task => ({ kind: 'sidebar' as const, task })),
+  ];
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
@@ -198,10 +202,11 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
               {isAtRisk ? (
                 <>
                   <p className="text-sm text-foreground">
-                    You have 2h booked across Tue, Wed, Thu.
+                    You have <strong>{fmtMins(allocatedMins)}</strong> booked
+                    {activeDays.length > 0 && <> across <strong>{activeDays.join(', ')}</strong></>}.
                   </p>
                   <p className="text-sm font-medium text-amber-600">
-                    Based on current workload and historical trends you will likely need to add 30 min more.
+                    Based on current workload and historical trends you will likely need to add {fmtMins(shortfall)} more.
                   </p>
                 </>
               ) : (
@@ -256,7 +261,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
             {showWhyRec && (
               <div className="mt-3 p-3 bg-white border border-border rounded-xl text-xs text-muted-foreground space-y-1">
                 <p><strong className="text-foreground">Emails:</strong> {fmtMins(emailMins)} across {emails.length} items in your inbox.</p>
-                <p><strong className="text-foreground">Tasks:</strong> {fmtMins(taskMins)} across manual and clinical tasks.</p>
+                <p><strong className="text-foreground">Tasks:</strong> {fmtMins(taskMins)} across {manualTasks.length} clinical/admin tasks.</p>
                 <p><strong className="text-foreground">Buffer:</strong> {fmtMins(projectedExtra)} projected overhead based on your history.</p>
               </div>
             )}
@@ -279,81 +284,131 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold">Today's Plan</h3>
                     <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      1h 30min admin
+                      {fmtMins(totalMins)} admin
+                    </span>
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      {totalDone}/{totalItems} done
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">Do these in order</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Quick access to your inbox & tasks — click any item to open it in detail.</p>
                 </div>
               </div>
-              <button className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline">
-                View full list <ChevronRight size={12} />
+              <button
+                onClick={() => onNavigate('Emails')}
+                className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+              >
+                Open inbox <ChevronRight size={12} />
               </button>
             </div>
           </div>
 
           <ul className="divide-y divide-border">
-            {entries.map((entry, idx) => {
-              if (entry.kind === 'base') {
-                const item = entry.item;
+            {rows.map((row, idx) => {
+              if (row.kind === 'email') {
+                const e = row.email;
+                const handled = handledEmailIds.has(e.id);
+                const badge = emailRowBadge(e);
                 return (
                   <li
-                    key={`base-${item.id}`}
-                    onClick={() => openEmail(item)}
+                    key={`email-${e.id}`}
+                    onClick={() => handleEmailClick(e.id)}
                     className={cn(
-                      "flex items-start gap-4 px-6 py-4 transition-colors",
-                      item.emailId && !item.done ? "cursor-pointer hover:bg-slate-50" : "",
-                      item.done && "opacity-50"
+                      "flex items-start gap-4 px-6 py-4 transition-colors cursor-pointer hover:bg-slate-50",
+                      handled && "opacity-60"
                     )}
+                    data-testid={`plan-email-${e.id}`}
                   >
                     <span className={cn(
                       "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
-                      item.done ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
+                      handled ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
                     )}>
-                      {item.done ? <Check size={12} /> : idx + 1}
+                      {handled ? <Check size={12} /> : idx + 1}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className={cn("text-sm font-semibold", item.done && "line-through")}>{item.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        <span className="font-medium">Why:</span> {item.why}
+                      <div className="flex items-center gap-2">
+                        <Mail size={12} className="text-muted-foreground flex-shrink-0" />
+                        <p className={cn("text-sm font-semibold truncate", handled && "line-through")}>
+                          {e.subject}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        From <strong className="text-foreground">{e.from}</strong> · {e.date}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span className="font-medium">Why:</span> {emailWhy(e)}
                       </p>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {item.badge === 'professional' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
-                            <Users size={9} /> Professional colleague
+                        {badge && (
+                          <span className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                            badge.cls
+                          )}>
+                            <badge.Icon size={9} /> {badge.label}
                           </span>
                         )}
-                        {item.badge === 'meeting' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
-                            <CalendarClock size={9} /> Deadline approaching
-                          </span>
-                        )}
-                        {item.emailId && !item.done && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
-                            <Mail size={9} /> Draft ready — click to review
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
+                          <ExternalLink size={9} /> Open in Emails
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{item.time}</span>
-                      <button
-                        onClick={(e) => toggleBase(item.id, e)}
-                        className={cn(
-                          "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0",
-                          item.done ? "bg-green-500 border-green-500" : "border-slate-300 hover:border-primary"
-                        )}
-                      >
-                        {item.done && <Check size={11} className="text-white" />}
-                      </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{e.estMin}min</span>
+                      <ChevronRight size={14} className="text-muted-foreground" />
                     </div>
                   </li>
                 );
               }
 
-              const task = entry.task;
+              if (row.kind === 'task') {
+                const t = row.task;
+                const handled = handledTaskIds.has(t.id);
+                return (
+                  <li
+                    key={`task-${t.id}`}
+                    onClick={() => handleTaskClick(t.id)}
+                    className={cn(
+                      "flex items-start gap-4 px-6 py-4 transition-colors cursor-pointer hover:bg-slate-50",
+                      handled && "opacity-60"
+                    )}
+                    data-testid={`plan-task-${t.id}`}
+                  >
+                    <span className={cn(
+                      "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mt-0.5",
+                      handled ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-600"
+                    )}>
+                      {handled ? <Check size={12} /> : idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <FileText size={12} className="text-muted-foreground flex-shrink-0" />
+                        <p className={cn("text-sm font-semibold truncate", handled && "line-through")}>
+                          {t.title}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span className="font-medium">Why:</span> {taskWhy(t)}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                          <ClipboardList size={9} /> {t.type}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
+                          <ExternalLink size={9} /> Open in Tasks
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{t.estMin}min</span>
+                      <ChevronRight size={14} className="text-muted-foreground" />
+                    </div>
+                  </li>
+                );
+              }
+
+              const task = row.task;
               return (
                 <li
-                  key={`manual-${task.id}`}
+                  key={`sidebar-${task.id}`}
                   className={cn("flex items-start gap-4 px-6 py-4 bg-slate-50/40", task.done && "opacity-50")}
                 >
                   <span className={cn(
@@ -490,7 +545,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
             <Mail size={20} className="text-teal-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold">7</p>
+            <p className="text-2xl font-bold">{Math.max(emails.length - todayEmails.length, 0)}</p>
             <p className="text-sm font-semibold text-foreground">Emails safely deferred</p>
             <p className="text-xs text-muted-foreground">Scheduled for next week or later.</p>
           </div>
@@ -502,7 +557,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
             <ClipboardList size={20} className="text-blue-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold">2</p>
+            <p className="text-2xl font-bold">{manualTasks.length}</p>
             <p className="text-sm font-semibold text-foreground">Tasks scheduled</p>
             <p className="text-xs text-muted-foreground">Reports / letters / admin tasks.</p>
           </div>
@@ -656,75 +711,6 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
           </div>
         )}
       </div>
-
-      {/* Email Draft Slide-over */}
-      {openItem && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={requestCloseDraft} />
-          <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <div>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Draft Reply</p>
-                <h3 className="text-base font-bold">{openItem.title}</h3>
-              </div>
-              <button onClick={requestCloseDraft} className="p-2 rounded-full hover:bg-slate-100 text-muted-foreground transition-colors" data-testid="button-close-draft">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {sourceEmail && (
-                <div className="mx-6 mt-5 p-4 bg-slate-50 border border-border rounded-xl">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Original email</p>
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-xs font-bold text-foreground">{sourceEmail.from}</p>
-                    {sourceEmail.isProfessional && (
-                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                        <Users size={8} /> Professional
-                      </span>
-                    )}
-                    {sourceEmail.isMeeting && (
-                      <span className="text-[9px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                        <CalendarClock size={8} /> Meeting
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-2">{sourceEmail.date} · {sourceEmail.subject}</p>
-                  <p className="text-sm text-foreground leading-relaxed">{sourceEmail.body}</p>
-                </div>
-              )}
-              <div className="mx-6 mt-4 mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">AI Draft Response</p>
-                  <p className="text-[10px] font-medium text-muted-foreground">Editable — tweak before sending</p>
-                </div>
-                <textarea
-                  value={currentDraftBody}
-                  onChange={(e) => setEditedDrafts(prev => ({ ...prev, [openItem.id]: e.target.value }))}
-                  rows={Math.max(8, currentDraftBody.split('\n').length + 1)}
-                  className="w-full p-4 bg-white border border-border rounded-xl text-sm text-foreground leading-relaxed font-sans resize-y focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
-                  data-testid="textarea-draft-reply"
-                />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-border flex gap-3">
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent transition-colors"
-              >
-                {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={handleSend}
-                className="flex-1 flex items-center justify-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-primary/90 transition-colors"
-              >
-                <Send size={14} />
-                Mark as sent
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
