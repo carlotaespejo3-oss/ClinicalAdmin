@@ -74,7 +74,18 @@ export interface WeekHistoryItem {
   admin: number;
 }
 
-export type TabType = 'Home' | 'Today' | 'Inbox' | 'High Risk' | 'Timeline' | 'Weekly Plan' | 'My Style' | 'Catch-up';
+export type TabType =
+  | 'Home'
+  | 'Detailed View'
+  | 'Emails'
+  | 'High-Risk Patients'
+  | 'Drafts'
+  | 'Tasks'
+  | 'Backlog Recovery'
+  | 'Forecast'
+  | 'Templates'
+  | 'Settings'
+  | 'Weekly Plan';
 
 export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';
 

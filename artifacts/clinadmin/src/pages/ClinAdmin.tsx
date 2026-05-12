@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Calendar, Mail, AlertTriangle, Clock, CalendarDays, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Bell, Plus, X, ClipboardList, LayoutList, BarChart2, FileText, CheckSquare, Settings, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
@@ -20,13 +20,15 @@ export interface WeekSetup {
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
-  { id: 'Today', icon: Calendar, label: 'Today' },
-  { id: 'Inbox', icon: Mail, label: 'Inbox' },
-  { id: 'High Risk', icon: AlertTriangle, label: 'High Risk' },
-  { id: 'Timeline', icon: Clock, label: 'Timeline' },
-  { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
-  { id: 'My Style', icon: PenTool, label: 'My Style' },
-  { id: 'Catch-up', icon: RefreshCcw, label: 'Catch-up' },
+  { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
+  { id: 'Emails', icon: Mail, label: 'Emails' },
+  { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
+  { id: 'Drafts', icon: FileText, label: 'Drafts' },
+  { id: 'Tasks', icon: CheckSquare, label: 'Tasks' },
+  { id: 'Backlog Recovery', icon: RefreshCcw, label: 'Backlog Recovery' },
+  { id: 'Forecast', icon: BarChart2, label: 'Forecast' },
+  { id: 'Templates', icon: PenTool, label: 'Templates' },
+  { id: 'Settings', icon: Settings, label: 'Settings' },
 ];
 
 const defaultSidebarTasks: SidebarTask[] = [
@@ -52,7 +54,6 @@ export default function ClinAdmin() {
   const [showWeeklySetup, setShowWeeklySetup] = useState(false);
   const [weekSetup, setWeekSetup] = useState<WeekSetup | null>(null);
 
-  // Show weekly setup modal on first visit of the week
   useEffect(() => {
     const key = getWeekKey();
     const stored = localStorage.getItem(key);
@@ -69,7 +70,6 @@ export default function ClinAdmin() {
     setWeekSetup(setup);
     setShowWeeklySetup(false);
     localStorage.setItem(getWeekKey(), JSON.stringify(setup));
-    // Navigate to Weekly Plan tab to show the generated schedule
     if (plan) setActiveTab('Weekly Plan');
   };
 
@@ -113,22 +113,29 @@ export default function ClinAdmin() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
-      case 'Today': return <TodayTab />;
-      case 'Inbox': return <InboxTab />;
-      case 'High Risk': return <HighRiskTab />;
-      case 'Timeline': return <TimelineTab />;
+      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onNavigate={setActiveTab} />;
+      case 'Detailed View': return <TodayTab />;
+      case 'Emails': return <InboxTab />;
+      case 'High-Risk Patients': return <HighRiskTab />;
+      case 'Backlog Recovery': return <CatchUpTab />;
+      case 'Forecast': return <TimelineTab />;
+      case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
-      case 'My Style': return <StyleTab />;
-      case 'Catch-up': return <CatchUpTab />;
-      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
+      case 'Drafts':
+      case 'Tasks':
+      case 'Settings':
+        return (
+          <div className="flex items-center justify-center h-64 text-muted-foreground">
+            <p className="text-sm">{activeTab} — coming soon</p>
+          </div>
+        );
+      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onNavigate={setActiveTab} />;
     }
   };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
 
-      {/* Weekly Setup Modal */}
       {showWeeklySetup && (
         <WeeklySetupModal
           onComplete={handleWeeklySetupComplete}
@@ -137,7 +144,7 @@ export default function ClinAdmin() {
       )}
 
       {/* Sidebar */}
-      <aside className="w-64 border-r border-sidebar-border bg-sidebar flex flex-col">
+      <aside className="w-56 border-r border-sidebar-border bg-sidebar flex flex-col">
         {/* Logo */}
         <div className="p-5 border-b border-sidebar-border">
           <h1 className="text-xl font-bold text-primary flex items-center gap-2">
@@ -159,14 +166,14 @@ export default function ClinAdmin() {
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}
-              data-testid={`tab-${tab.id.toLowerCase().replace(' ', '-')}`}
+              data-testid={`tab-${tab.id.toLowerCase().replace(/[\s-]/g, '-')}`}
             >
               <tab.icon size={16} />
               {tab.label}
-              {tab.id === 'Inbox' && (
+              {tab.id === 'Emails' && (
                 <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">9</span>
               )}
-              {tab.id === 'High Risk' && (
+              {tab.id === 'High-Risk Patients' && (
                 <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">2</span>
               )}
             </button>
@@ -275,10 +282,10 @@ export default function ClinAdmin() {
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 px-2 py-2.5 bg-sidebar-accent/50 rounded-lg">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-              AP
+              DM
             </div>
             <div className="overflow-hidden">
-              <p className="text-sm font-semibold truncate">Dr. A. Patterson</p>
+              <p className="text-sm font-semibold truncate">Dr. Morgan</p>
               <p className="text-[10px] text-muted-foreground truncate uppercase font-medium">CAMHS Consultant</p>
             </div>
           </div>
@@ -287,17 +294,26 @@ export default function ClinAdmin() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header */}
         <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 z-10 shadow-sm">
-          <h2 className="text-lg font-semibold">{activeTab}</h2>
-          <div className="flex items-center gap-4">
-            <button className="p-2 hover:bg-accent rounded-full text-muted-foreground transition-colors relative">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-primary">ClinAdmin</span>
+            <span className="text-xs text-muted-foreground font-medium">CAMHS Dashboard</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setActiveTab('Detailed View')}
+              className="flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-accent transition-colors"
+            >
+              <LayoutList size={15} />
+              Detailed view
+            </button>
+            <button className="relative p-2 hover:bg-accent rounded-full text-muted-foreground transition-colors">
               <Bell size={18} />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border-2 border-card"></span>
             </button>
-            <div className="h-4 w-[1px] bg-border mx-1"></div>
-            <div className="text-right">
-              <p className="text-xs font-semibold">NHS CAMHS Outpatient</p>
-              <p className="text-[10px] text-muted-foreground">St. Jude's Hospital</p>
+            <div className="w-8 h-8 rounded-full bg-primary/10 border border-border flex items-center justify-center text-primary">
+              <User size={16} />
             </div>
           </div>
         </header>
