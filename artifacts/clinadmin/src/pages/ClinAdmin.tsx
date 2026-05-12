@@ -86,6 +86,14 @@ export default function ClinAdmin() {
     });
   };
 
+  const handleUpdateAvailability = (hours: number, days: string[]) => {
+    setWeekSetup(prev => {
+      const updated: WeekSetup = { hours, days, plan: prev?.plan ?? null };
+      localStorage.setItem(getWeekKey(), JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const handleWeeklySetupDismiss = () => {
     setShowWeeklySetup(false);
   };
@@ -126,7 +134,7 @@ export default function ClinAdmin() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onNavigate={setActiveTab} />;
+      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
       case 'Detailed View': return <TodayTab />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'High-Risk Patients': return <HighRiskTab />;
@@ -153,7 +161,7 @@ export default function ClinAdmin() {
             <p className="text-sm">{activeTab} — coming soon</p>
           </div>
         );
-      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onNavigate={setActiveTab} />;
+      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
     }
   };
 

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { AlertTriangle, ChevronRight, CheckCircle2, CalendarDays, Mail, ClipboardList, ShieldCheck, X, Send, Copy, Check, Users, CalendarClock, Sun, CalendarCheck, ChevronDown, Flag, Settings2, Minus, Plus, RotateCcw } from 'lucide-react';
 import { homePlan, weekData, emails } from '@/lib/data';
 import { HomePlanItem, SidebarTask, TabType } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -10,8 +10,11 @@ interface Props {
   onToggleSidebarTask: (id: string) => void;
   weekSetup: WeekSetup | null;
   onOpenWeeklySetup: () => void;
+  onUpdateAvailability: (hours: number, days: string[]) => void;
   onNavigate: (tab: TabType) => void;
 }
+
+const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
@@ -30,11 +33,43 @@ type PlanEntry =
   | { kind: 'base'; item: HomePlanItem }
   | { kind: 'manual'; task: SidebarTask };
 
-export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onNavigate }: Props) {
+export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate }: Props) {
   const [plan, setPlan] = useState(homePlan);
   const [openItem, setOpenItem] = useState<HomePlanItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [showWhyRec, setShowWhyRec] = useState(false);
+
+  const [draftHours, setDraftHours] = useState<number>(weekSetup?.hours ?? 4);
+  const [draftDays, setDraftDays] = useState<string[]>(weekSetup?.days ?? ['Tue', 'Wed', 'Thu']);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    if (weekSetup) {
+      setDraftHours(weekSetup.hours);
+      setDraftDays(weekSetup.days);
+    }
+  }, [weekSetup?.hours, weekSetup?.days]);
+
+  const dirty = !weekSetup
+    || draftHours !== weekSetup.hours
+    || draftDays.length !== weekSetup.days.length
+    || ALL_DAYS.some(d => draftDays.includes(d) !== weekSetup.days.includes(d));
+
+  const toggleDraftDay = (d: string) => {
+    setDraftDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort((a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b)));
+  };
+
+  const saveAvailability = () => {
+    onUpdateAvailability(draftHours, draftDays);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1800);
+  };
+
+  const resetDraft = () => {
+    if (!weekSetup) return;
+    setDraftHours(weekSetup.hours);
+    setDraftDays(weekSetup.days);
+  };
 
   const toggleBase = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -462,6 +497,127 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, weekSetup, 
             <p className="text-xs text-muted-foreground">You're on top of everything.</p>
           </div>
         </div>
+      </div>
+
+      {/* Availability adjustment panel */}
+      <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-border bg-slate-50/40 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
+              <Settings2 size={17} className="text-slate-600" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold flex items-center gap-2">
+                Adjust this week's availability
+                {savedFlash && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full animate-in fade-in">
+                    <Check size={10} /> Saved
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Plans change. Tweak your hours or days here without re-running the weekly brief.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOpenWeeklySetup}
+            className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+          >
+            <RotateCcw size={11} /> Re-run weekly brief
+          </button>
+        </div>
+
+        <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Hours stepper */}
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2">
+              Total admin hours
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDraftHours(h => Math.max(0.5, +(h - 0.5).toFixed(1)))}
+                className="w-9 h-9 rounded-lg border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors"
+                data-testid="button-hours-decrease"
+              >
+                <Minus size={14} />
+              </button>
+              <div className="flex-1 h-9 rounded-lg bg-slate-50 border border-border flex items-center justify-center">
+                <span className="text-xl font-bold text-foreground">{draftHours}</span>
+                <span className="text-xs text-muted-foreground ml-1.5">h / week</span>
+              </div>
+              <button
+                onClick={() => setDraftHours(h => Math.min(40, +(h + 0.5).toFixed(1)))}
+                className="w-9 h-9 rounded-lg border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors"
+                data-testid="button-hours-increase"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              {draftDays.length > 0
+                ? <>~{Math.round((draftHours * 60) / draftDays.length)} min per admin day</>
+                : 'Pick at least one day to spread these hours across.'}
+            </p>
+          </div>
+
+          {/* Day toggles */}
+          <div className="lg:col-span-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2">
+              Admin days
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {ALL_DAYS.map(d => {
+                const active = draftDays.includes(d);
+                return (
+                  <button
+                    key={d}
+                    onClick={() => toggleDraftDay(d)}
+                    className={cn(
+                      "px-3.5 py-2 rounded-lg border text-sm font-bold transition-colors",
+                      active
+                        ? "bg-primary text-white border-primary"
+                        : "bg-white text-slate-600 border-border hover:border-primary/40"
+                    )}
+                    data-testid={`day-toggle-${d.toLowerCase()}`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              {draftDays.length === 0
+                ? 'No days selected — your week is unscheduled.'
+                : <>Admin will sit across <strong className="text-foreground">{draftDays.join(', ')}</strong>.</>}
+            </p>
+          </div>
+        </div>
+
+        {dirty && (
+          <div className="px-6 py-3 border-t border-border bg-amber-50/50 flex items-center justify-between gap-3">
+            <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5">
+              <AlertTriangle size={12} />
+              Unsaved changes — your dashboard won't update until you save.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={resetDraft}
+                disabled={!weekSetup}
+                className="text-xs text-muted-foreground font-semibold px-3 py-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-40"
+              >
+                Discard
+              </button>
+              <button
+                onClick={saveAvailability}
+                className="bg-primary text-white text-xs font-bold px-4 py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                data-testid="button-save-availability"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Email Draft Slide-over */}
