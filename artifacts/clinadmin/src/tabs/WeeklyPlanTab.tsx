@@ -122,8 +122,9 @@ export default function WeeklyPlanTab({ weekSetup, plan, onPlanGenerated, onOpen
       onPlanGenerated(data.plan);
     } catch {
       // Fallback: use ai/complete with text prompt
+      const highRiskCount = emailPayload.filter(e => e.risk === 'high').length;
       aiComplete.mutate({ data: {
-        prompt: `Generate a day-by-day admin plan for Dr. A. Patterson. ${h}h across ${days}. 9 inbox emails (2 high-risk). 4 manual tasks. Return structured text with Day, Task, Time, Reason columns. End with safety summary. Max 250 words.`,
+        prompt: `Generate a day-by-day admin plan for Dr. A. Patterson. ${h}h across ${days}. ${emailPayload.length} inbox emails (${highRiskCount} high-risk). ${taskPayload.length} manual tasks. Return structured text with Day, Task, Time, Reason columns. End with safety summary. Max 250 words.`,
       }}, {
         onSuccess: () => {},
       });
