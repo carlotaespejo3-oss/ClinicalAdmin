@@ -45,7 +45,13 @@ function mutate(fn: (list: UserTask[]) => UserTask[]) {
   listeners.forEach((l) => l());
 }
 
-export function addUserTask(task: Omit<UserTask, 'id' | 'createdAt'>): UserTask {
+export function addUserTask(task: Omit<UserTask, 'id' | 'createdAt'>): UserTask | null {
+  // Dedupe: if this email already has a task, no-op. Guards against rapid
+  // double-clicks of the "Add CPD to tasks" button creating duplicates before
+  // the disabled-state re-render lands.
+  if (task.emailId !== undefined && load().some((t) => t.emailId === task.emailId)) {
+    return null;
+  }
   const created: UserTask = {
     ...task,
     id: `ut_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
