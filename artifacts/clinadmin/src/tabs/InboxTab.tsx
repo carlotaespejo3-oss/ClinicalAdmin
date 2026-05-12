@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Reply, Undo2 } from 'lucide-react';
+import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Reply, Archive as ArchiveIcon } from 'lucide-react';
 import { emails, manualTasks, CAT } from '@/lib/data';
 import type { Email } from '@/lib/data';
-import { cn, initials, avatarColor, getEmailPriority, getEmailWhy, PRIORITY_PILL } from '@/lib/utils';
+import { cn, initials, avatarColor } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { detectRecipientType, getSignatureForRecipient } from '@/lib/signatures';
 import { getStyleGuidanceForRecipient } from '@/lib/styleProfile';
-import { useAcknowledgedEmails, acknowledgeEmail, unacknowledgeEmail } from '@/lib/acknowledgedStore';
+import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
+import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
+import { useAiClassifications, setClassification } from '@/lib/aiClassifyStore';
+import { classifyQueue, classifyEmail } from '@/lib/classifyEmail';
+import { CATEGORY_LABEL, CATEGORY_BADGE, PRIORITY_LABEL, PRIORITY_BADGE } from '@/lib/aiCategory';
 
 type DraftSlot = 'single' | 'family' | 'admin';
 type DraftState = { single?: string; family?: string; admin?: string };
@@ -51,17 +55,22 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const selectedEmail = emails.find(e => e.id === selectedId);
   const aiComplete = useAiComplete();
   const acknowledged = useAcknowledgedEmails();
+  const archived = useArchivedEmails();
+  const classifications = useAiClassifications();
   const [replyOpenFor, setReplyOpenFor] = useState<Set<number>>(new Set());
 
-  // Sort: unacknowledged first (in original order), then acknowledged at the bottom (greyed).
+  // Helper: an email is "out of the inbox" if it has been acknowledged or
+  // archived (acknowledged or marked done). Both flow into the Archive tab.
+  const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
+
+  // Inbox list = anything not yet archived/acknowledged. Archived items live
+  // in the Archive tab — they don't appear here at all.
   const orderedEmails = useMemo(() => {
-    const active = emails.filter(e => !acknowledged.has(e.id));
-    const done = emails.filter(e => acknowledged.has(e.id));
-    return [...active, ...done];
-  }, [acknowledged]);
+    return emails.filter(e => !isOutOfInbox(e.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acknowledged, archived]);
 
   const isReplyOpen = selectedEmail ? replyOpenFor.has(selectedEmail.id) : false;
-  const isAcknowledged = selectedEmail ? acknowledged.has(selectedEmail.id) : false;
 
   const openReply = (id: number) => {
     setReplyOpenFor(prev => {
@@ -71,18 +80,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     });
   };
 
+  // Move to the next remaining inbox email so the list flows naturally
+  // after the current one leaves.
+  const advanceToNextEmail = (currentId: number) => {
+    const remaining = emails.filter(e => e.id !== currentId && !isOutOfInbox(e.id));
+    setSelectedId(remaining.length > 0 ? remaining[0].id : null);
+  };
+
+  // Acknowledge: also archive (kind='acknowledged') so it shows in the Archive
+  // tab. We keep the legacy acknowledgedStore in sync so Forecast/Today counts
+  // continue to subtract the email correctly.
   const handleAcknowledge = () => {
     if (!selectedEmail) return;
     acknowledgeEmail(selectedEmail.id);
-    // Auto-advance to the next unacknowledged email so the inbox flows.
-    const remaining = emails.filter(e => e.id !== selectedEmail.id && !acknowledged.has(e.id));
-    if (remaining.length > 0) {
-      setSelectedId(remaining[0].id);
-    }
+    archiveEmail(selectedEmail.id, 'acknowledged');
+    advanceToNextEmail(selectedEmail.id);
   };
 
-  const handleUnacknowledge = (id: number) => {
-    unacknowledgeEmail(id);
+  // Mark as done: clinician has handled the email outside the app (called the
+  // patient, sent a reply manually, etc). Goes to archive as 'done'. Also
+  // mirrored into acknowledgedStore so downstream counts stay correct.
+  const handleMarkDone = () => {
+    if (!selectedEmail) return;
+    acknowledgeEmail(selectedEmail.id);
+    archiveEmail(selectedEmail.id, 'done');
+    advanceToNextEmail(selectedEmail.id);
   };
 
   const setSlotLoading = (id: number, slot: DraftSlot, value: boolean) => {
@@ -92,15 +114,34 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     setDraftError(prev => ({ ...prev, [id]: { ...prev[id], [slot]: value } }));
   };
 
-  const handleClassify = () => {
+  // "Re-classify" — re-runs the AI category/priority classifier for the
+  // currently selected email and overwrites its entry in the classification
+  // store. Used when the clinician thinks the AI got the badge wrong.
+  const handleClassify = async () => {
     if (!selectedEmail) return;
-    const prompt = `Analyse:\nCLASSIFICATION: [category]\nRISK FLAGS: [or "None"]\nRECOMMENDED ACTION: [what and when]\nSAFE TO DRAFT BY EMAIL: [Yes/No + reason]\nMax 110 words.\n\nFrom: ${selectedEmail.from}\nSubject: ${selectedEmail.subject}\n---\n${selectedEmail.body}`;
-    
-    aiComplete.mutate({ data: { prompt } }, {
-      onSuccess: (res) => {
-        setAiAnalysis(prev => ({ ...prev, [selectedEmail.id]: res.text }));
-      }
-    });
+    const target = selectedEmail;
+    const runPrompt = async (prompt: string) => {
+      const res = await aiComplete.mutateAsync({ data: { prompt } });
+      return res.text ?? '';
+    };
+    try {
+      const c = await classifyEmail(target, runPrompt);
+      setClassification(c);
+    } catch {
+      setClassification({
+        emailId: target.id,
+        category: 'UNCLEAR',
+        priority: 'UNCLEAR',
+        confidence: 0,
+        reasoning: 'Classification failed — please re-classify.',
+        classifiedAt: Date.now(),
+        professionalSubType: null,
+        patientName: null,
+        documentRequested: null,
+        eventDate: null,
+        registrationDeadline: null,
+      });
+    }
   };
 
   const buildSinglePrompt = (email: Email) => {
@@ -156,6 +197,45 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // Track which (emailId, slot) pairs the auto-drafter has already kicked off
   // so re-renders don't refire requests. Regenerate bypasses this ref entirely.
   const autoDraftedRef = useRef<Set<string>>(new Set());
+
+  // ---- Auto-classify on first inbox open ----
+  // Per the spec: "runs once per email when you first open the inbox". The AI
+  // reads each email body and assigns a category + priority. Results are cached
+  // in localStorage so we don't re-bill on subsequent renders or sessions.
+  // Concurrency limited to 3 so we don't fan out 50+ requests at once.
+  const classifyKickoffRef = useRef(false);
+  useEffect(() => {
+    if (classifyKickoffRef.current) return;
+    classifyKickoffRef.current = true;
+    const unclassified = emails.filter((e) => !classifications.has(e.id));
+    if (unclassified.length === 0) return;
+    const runPrompt = async (prompt: string) => {
+      const res = await aiComplete.mutateAsync({ data: { prompt } });
+      return res.text ?? '';
+    };
+    void classifyQueue(unclassified, runPrompt, (c) => setClassification(c), {
+      concurrency: 3,
+      // On classification failure, store an UNCLEAR fallback so the row's
+      // "Classifying…" shimmer resolves and the user can re-classify later.
+      // Without this, the row would spin forever for that session.
+      onError: (id) => {
+        setClassification({
+          emailId: id,
+          category: 'UNCLEAR',
+          priority: 'UNCLEAR',
+          confidence: 0,
+          reasoning: 'Classification failed — please re-classify.',
+          classifiedAt: Date.now(),
+          professionalSubType: null,
+          patientName: null,
+          documentRequested: null,
+          eventDate: null,
+          registrationDeadline: null,
+        });
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-draft only for clinical-safety cases (UNSAFE) — for everything else the
   // clinician decides whether the email needs a reply at all by clicking
@@ -228,16 +308,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         </div>
         <ScrollArea className="flex-1">
           <div className="divide-y divide-border">
+            {orderedEmails.length === 0 && (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                Inbox zero. Anything you've handled is in the Archive tab.
+              </div>
+            )}
             {orderedEmails.map((e) => {
-              const isAck = acknowledged.has(e.id);
+              const cls = classifications.get(e.id);
               return (
                 <div
                   key={e.id}
                   onClick={() => setSelectedId(e.id)}
                   className={cn(
                     "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
-                    selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent",
-                    isAck && "opacity-50"
+                    selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
                   )}
                   data-testid={`email-row-${e.id}`}
                 >
@@ -247,25 +331,40 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <div className="flex justify-between items-start mb-1">
-                        <p className={cn("text-sm font-bold truncate", isAck && "line-through text-muted-foreground")}>{e.from}</p>
+                        <p className="text-sm font-bold truncate">{e.from}</p>
                         <span className="text-[10px] text-muted-foreground font-medium uppercase">{e.date}</span>
                       </div>
-                      <p className={cn("text-xs font-semibold mb-1 truncate", isAck && "line-through")}>{e.subject}</p>
+                      <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
                       <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        {isAck ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold border border-green-200 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                            <CheckCircle2 size={10} /> Acknowledged
-                          </span>
-                        ) : (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        {cls ? (
                           <>
-                            <span className={cn("inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full", PRIORITY_PILL[getEmailPriority(e)])}>
-                              {getEmailPriority(e)}
+                            <span
+                              className={cn(
+                                "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                                PRIORITY_BADGE[cls.priority],
+                              )}
+                              data-testid={`badge-priority-${e.id}`}
+                            >
+                              {PRIORITY_LABEL[cls.priority]}
                             </span>
-                            <p className="text-[11px] text-muted-foreground truncate">
-                              <span className="font-medium">Why:</span> {getEmailWhy(e)}
-                            </p>
+                            <span
+                              className={cn(
+                                "inline-flex items-center text-[10px] font-bold border px-2 py-0.5 rounded-full",
+                                CATEGORY_BADGE[cls.category],
+                              )}
+                              data-testid={`badge-category-${e.id}`}
+                            >
+                              {CATEGORY_LABEL[cls.category]}
+                            </span>
                           </>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold border border-slate-200 bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full"
+                            data-testid={`badge-classifying-${e.id}`}
+                          >
+                            <Loader2 size={9} className="animate-spin" /> Classifying…
+                          </span>
                         )}
                       </div>
                     </div>
@@ -291,17 +390,32 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </div>
                     <div>
                       <p className="text-sm font-bold">{selectedEmail.from}</p>
-                      <p className="text-xs text-muted-foreground">To: Dr. A. Patterson (NHS CAMHS Consultant)</p>
+                      <p className="text-xs text-muted-foreground">To: Dr. A. Patterson (Consultant Child &amp; Adolescent Psychiatrist)</p>
                     </div>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 text-right">
                   <span className="text-xs font-bold text-muted-foreground uppercase">{selectedEmail.date}</span>
-                  <div className="flex gap-2">
-                    <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", PRIORITY_PILL[getEmailPriority(selectedEmail)])}>
-                      {getEmailPriority(selectedEmail)} priority
-                    </span>
-                  </div>
+                  {(() => {
+                    const cls = classifications.get(selectedEmail.id);
+                    if (cls) {
+                      return (
+                        <div className="flex gap-2 flex-wrap justify-end">
+                          <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", PRIORITY_BADGE[cls.priority])}>
+                            {PRIORITY_LABEL[cls.priority]} priority
+                          </span>
+                          <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", CATEGORY_BADGE[cls.category])}>
+                            {CATEGORY_LABEL[cls.category]}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold border border-slate-200 bg-slate-50 text-slate-500 px-2.5 py-1 rounded-full">
+                        <Loader2 size={11} className="animate-spin" /> Classifying…
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -369,47 +483,43 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
               </div>
 
               <div className="flex flex-wrap gap-3 mb-8">
-                {isAcknowledged ? (
+                {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && !isReplyOpen && (
                   <button
-                    onClick={() => handleUnacknowledge(selectedEmail.id)}
-                    className="flex items-center gap-2 bg-green-50 text-green-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-green-200 hover:bg-green-100 transition-colors"
-                    data-testid="button-unacknowledge"
+                    onClick={() => openReply(selectedEmail.id)}
+                    className="flex items-center gap-2 bg-primary text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-sm hover:bg-primary/90 transition-colors"
+                    data-testid="button-reply"
                   >
-                    <Undo2 size={14} />
-                    Undo acknowledge
+                    <Reply size={14} />
+                    Reply
                   </button>
-                ) : (
-                  <>
-                    {selectedEmail.cat !== CAT.UNSAFE && selectedEmail.cat !== CAT.NONE && !isReplyOpen && (
-                      <button
-                        onClick={() => openReply(selectedEmail.id)}
-                        className="flex items-center gap-2 bg-primary text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-sm hover:bg-primary/90 transition-colors"
-                        data-testid="button-reply"
-                      >
-                        <Reply size={14} />
-                        Reply
-                      </button>
-                    )}
-                    <button
-                      onClick={handleAcknowledge}
-                      className="flex items-center gap-2 bg-emerald-50 text-emerald-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                      data-testid="button-acknowledge"
-                      title="Mark as read — no reply needed"
-                    >
-                      <CheckCircle2 size={14} />
-                      Acknowledge — no action
-                    </button>
-                    <button
-                      onClick={handleClassify}
-                      disabled={aiComplete.isPending}
-                      className="flex items-center gap-2 bg-blue-50 text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors disabled:opacity-50 ml-auto"
-                      data-testid="button-classify-ai"
-                    >
-                      {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      Classify with AI
-                    </button>
-                  </>
                 )}
+                <button
+                  onClick={handleAcknowledge}
+                  className="flex items-center gap-2 bg-emerald-50 text-emerald-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                  data-testid="button-acknowledge"
+                  title="Mark as read — no reply needed. Moves to Archive."
+                >
+                  <CheckCircle2 size={14} />
+                  Acknowledge — no action
+                </button>
+                <button
+                  onClick={handleMarkDone}
+                  className="flex items-center gap-2 bg-blue-50 text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
+                  data-testid="button-mark-done"
+                  title="You've handled this email — moves to Archive as Done."
+                >
+                  <ArchiveIcon size={14} />
+                  Mark as done
+                </button>
+                <button
+                  onClick={handleClassify}
+                  disabled={aiComplete.isPending}
+                  className="flex items-center gap-2 bg-slate-50 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto"
+                  data-testid="button-classify-ai"
+                >
+                  {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  Re-classify
+                </button>
               </div>
 
               {/* AI Panels */}

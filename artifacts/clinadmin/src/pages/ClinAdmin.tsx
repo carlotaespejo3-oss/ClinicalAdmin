@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
+import { useArchivedEmails } from '@/lib/archivedStore';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
+import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import TimelineTab from '../tabs/TimelineTab';
 import ForecastTab from '../tabs/ForecastTab';
@@ -34,6 +36,7 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
   { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
+  { id: 'Archive', icon: Archive, label: 'Archive' },
   { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
   { id: 'Tasks', icon: CheckSquare, label: 'Tasks' },
   { id: 'Backlog Recovery', icon: RefreshCcw, label: 'Backlog Recovery' },
@@ -67,6 +70,10 @@ export default function ClinAdmin() {
   const [showWeeklySetup, setShowWeeklySetup] = useState(false);
   const [weekSetup, setWeekSetup] = useState<WeekSetup | null>(null);
   const acknowledged = useAcknowledgedEmails();
+  const archived = useArchivedEmails();
+  // An email is "out of the inbox" if it has been acknowledged OR archived
+  // (acknowledged or marked done). Sidebar badges and counts use this.
+  const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
 
   useEffect(() => {
     const key = getWeekKey();
@@ -153,6 +160,7 @@ export default function ClinAdmin() {
       case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
       case 'Detailed View': return <TodayTab />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
+      case 'Archive': return <ArchiveTab />;
       case 'High-Risk Patients': return <HighRiskTab />;
       case 'Backlog Recovery': return <CatchUpTab />;
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
@@ -213,10 +221,13 @@ export default function ClinAdmin() {
               <tab.icon size={16} />
               {tab.label}
               {tab.id === 'Emails' && (
-                <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">{allEmails.filter(e => !acknowledged.has(e.id)).length}</span>
+                <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">{allEmails.filter(e => !isOutOfInbox(e.id)).length}</span>
               )}
-              {tab.id === 'High-Risk Patients' && allEmails.filter(e => e.risk === 'high' && !acknowledged.has(e.id)).length > 0 && (
-                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{allEmails.filter(e => e.risk === 'high' && !acknowledged.has(e.id)).length}</span>
+              {tab.id === 'Archive' && archived.size > 0 && (
+                <span className="ml-auto bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{archived.size}</span>
+              )}
+              {tab.id === 'High-Risk Patients' && allEmails.filter(e => e.risk === 'high' && !isOutOfInbox(e.id)).length > 0 && (
+                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{allEmails.filter(e => e.risk === 'high' && !isOutOfInbox(e.id)).length}</span>
               )}
             </button>
           ))}

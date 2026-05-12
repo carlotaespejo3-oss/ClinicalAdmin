@@ -78,6 +78,7 @@ export type TabType =
   | 'Home'
   | 'Detailed View'
   | 'Emails'
+  | 'Archive'
   | 'High-Risk Patients'
   | 'Tasks'
   | 'Backlog Recovery'
@@ -85,6 +86,40 @@ export type TabType =
   | 'Templates'
   | 'Settings'
   | 'Weekly Plan';
+
+// ---- AI classification (new in Step 2 of the email triage redesign) ----
+//
+// The AI reads each email body and assigns one category + one priority. The
+// hand-coded `risk` and `cat` fields on Email remain as a dev-only fallback
+// while classifications stream in.
+export type AiCategory =
+  | 'SAFEGUARDING'
+  | 'URGENT_CLINICAL'
+  | 'CLINICAL'
+  | 'PROFESSIONAL'
+  | 'ADMIN'
+  | 'LEGAL'
+  | 'NONE'
+  | 'CPD'
+  | 'UNCLEAR';
+
+export type AiPriority = 'URGENT' | 'MEDIUM' | 'LOW' | 'UNCLEAR';
+
+export interface AiClassification {
+  emailId: number;
+  category: AiCategory;
+  priority: AiPriority;
+  confidence: number; // 0.0–1.0
+  reasoning: string;
+  classifiedAt: number; // epoch ms
+  // PROFESSIONAL sub-type — only meaningful when category === 'PROFESSIONAL'
+  professionalSubType: 'clinical_input' | 'document_request' | 'meeting' | null;
+  // Optional fields the AI extracts to drive downstream behaviour
+  patientName: string | null;
+  documentRequested: string | null;
+  eventDate: string | null;
+  registrationDeadline: string | null;
+}
 
 export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';
 
