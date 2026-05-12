@@ -57,10 +57,31 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   const [draftMinutesByDay, setDraftMinutesByDay] = useState<Record<string, number>>(buildInitialDraft);
   const [savedFlash, setSavedFlash] = useState(false);
   const [recToast, setRecToast] = useState<string | null>(null);
+  type UndoSnapshot = {
+    hours: number;
+    days: string[];
+    minutesByDay?: Record<string, number>;
+  };
+  const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null);
 
   const showRecToast = (msg: string) => {
     setRecToast(msg);
-    window.setTimeout(() => setRecToast(prev => (prev === msg ? null : prev)), 2800);
+    window.setTimeout(() => setRecToast(prev => {
+      if (prev === msg) {
+        setUndoSnapshot(null);
+        return null;
+      }
+      return prev;
+    }), 2800);
+  };
+
+  const captureSnapshot = (): UndoSnapshot | null => {
+    if (!weekSetup) return null;
+    return {
+      hours: weekSetup.hours,
+      days: [...weekSetup.days],
+      minutesByDay: weekSetup.minutesByDay ? { ...weekSetup.minutesByDay } : undefined,
+    };
   };
 
   useEffect(() => {
@@ -140,6 +161,8 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     const hours = +(totalMins / 60).toFixed(2);
     onUpdateAvailability(hours, days, days.length > 0 ? minsMap : undefined);
     setSavedFlash(true);
+    setUndoSnapshot(null);
+    setRecToast(null);
     setTimeout(() => setSavedFlash(false), 1800);
   };
 
@@ -234,6 +257,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
   }, [activeDays, minutesPerDay]);
 
   const handleAddHourToDay = (day: string) => {
+    const snapshot = captureSnapshot();
     const baseDays = weekSetup?.days ?? draftDays;
     const newDays = baseDays.includes(day)
       ? baseDays
@@ -249,10 +273,12 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     const newTotalMins = Object.values(nextMinutes).reduce((a, b) => a + b, 0);
     const newHours = +(newTotalMins / 60).toFixed(2);
     onUpdateAvailability(newHours, newDays, nextMinutes);
+    setUndoSnapshot(snapshot);
     showRecToast(`Added 1h to ${day}`);
   };
 
   const handleRebalance = () => {
+    const snapshot = captureSnapshot();
     const baseHours = weekSetup?.hours ?? draftHours;
     const baseDays = weekSetup?.days ?? draftDays;
     const days = baseDays.length > 0 ? baseDays : ['Tue', 'Wed', 'Thu'];
@@ -261,8 +287,16 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     // Rebalance = drop any per-day overrides, spread the (possibly topped-up)
     // total evenly across active days.
     onUpdateAvailability(targetHours, days, undefined);
+    setUndoSnapshot(snapshot);
     const perDay = Math.round((targetHours * 60) / days.length);
     showRecToast(`Rebalanced to ${fmtMins(perDay)} per day across ${days.length} day${days.length !== 1 ? 's' : ''}`);
+  };
+
+  const handleUndoRec = () => {
+    if (!undoSnapshot) return;
+    onUpdateAvailability(undoSnapshot.hours, undoSnapshot.days, undoSnapshot.minutesByDay);
+    setUndoSnapshot(null);
+    setRecToast(null);
   };
 
   // Flat ordered render list.
@@ -386,10 +420,25 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
             )}
             {recToast && (
               <div
-                className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full animate-in fade-in"
+                className="mb-3 inline-flex items-center gap-2 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full animate-in fade-in"
                 data-testid="rec-toast"
               >
-                <Check size={11} /> {recToast}
+                <span className="inline-flex items-center gap-1.5">
+                  <Check size={11} /> {recToast}
+                </span>
+                {undoSnapshot && (
+                  <>
+                    <span className="text-green-300">·</span>
+                    <button
+                      type="button"
+                      onClick={handleUndoRec}
+                      className="text-green-700 hover:text-green-800 underline underline-offset-2 font-bold"
+                      data-testid="button-rec-undo"
+                    >
+                      Undo
+                    </button>
+                  </>
+                )}
               </div>
             )}
             <button
