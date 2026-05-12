@@ -1,13 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PenTool, Sparkles, Loader2, Mail, CheckCircle, ChevronRight, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { sentEmails } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
+import type { RecipientType } from '@/lib/signatures';
+import { parseStyleProfile, saveStyleProfile, loadStyleProfile, type StyleProfile } from '@/lib/styleProfile';
+
+const SECTION_META: Array<{ type: RecipientType; icon: typeof MessageSquare; color: string; bg: string }> = [
+  { type: 'Parents/Families', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
+  { type: 'Clinical Colleagues', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+  { type: 'GPs', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { type: 'Schools / SENCOs', icon: MessageSquare, color: 'text-amber-600', bg: 'bg-amber-50' },
+  { type: 'Formal / Legal', icon: CheckCircle, color: 'text-slate-600', bg: 'bg-slate-50' },
+];
 
 export default function StyleTab() {
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<StyleProfile | null>(null);
   const aiComplete = useAiComplete();
+
+  useEffect(() => {
+    setProfile(loadStyleProfile());
+  }, []);
 
   const handleBuild = () => {
     const sample = sentEmails.map(e => `To: ${e.to}\nSubject: ${e.subject}\nBody: ${e.body}`).join('\n\n---\n\n');
@@ -15,19 +29,12 @@ export default function StyleTab() {
     
     aiComplete.mutate({ data: { prompt } }, {
       onSuccess: (res) => {
-        // Simple parsing for the mockup
-        const lines = res.text.split('\n');
-        const overall = lines.find((l: string) => l.startsWith('OVERALL:'))?.replace('OVERALL:', '').trim() || "Concise, professional, and empathetic clinical communication.";
-        
-        const sections = [
-          { type: 'Parents/Families', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { type: 'Clinical Colleagues', icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-          { type: 'GPs', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { type: 'Schools / SENCOs', icon: MessageSquare, color: 'text-amber-600', bg: 'bg-amber-50' },
-          { type: 'Formal / Legal', icon: CheckCircle, color: 'text-slate-600', bg: 'bg-slate-50' },
-        ];
-
-        setProfile({ overall, sections });
+        const parsed = parseStyleProfile(res.text);
+        if (!parsed.overall) {
+          parsed.overall = 'Concise, professional, and empathetic clinical communication.';
+        }
+        saveStyleProfile(parsed);
+        setProfile(parsed);
       }
     });
   };
@@ -69,25 +76,31 @@ export default function StyleTab() {
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {profile.sections.map((s: any, i: number) => (
-              <Card key={i} className="border-border/50 shadow-sm hover:border-primary/30 transition-colors">
-                <CardHeader className={cn("pb-3 border-b border-border/30", s.bg)}>
-                  <CardTitle className={cn("text-xs font-bold uppercase tracking-widest flex items-center gap-2", s.color)}>
-                    <s.icon size={14} /> {s.type}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Tone & Greeting</p>
-                    <p className="text-sm font-semibold">Direct & Empathetic • "Dear..."</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Key Phrases</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed italic">"Thank you for your update regarding...", "I have reviewed the clinic notes..."</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {SECTION_META.map((s, i) => {
+              const section = profile.sections[s.type];
+              const tone = section?.tone || 'Direct & Empathetic';
+              const greeting = section?.greeting || 'Dear...';
+              const keyPhrases = section?.keyPhrases || '—';
+              return (
+                <Card key={i} className="border-border/50 shadow-sm hover:border-primary/30 transition-colors" data-testid={`style-section-${s.type}`}>
+                  <CardHeader className={cn("pb-3 border-b border-border/30", s.bg)}>
+                    <CardTitle className={cn("text-xs font-bold uppercase tracking-widest flex items-center gap-2", s.color)}>
+                      <s.icon size={14} /> {s.type}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 space-y-4">
+                    <div className="space-y-1">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Tone & Greeting</p>
+                      <p className="text-sm font-semibold">{tone} • "{greeting}"</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Key Phrases</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed italic">{keyPhrases}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       ) : (

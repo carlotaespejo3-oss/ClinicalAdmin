@@ -5,6 +5,7 @@ import { cn, initials, avatarColor, catBadge, riskDot } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { detectRecipientType, getSignatureForRecipient } from '@/lib/signatures';
+import { getStyleGuidanceForRecipient } from '@/lib/styleProfile';
 
 const KIND_LABEL: Record<string, string> = {
   clinical: 'Clinical question',
@@ -57,10 +58,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     if (!selectedEmail) return;
     const recipientType = detectRecipientType(selectedEmail);
     const signature = getSignatureForRecipient(recipientType);
+    const styleGuidance = getStyleGuidanceForRecipient(recipientType);
     const signOffLine = signature
       ? `- British English. Recipient type: ${recipientType}. End the reply with EXACTLY this signature (do not modify):\n${signature}`
       : `- British English. Recipient type: ${recipientType}. Sign off: Dr. A. Patterson | Consultant Child Psychiatrist | CAMHS Outpatient`;
-    const prompt = `Draft reply for Dr. A. Patterson, NHS CAMHS consultant.\n\nRULES:\n- Risk to life/safeguarding/unsafe: do NOT draft. Explain required action instead.\n- Controlled drugs: acknowledge only.\n- Professional colleagues: collegial, direct.\n- Meeting/events: brief, decisive.\n${signOffLine}\n\nFrom: ${selectedEmail.from}\nSubject: ${selectedEmail.subject}\n---\n${selectedEmail.body}`;
+    const styleBlock = styleGuidance
+      ? `\n\nSTYLE GUIDANCE (match the clinician's learned voice for this recipient type — mirror greeting, tone and key phrasing):\n${styleGuidance}`
+      : '';
+    const prompt = `Draft reply for Dr. A. Patterson, NHS CAMHS consultant.\n\nRULES:\n- Risk to life/safeguarding/unsafe: do NOT draft. Explain required action instead.\n- Controlled drugs: acknowledge only.\n- Professional colleagues: collegial, direct.\n- Meeting/events: brief, decisive.\n${signOffLine}${styleBlock}\n\nFrom: ${selectedEmail.from}\nSubject: ${selectedEmail.subject}\n---\n${selectedEmail.body}`;
 
     aiComplete.mutate({ data: { prompt } }, {
       onSuccess: (res) => {
