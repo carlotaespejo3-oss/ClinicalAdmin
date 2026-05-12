@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { AiClassification } from './types';
 import { emails } from './data';
 import { estimateMinutes, PENDING_CLASSIFICATION_MIN } from './estimateMinutes';
+import { ensureLinkedDocTask, removeLinkedDocTaskIfNoLongerRequired } from './linkedDocTasksStore';
 
 const KEY = 'clinadmin-ai-classifications-v1';
 const listeners = new Set<() => void>();
@@ -15,16 +16,26 @@ function applyEstimateToEmail(c: AiClassification | undefined, emailId: number) 
   const email = emails.find((e) => e.id === emailId);
   if (!email) return;
   email.estMin = c ? estimateMinutes(email, c) : PENDING_CLASSIFICATION_MIN;
+  // Document/form detection side-effect: auto-create or remove the linked
+  // task that pairs with this email. Kept here so every entry point that
+  // sets a classification (initial run, re-classify, manual override) gets
+  // the same behaviour.
+  if (c) {
+    if (c.requiresDocument) ensureLinkedDocTask(email, c);
+    else removeLinkedDocTaskIfNoLongerRequired(emailId, c);
+  }
 }
 
 function initialiseEmailEstimates(initial: Map<number, AiClassification>) {
   if (estimatesInitialised) return;
   estimatesInitialised = true;
   // Override every seeded estMin so the rules-based estimator is the
-  // single source of truth at runtime.
+  // single source of truth at runtime. Also rehydrate linked doc tasks
+  // from any cached classifications.
   for (const e of emails) {
     const c = initial.get(e.id);
     e.estMin = c ? estimateMinutes(e, c) : PENDING_CLASSIFICATION_MIN;
+    if (c?.requiresDocument) ensureLinkedDocTask(e, c);
   }
 }
 
@@ -79,6 +90,9 @@ export function overrideCategory(emailId: number, category: AiClassification['ca
         documentRequested: null,
         eventDate: null,
         registrationDeadline: null,
+        requiresDocument: false,
+        documentType: null,
+        documentDueDays: null,
       };
   mutate((m) => m.set(emailId, next));
   applyEstimateToEmail(next, emailId);

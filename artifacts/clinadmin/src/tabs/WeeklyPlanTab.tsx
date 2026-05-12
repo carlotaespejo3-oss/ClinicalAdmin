@@ -5,6 +5,9 @@ import { GeneratedPlan, PlanBlockCategory, PlanDay } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
 import { emails, manualTasks } from '@/lib/data';
+import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
+import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
+import { useArchivedEmails } from '@/lib/archivedStore';
 
 interface Props {
   weekSetup: WeekSetup | null;
@@ -95,9 +98,28 @@ function DayCard({ dayPlan }: { dayPlan: PlanDay }) {
 
 export default function WeeklyPlanTab({ weekSetup, plan, onPlanGenerated, onOpenWeeklySetup }: Props) {
   const aiComplete = useAiComplete();
+  const linkedDocTasks = useLinkedDocTasks();
+  const acknowledged = useAcknowledgedEmails();
+  const archived = useArchivedEmails();
   const [hours, setHours] = useState(weekSetup ? String(weekSetup.hours) : '4');
   const [days, setDays] = useState(weekSetup ? weekSetup.days.join(', ') : 'Tue, Wed, Thu');
   const [generating, setGenerating] = useState(false);
+
+  // Document/form detection summary: count auto-created doc tasks that are
+  // still open (linked email is not yet archived/acknowledged and the task
+  // itself isn't done). Each one is a single 20/30 min combined block.
+  const docSummary = (() => {
+    let count = 0;
+    let mins = 0;
+    for (const t of linkedDocTasks.values()) {
+      if (t.done) continue;
+      if (acknowledged.has(t.linkedEmailId)) continue;
+      if (archived.has(t.linkedEmailId)) continue;
+      count++;
+      mins += t.estMin;
+    }
+    return { count, mins };
+  })();
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -222,6 +244,22 @@ export default function WeeklyPlanTab({ weekSetup, plan, onPlanGenerated, onOpen
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Document summary — surfaces auto-detected document/form work */}
+      {docSummary.count > 0 && (
+        <div
+          className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3"
+          data-testid="weekly-doc-summary"
+        >
+          <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center text-base flex-shrink-0">
+            📄
+          </div>
+          <p className="text-sm text-purple-800">
+            <strong>Includes {docSummary.count} document{docSummary.count === 1 ? '' : 's'} or letter{docSummary.count === 1 ? '' : 's'} to write — {fmtMins(docSummary.mins)} total.</strong>
+            {' '}Each one is a single combined block (email reply + document) so it counts once, not twice.
+          </p>
         </div>
       )}
 

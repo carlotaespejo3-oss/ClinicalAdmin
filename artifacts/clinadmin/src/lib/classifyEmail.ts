@@ -1,4 +1,5 @@
 import type { Email, AiClassification, AiCategory, AiPriority } from './types';
+import { detectDocumentRequest } from './documentDetect';
 
 const VALID_CATEGORIES: readonly AiCategory[] = [
   'SAFEGUARDING',
@@ -52,7 +53,10 @@ OUTPUT JSON SHAPE (exact keys, no extras):
   "patientName": "<patient name if detectable in the email, else null>",
   "documentRequested": "<short description of document if PROFESSIONAL+document_request, else null>",
   "eventDate": "<event/meeting date if CPD and detectable, else null>",
-  "registrationDeadline": "<registration deadline if CPD and detectable, else null>"
+  "registrationDeadline": "<registration deadline if CPD and detectable, else null>",
+  "requiresDocument": <true if the email asks the clinician to write/complete a report, letter, certificate, or form (NDIS report, EHCP/school letter, medical certificate, referral letter, court or medico-legal report, insurance form, allied health report, "please complete", "please provide a letter", "please fill in", "we need a report"); else false>,
+  "documentType": "<short label like 'NDIS report', 'EHCP letter', 'Medical certificate', 'Court report', 'Insurance form' if requiresDocument else null>",
+  "documentDueDays": <integer days from today the document is due if mentioned in the email, else null>
 }
 
 EMAIL TO CLASSIFY:
@@ -109,6 +113,21 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
       ? (rawSubType as AiClassification['professionalSubType'])
       : null;
 
+  // Document detection: OR the AI's flag with a regex-based heuristic so
+  // we still catch document requests even when the AI misses the cue.
+  const aiRequiresDoc = parsed?.requiresDocument === true;
+  const aiDocType = asString(parsed?.documentType as unknown);
+  const aiDocDueRaw = parsed?.documentDueDays;
+  const aiDocDue = typeof aiDocDueRaw === 'number' && Number.isFinite(aiDocDueRaw) && aiDocDueRaw >= 0
+    ? Math.round(aiDocDueRaw)
+    : null;
+  const heuristic = detectDocumentRequest(email);
+  const requiresDocument = aiRequiresDoc || heuristic.requiresDocument;
+  const documentType = requiresDocument
+    ? (aiDocType ?? heuristic.documentType ?? asString(parsed?.documentRequested as unknown))
+    : null;
+  const documentDueDays = requiresDocument ? (aiDocDue ?? heuristic.documentDueDays) : null;
+
   return {
     emailId: email.id,
     category,
@@ -121,6 +140,9 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     documentRequested: asString(parsed?.documentRequested as unknown),
     eventDate: asString(parsed?.eventDate as unknown),
     registrationDeadline: asString(parsed?.registrationDeadline as unknown),
+    requiresDocument,
+    documentType,
+    documentDueDays,
   };
 }
 

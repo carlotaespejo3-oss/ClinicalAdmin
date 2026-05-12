@@ -119,6 +119,13 @@ export interface AiClassification {
   documentRequested: string | null;
   eventDate: string | null;
   registrationDeadline: string | null;
+  // Document/form detection (Step 4): true when the email asks the
+  // clinician to write a document (report, letter, certificate, form). When
+  // true, estimateMinutes returns a single combined block (20 min, or 30
+  // for LEGAL) — the email reply and document write are ONE piece of work.
+  requiresDocument: boolean;
+  documentType: string | null;       // e.g. "NDIS report", "EHCP letter"
+  documentDueDays: number | null;    // days from now if the email mentions a deadline
 }
 
 export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
+import { markLinkedDocTaskDone } from '@/lib/linkedDocTasksStore';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
@@ -79,6 +80,14 @@ export default function ClinAdmin() {
   // An email is "out of the inbox" if it has been acknowledged OR archived
   // (acknowledged or marked done). Sidebar badges and counts use this.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
+
+  // Document/form detection: when an email is acknowledged or archived, its
+  // auto-created linked document task is also marked done. The email and
+  // task are ONE piece of work — completing one completes the other.
+  useEffect(() => {
+    for (const id of acknowledged) markLinkedDocTaskDone(id);
+    for (const id of archived.keys()) markLinkedDocTaskDone(id);
+  }, [acknowledged, archived]);
 
   useEffect(() => {
     const key = getWeekKey();

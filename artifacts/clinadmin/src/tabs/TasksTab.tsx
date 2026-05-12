@@ -19,6 +19,7 @@ import {
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { emails } from '@/lib/data';
 import { cn } from '@/lib/utils';
+import { useLinkedDocTasks, toggleLinkedDocTaskDone } from '@/lib/linkedDocTasksStore';
 
 type UnifiedTask = {
   id: string;
@@ -104,6 +105,7 @@ export default function TasksTab({
   const [newTitle, setNewTitle] = useState('');
   const [newMins, setNewMins] = useState('15');
   const [newPriority, setNewPriority] = useState<'high' | 'normal'>('normal');
+  const linkedDocTasks = useLinkedDocTasks();
 
   const all: UnifiedTask[] = useMemo(() => {
     const m: UnifiedTask[] = manualTasks.map(t => ({
@@ -128,8 +130,23 @@ export default function TasksTab({
       type: 'Manual',
       priority: t.priority,
     }));
-    return [...m, ...s];
-  }, [manualTasks, sidebarTasks]);
+    // Auto-created document tasks live in their own runtime store so they
+    // can be paired with the originating email. Surface them here so the
+    // clinician can see the full task list in one place.
+    const d: UnifiedTask[] = Array.from(linkedDocTasks.values()).map(t => ({
+      id: t.id,
+      source: 'manual',
+      title: t.title,
+      estMin: t.estMin,
+      done: t.done ?? false,
+      deadline: t.deadline,
+      type: t.type,
+      risk: t.risk,
+      linkedEmailId: t.linkedEmailId,
+      autoCompleteOnReply: t.autoCompleteOnReply,
+    }));
+    return [...d, ...m, ...s];
+  }, [manualTasks, sidebarTasks, linkedDocTasks]);
 
   const filtered = useMemo(() => {
     return all.filter(t => {
@@ -159,8 +176,17 @@ export default function TasksTab({
   }, [all]);
 
   const handleToggle = (t: UnifiedTask) => {
-    if (t.source === 'manual') onToggleManualTask(t.id);
-    else onToggleSidebarTask(t.id);
+    if (t.source === 'manual') {
+      // Auto-created document tasks live in their own store and are keyed
+      // by linkedEmailId — route the toggle there.
+      if (t.linkedEmailId && linkedDocTasks.has(t.linkedEmailId)) {
+        toggleLinkedDocTaskDone(t.linkedEmailId);
+      } else {
+        onToggleManualTask(t.id);
+      }
+    } else {
+      onToggleSidebarTask(t.id);
+    }
   };
 
   const handleAdd = () => {

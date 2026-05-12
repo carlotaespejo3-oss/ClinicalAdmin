@@ -4,6 +4,8 @@ import { weekData, emails, CAT } from '@/lib/data';
 import { Email, ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, getEmailWhy, getTaskWhy, PRIORITY_PILL, PRIORITY_RANK, type Priority } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
+import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
+import { useAiClassifications } from '@/lib/aiClassifyStore';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -30,12 +32,24 @@ const projectedExtra = 45;
 
 
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
+  // Subscribing to classifications + linked doc tasks so totals/rows
+  // recompute when new classifications stream in or doc tasks get created.
+  useAiClassifications();
+  const linkedDocTasks = useLinkedDocTasks();
+
+  // Document/form detection: a linked doc task and its email are ONE piece
+  // of work. The email's estMin already covers the combined 20/30 min, so
+  // we suppress these tasks from any list/total that already counts the
+  // email — otherwise we'd double-count time (e.g. email 20 + task 20).
+  const isLinkedDocTask = (t: ManualTask) =>
+    !!t.linkedEmailId && linkedDocTasks.has(t.linkedEmailId);
+
   // Derived from live task state so completion in Tasks tab propagates here.
   // Note: emailMins is computed on every render so the rules-based estimator
   // (which mutates email.estMin in place when classifications stream in) is
   // reflected as soon as the surrounding tree re-renders.
   const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
-  const taskMins = manualTasks.filter(t => !t.done).reduce((a, t) => a + t.estMin, 0);
+  const taskMins = manualTasks.filter(t => !t.done && !isLinkedDocTask(t)).reduce((a, t) => a + t.estMin, 0);
   const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
   const [showWhyRec, setShowWhyRec] = useState(false);
   // Local "handled today" tracking for visual progress only — the real
@@ -191,10 +205,16 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
       .slice(0, 3);
   }, []);
 
-  // Pick most urgent uncompleted manual tasks by deadline.
+  // Pick most urgent uncompleted manual tasks by deadline. Linked document
+  // tasks are excluded — they share a time block with their email and the
+  // email row already represents the work in the daily plan.
   const todayTasks = useMemo(() => {
-    return [...manualTasks].filter(t => !t.done).sort((a, b) => a.deadline - b.deadline).slice(0, 2);
-  }, [manualTasks]);
+    return [...manualTasks]
+      .filter(t => !t.done && !isLinkedDocTask(t))
+      .sort((a, b) => a.deadline - b.deadline)
+      .slice(0, 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualTasks, linkedDocTasks]);
 
   const handleEmailClick = (id: number) => {
     setHandledEmailIds(prev => new Set(prev).add(id));
@@ -229,6 +249,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     }
     for (const t of manualTasks) {
       if (t.done) continue;
+      if (isLinkedDocTask(t)) continue; // counted via the email side
       counts[getTaskPriority(t)]++;
     }
     for (const t of sidebarTasks) {

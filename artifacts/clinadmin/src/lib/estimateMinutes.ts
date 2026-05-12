@@ -92,8 +92,17 @@ export function isComplex(email: Email): boolean {
 
 // Single source of truth for an email's estimated minutes-to-action.
 // Returns the PENDING value when no classification is available yet.
+// When an email requires a document, the email reply and the document
+// write are ONE piece of work. Override the category default entirely
+// rather than adding to it.
+export const DOCUMENT_BLOCK_MIN = 20;
+export const LEGAL_DOCUMENT_BLOCK_MIN = 30;
+
 export function estimateMinutes(email: Email, classification: AiClassification | undefined | null): number {
   if (!classification) return PENDING_CLASSIFICATION_MIN;
+  if (classification.requiresDocument) {
+    return classification.category === 'LEGAL' ? LEGAL_DOCUMENT_BLOCK_MIN : DOCUMENT_BLOCK_MIN;
+  }
   const { category, priority, professionalSubType } = classification;
   const base = CATEGORY_BASE[category];
   const upper = CATEGORY_UPPER[category];

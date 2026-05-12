@@ -23,6 +23,7 @@ import {
   buildExtraDraftPrompt,
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
+import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -110,6 +111,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
+  const linkedDocTasks = useLinkedDocTasks();
   // Helper: an email is "out of the inbox" if it has been acknowledged or
   // archived (acknowledged or marked done). Both flow into the Archive tab.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
@@ -187,6 +189,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         documentRequested: null,
         eventDate: null,
         registrationDeadline: null,
+        requiresDocument: false,
+        documentType: null,
+        documentDueDays: null,
       });
     }
   };
@@ -510,6 +515,15 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", CATEGORY_BADGE[cls.category])}>
                             {CATEGORY_LABEL[cls.category]}
                           </span>
+                          {cls.requiresDocument && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-bold border border-purple-200 bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full"
+                              data-testid="badge-document-required"
+                              title={cls.documentType ?? 'Document required'}
+                            >
+                              📄 Document required
+                            </span>
+                          )}
                         </div>
                       );
                     }
@@ -545,6 +559,39 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   </span>
                 )}
               </div>
+
+              {/* Auto-created linked-document task panel (Step 4: document/form detection) */}
+              {(() => {
+                const docTask = linkedDocTasks.get(selectedEmail.id);
+                if (!docTask) return null;
+                return (
+                  <div
+                    className="mb-4 bg-purple-50 border border-purple-200 rounded-2xl p-4"
+                    data-testid="linked-doc-task-panel"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0 text-base">
+                        📄
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-purple-700 uppercase tracking-widest">Document required</span>
+                          <Link2 size={10} className="text-purple-400" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground mb-1">{docTask.title}</p>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <span><Clock size={9} className="inline" /> {docTask.estMin} min total (email + document)</span>
+                          <span>·</span>
+                          <span>Due in {docTask.deadline}d</span>
+                        </div>
+                        <p className="text-[11px] text-purple-700 mt-2 font-medium leading-snug">
+                          A task has been created for this document. It will complete automatically when you mark this email as done — one piece of work, one time block, one tick.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Linked-task panel for complex emails */}
               {selectedEmail.linkedTaskId && (() => {
