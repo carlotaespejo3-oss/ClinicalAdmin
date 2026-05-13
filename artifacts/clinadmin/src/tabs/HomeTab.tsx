@@ -12,6 +12,7 @@ import { buildPlannerInput } from '@/lib/plannerAdapter';
 import { buildPlan } from '@/lib/planner';
 import TodaysPlan from '@/components/TodaysPlan';
 import Runway14Day from '@/components/Runway14Day';
+import ProjectedWorkload from '@/components/ProjectedWorkload';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -508,8 +509,20 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
         }}
       />
 
-      {/* 14-day runway — deterministic planner output, two-week overview */}
-      <Runway14Day runway={plannerOutput.runway} />
+      {/* 14-day runway + projected workload — paired side-by-side on wide
+          screens. Stack on narrow ones. The runway dominates (3/5) and the
+          reservation breakdown sits beside it as a slim explainer. */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <div className="lg:col-span-3">
+          <Runway14Day runway={plannerOutput.runway} />
+        </div>
+        <div className="lg:col-span-2">
+          <ProjectedWorkload
+            reservation={plannerOutput.reservation}
+            weeklyCapacityMin={plannerOutput.weeklyCapacityMin}
+          />
+        </div>
+      </div>
 
       {/* Risk / Status Banner — left side now driven by deterministic planner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
