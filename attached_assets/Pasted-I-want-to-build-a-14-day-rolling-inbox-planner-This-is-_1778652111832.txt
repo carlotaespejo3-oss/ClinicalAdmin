@@ -1,0 +1,150 @@
+I want to build a 14-day rolling inbox planner. This is the core feature of the app. Everything else supports this. Please read all existing planning and classification code first, then implement the following in full.
+ 
+THE CORE CONCEPT
+The clinician has emails arriving constantly. Every email has a deadline based on its priority. The clinician has limited admin hours each week. The planner's job is to answer one question every morning:
+"Given everything in my inbox, everything coming in this week, and the hours I have — here is exactly what to do today so that nothing breaches and I stay on top of everything."
+ 
+WHAT THE PLANNER KNOWS
+Current inbox: All emails currently in the inbox with their category, priority, time estimate, and date received.
+Projected incoming workload: Based on historical patterns, the clinician receives approximately 60 emails per week on average. The expected breakdown is:
+•	5 high priority (SAFEGUARDING, URGENT_CLINICAL, LEGAL)
+•	10 medium priority (CLINICAL, PROFESSIONAL)
+•	Remainder low priority or no action (ADMIN, NONE, CPD, LOW, UNCLEAR)
+The planner must learn over the historical patterns over the weeks and adjust the expected breakdown and hence the recommended time. 
+The planner must reserve capacity for these projected emails — not assume the week only contains what is already in the inbox. Specifically, reserve:
+•	0.5 hours per week for projected high priority emails
+•	0.5 hour per week for projected medium priority emails
+•	0.2 hours per week buffer for unexpected items
+Available admin time: Entered by the clinician — total hours and which days. Example: 5 hours across Tuesday, Wednesday, Thursday.
+Deadlines by priority:
+•	SAFEGUARDING: same day or within 24 hours — always first
+•	URGENT_CLINICAL and LEGAL: within 48 hours
+•	CLINICAL and PROFESSIONAL: within 5–7 days
+•	ADMIN, CPD, LOW: within 14 days of receipt
+•	NONE: within 14 days but lowest priority
+•	UNCLEAR: must be triaged before any other work — see below
+ 
+THE DAILY PLAN LOGIC
+Each day's plan is built using this logic in this exact order:
+Step 1 — Unclear emails first If any UNCLEAR emails exist, they appear at the very top of today's plan before anything else. The clinician must classify them before the plan continues. Show: "You have X unclassified emails. Please review these first — they may contain urgent items."
+Step 2 — Overdue items Any email that has already passed its deadline appears next. These are urgent regardless of original priority. Show how many days overdue each one is.
+Step 3 — Due today or tomorrow SAFEGUARDING, URGENT_CLINICAL, and LEGAL emails due within 48 hours.
+Step 4 — Medium priority progressing A portion of CLINICAL and PROFESSIONAL emails, working through them steadily so none approach their 5–7 day deadline without being handled.
+Step 5 — Daily low priority allocation Every single day, include as many low priority emails in the plan as possible within the available time. This is non-negotiable. Low priority emails must be cleared steadily every day — not batched at the end of the week. The planner should allocate approximately 15–20 minutes per day for low priority and no action emails, regardless of how many urgent items exist.
+Step 6 — Linked tasks Any task linked to an email in today's plan appears directly below its email as one combined item.
+The plan should contain no more than what fits in that day's available admin time. If there is more work than time, carry the remainder to the next available day — but always keep the Step 5 low priority allocation even if it means deferring some medium priority items.
+ 
+THE DAILY PLAN DISPLAY
+Show today's plan as a numbered list. Each item shows:
+1. [UNCLEAR — classify first]
+   2 emails need classifying before your plan can begin
+   ⏱ 5–10 min · Do this now
+
+2. [SAFEGUARDING] — Sarah Chen re Mia
+   Cannot wait — safeguarding concern identified Thursday
+   ⏱ 20 min · Overdue by 1 day
+
+3. [URGENT] — Ritalin script — James, going away Friday
+   Deadline: Thursday. Controlled drug.
+   ⏱ 8 min
+
+4. [CLINICAL] — Medication question — Darcy's side effects
+   Due within 5 days. Draft ready to review.
+   ⏱ 12 min
+
+5. [LOW × 3] — Clear 3 low priority emails
+   Appointment query, billing question, newsletter
+   ⏱ 15 min
+At the bottom of the plan:
+Today's total: 1h 10min
+Available today: 1h 30min
+Remaining buffer: 20min — reserved for anything urgent that arrives today
+
+Complete this and your inbox is safe until [next admin day].
+ 
+THE 14-DAY RUNWAY VIEW
+Below today's plan, show a 14-day view. Each day shows:
+•	Available admin time (if any)
+•	Estimated workload assigned to that day
+•	Status: green (safe), amber (tight), red (will breach)
+Each day in the runway is a single row:
+Mon 11 May  — No admin time scheduled
+Tue 12 May  ████████░░  1h 20min planned / 1h 30min available  ✅ Safe
+Wed 13 May  █████████░  1h 40min planned / 1h 30min available  ⚠️ Tight
+Thu 14 May  ███████░░░  1h 10min planned / 1h 30min available  ✅ Safe
+Fri 15 May  — No admin time scheduled
+...
+Mon 18 May  — No admin time — 3 emails approaching 14-day deadline
+Days with no admin time but approaching deadlines should be flagged clearly.
+ 
+THE STATUS INDICATOR
+At the very top of the planning view, one clear status every morning:
+Green — everything is under control:
+✅ You are on track
+Your inbox is manageable this week.
+Complete today's plan (1h 10min) and you are safe until Thursday.
+Amber — manageable but tight:
+⚠️ Your week is tight
+You can clear everything but there is no margin.
+If 2 or more urgent emails arrive today, you will need extra time.
+Recommendation: add 30 minutes on Wednesday as a buffer.
+Red — something will breach/already overdue:
+🔴 3 emails will breach this week
+You have 5h of work and 4h available.
+Options: add 1 hour on Wednesday · defer 2 low priority emails to next week · delegate admin emails to reception
+🚨 2 emails are already overdue
+These must be handled today before anything else.
+One involves a safeguarding concern.
+ 
+PROJECTED WORKLOAD WARNING
+The planner must account for emails that have not arrived yet. Show this as a separate line in the weekly summary:
+📬 Projected emails this week (based on your history):
+   ~5 high priority arriving — reserved 1h 30min
+   ~10 medium priority arriving — reserved 1h
+   ~45 low priority / no action arriving — reserved 30min
+   Total reserved for new emails: 3h
+
+   Of your 5h available: 3h is reserved for new emails.
+   That leaves 2h for your existing 66 emails.
+   At current pace, 8 low priority emails may not clear this week.
+   Recommendation: add 1 hour next week or they roll into week 2.
+This is the most important honest signal the app can give. A clinician who thinks they have 5 hours but actually only has 2 hours of free capacity will run into problems every week without ever understanding why.
+ 
+DAILY LOW PRIORITY RULE — NON-NEGOTIABLE
+Implement this as a hard rule in the scheduling logic:
+Every day that has any admin time must include at least 15 minutes of low priority email clearing, regardless of how many urgent or medium items exist.
+If the clinician skips the low priority portion of today's plan, show a gentle reminder the next day: "You skipped 3 low priority emails yesterday. They have been added to today's plan. None are urgent yet — but 2 will approach their 14-day window by end of this week."
+ 
+UNCLEAR TRIAGE — MORNING GATE
+If any UNCLEAR emails exist when the clinician opens the app:
+•	Show a prompt before anything else: "You have X emails that need classifying. Until these are classified, your plan may be incomplete — one of them could be urgent."
+•	Show the unclear emails one at a time with a simple category selector
+•	Once classified, the plan recalculates immediately and includes them in the correct priority order
+•	If the clinician dismisses the unclear prompt without classifying, show a reminder every 2 hours
+ 
+RECALCULATION
+The plan recalculates automatically when:
+•	The clinician marks an email as done
+•	The clinician marks a task as done
+•	A new email arrives and is classified
+•	The clinician changes their available hours
+•	The clinician defers an item to a later day
+Every recalculation shows the updated status indicator immediately.
+ 
+FEEDBACK TRIGGERS
+Show a feedback message in these situations:
+If available hours are consistently insufficient: "Over the last 3 weeks you have needed an average of 1h 20min more than you scheduled. Consider booking 6 hours instead of 5 next week."
+If low priority emails are consistently skipped: "You have 14 low priority emails older than 10 days. At current pace, 6 will breach the 14-day rule this week. Today's plan includes 5 of them."
+If unclear emails are consistently dismissed: "You have dismissed the classification prompt 4 times this week. 3 of your unclear emails are now 3 days old."
+If the inbox is growing week on week: "Your inbox has grown by 12 emails over the last 2 weeks. Your current admin time is not keeping pace. Recommend adding 1 hour per week or reviewing what can be delegated."
+ 
+IMPLEMENTATION ORDER
+Please implement in this order and pause after each to confirm it works:
+1.	Build the scheduling logic — assign deadlines to all emails, fit them into available time slots, identify breaches
+2.	Build today's plan display — ordered list with unclear first, then overdue, then urgent, then medium, then daily low allocation
+3.	Build the status indicator — green, amber, red, critical
+4.	Build the 14-day runway view
+5.	Build the projected workload reservation logic
+6.	Build the feedback triggers
+7.	Connect recalculation to all done/defer/arrival events
+Test the full system with the existing mock emails before confirming complete. The key test: given 66 emails and 5 hours available across Tuesday, Wednesday, Thursday — does the planner correctly identify what to do today, show the right status, and include low priority emails in every day's plan?
