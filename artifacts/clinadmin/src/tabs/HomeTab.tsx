@@ -381,7 +381,7 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     const newHours = +(newTotalMins / 60).toFixed(2);
     onUpdateAvailability(newHours, newDays, nextMinutes);
     setUndoSnapshot(snapshot);
-    showRecToast(`Added 1h to ${day}`);
+    showRecToast(`Added 1h to every ${day} in your weekly schedule`);
   };
 
   const handleRebalance = () => {
@@ -514,7 +514,10 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           reservation breakdown sits beside it as a slim explainer. */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         <div className="lg:col-span-3">
-          <Runway14Day runway={plannerOutput.runway} />
+          <Runway14Day
+            runway={plannerOutput.runway}
+            onAddTimeToDay={handleAddHourToDay}
+          />
         </div>
         <div className="lg:col-span-2">
           <ProjectedWorkload

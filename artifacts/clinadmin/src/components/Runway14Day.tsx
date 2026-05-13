@@ -5,6 +5,12 @@ import type { DailyPlan, PlanItem } from '@/lib/planner';
 interface Props {
   runway: DailyPlan[];
   onDayClick?: (day: DailyPlan) => void;
+  // Called when the user wants to add admin capacity to a flagged day.
+  // The handler receives the dayLabel ('Mon'..'Fri') so it can update
+  // the weekly availability schedule. Only week-1 days expose this
+  // action — week 2 is the same recurring schedule, so adding to Thu
+  // affects both rows.
+  onAddTimeToDay?: (dayLabel: string) => void;
 }
 
 const CAT_BAR_COLOR: Record<string, string> = {
@@ -190,7 +196,7 @@ function DayCard({
   );
 }
 
-export default function Runway14Day({ runway, onDayClick }: Props) {
+export default function Runway14Day({ runway, onDayClick, onAddTimeToDay }: Props) {
   const week1 = runway.slice(0, 7);
   const week2 = runway.slice(7, 14);
 
@@ -274,24 +280,44 @@ export default function Runway14Day({ runway, onDayClick }: Props) {
           </div>
         )}
 
-        {/* Per-day flags surfaced once below — mirrors the bar's flag icon */}
+        {/* Per-day flags surfaced once below. For week-1 days we also offer
+            a one-click action to add 1h of admin time on that weekday. */}
         {runway.some((d) => d.flags.length > 0) && (
-          <div className="pt-2 border-t border-border space-y-1">
+          <div className="pt-2 border-t border-border space-y-1.5">
             {runway
               .filter((d) => d.flags.length > 0)
-              .map((d) => (
-                <div
-                  key={`flag-${d.dayIndex}`}
-                  className="flex items-start gap-2 text-xs text-muted-foreground"
-                  data-testid={`runway-flag-${d.dayIndex}`}
-                >
-                  <Flag size={12} className="mt-0.5 flex-shrink-0 text-amber-500" />
-                  <div>
-                    <strong className="text-foreground">{d.displayLabel}:</strong>{' '}
-                    {d.flags.join('; ')}
+              .map((d) => {
+                const canAct =
+                  !!onAddTimeToDay &&
+                  d.dayIndex < 7 &&
+                  // Only weekday labels are bookable in the schedule.
+                  ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(d.dayLabel);
+                return (
+                  <div
+                    key={`flag-${d.dayIndex}`}
+                    className="flex items-start gap-2 text-xs text-muted-foreground"
+                    data-testid={`runway-flag-${d.dayIndex}`}
+                  >
+                    <Flag size={12} className="mt-0.5 flex-shrink-0 text-amber-500" />
+                    <div className="flex-1 min-w-0">
+                      <strong className="text-foreground">{d.displayLabel}:</strong>{' '}
+                      {d.flags.join('; ')}
+                    </div>
+                    {canAct && onAddTimeToDay && (
+                      <button
+                        type="button"
+                        onClick={() => onAddTimeToDay(d.dayLabel)}
+                        data-testid={`runway-flag-${d.dayIndex}-action`}
+                        title={`Adds 1 hour to every ${d.dayLabel} in your recurring weekly schedule`}
+                        aria-label={`Add 1 hour to ${d.dayLabel}s in your weekly schedule`}
+                        className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-primary border border-primary/30 hover:bg-primary/5 px-2 py-0.5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        + Add 1h {d.dayLabel}
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         )}
 
