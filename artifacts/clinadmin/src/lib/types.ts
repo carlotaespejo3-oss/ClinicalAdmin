@@ -148,6 +148,19 @@ export interface AiClassification {
   // the deadline (≤7 days → URGENT). Drives the prescription-specific
   // banner, controlled-drug warning, and rich task pre-fill in the UI.
   prescriptionRequest: import('./prescriptionDetect').PrescriptionRequest | null;
+  // Content-driven complexity, judged by the AI alongside category/
+  // priority. 'complex' means the email is likely to take longer than
+  // the category base — independent of length — because of factors
+  // like multiple distinct issues, emotional weight, ambiguity needing
+  // clarification, coordination across parties, or clinical risk.
+  // null when the AI didn't return a complexity assessment (older
+  // payloads, parse failures). The heuristic in estimateMinutes still
+  // catches >150-word / multi-question emails as a safety net.
+  complexity: 'simple' | 'complex' | null;
+  // Short, user-facing reasons explaining WHY the AI flagged the email
+  // as complex. Surfaced in the UI tooltip next to the time estimate
+  // so the clinician can sanity-check the bumped budget.
+  complexityReasons: string[];
 }
 
 export type PlanBlockCategory = 'urgent' | 'clinical' | 'admin' | 'meeting' | 'professional' | 'legal' | 'task';

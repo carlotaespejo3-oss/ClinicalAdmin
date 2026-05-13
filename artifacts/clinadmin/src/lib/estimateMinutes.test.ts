@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   PENDING_CLASSIFICATION_MIN,
+  complexityReasonsFor,
   estimateMinutes,
   hasMultipleQuestionsOrConcerns,
   isComplex,
@@ -51,6 +52,8 @@ function makeClassification(
     documentType: null,
     documentDueDays: null,
     prescriptionRequest: null,
+        complexity: null,
+        complexityReasons: [],
     ...overrides,
   };
 }
@@ -191,6 +194,115 @@ describe('multiple questions / concerns heuristic', () => {
       makeClassification('URGENT_CLINICAL', 'URGENT'),
     );
     assert.equal(minutes, 20);
+  });
+});
+
+describe('AI-driven complexity (content-based, not length-based)', () => {
+  it('short body but AI flagged complex → CLINICAL bumps to upper (15)', () => {
+    const minutes = estimateMinutes(
+      makeEmail('Quick question about my son.'),
+      makeClassification('CLINICAL', 'MEDIUM', {
+        complexity: 'complex',
+        complexityReasons: ['Emotionally charged', 'Ambiguous symptoms'],
+      }),
+    );
+    assert.equal(minutes, 15);
+  });
+
+  it('short body but AI flagged complex → URGENT_CLINICAL bumps to upper (20)', () => {
+    const minutes = estimateMinutes(
+      makeEmail('Help — should I stop the medication tonight?'),
+      makeClassification('URGENT_CLINICAL', 'URGENT', {
+        complexity: 'complex',
+        complexityReasons: ['Clinical risk / uncertainty'],
+      }),
+    );
+    assert.equal(minutes, 20);
+  });
+
+  it('AI flagged complex bumps PROFESSIONAL meeting to upper (10)', () => {
+    const minutes = estimateMinutes(
+      makeEmail('Can we set up a meeting?'),
+      makeClassification('PROFESSIONAL', 'MEDIUM', {
+        professionalSubType: 'meeting',
+        complexity: 'complex',
+        complexityReasons: ['Multi-party coordination'],
+      }),
+    );
+    assert.equal(minutes, 10);
+  });
+
+  it('PROFESSIONAL meeting bumps to upper via heuristic-only (long body, no AI complexity)', () => {
+    // Locks the OR semantics: the heuristic alone is enough to bump
+    // PROFESSIONAL meeting, even when the AI didn't return a complexity.
+    const minutes = estimateMinutes(
+      makeEmail(longBody),
+      makeClassification('PROFESSIONAL', 'MEDIUM', {
+        professionalSubType: 'meeting',
+        complexity: null,
+      }),
+    );
+    assert.equal(minutes, 10);
+  });
+
+  it('AI says simple but body >150 words → still complex (heuristic safety net)', () => {
+    assert.equal(
+      isComplex(makeEmail(longBody), makeClassification('CLINICAL', 'MEDIUM', { complexity: 'simple' })),
+      true,
+    );
+  });
+
+  it('AI says simple AND short body AND single question → not complex', () => {
+    assert.equal(
+      isComplex(makeEmail('Single question?'), makeClassification('CLINICAL', 'MEDIUM', { complexity: 'simple' })),
+      false,
+    );
+  });
+
+  it('null AI complexity falls through to heuristic only', () => {
+    assert.equal(
+      isComplex(makeEmail('Short.'), makeClassification('CLINICAL', 'MEDIUM', { complexity: null })),
+      false,
+    );
+    assert.equal(
+      isComplex(makeEmail(longBody), makeClassification('CLINICAL', 'MEDIUM', { complexity: null })),
+      true,
+    );
+  });
+
+  it('does NOT bump non-upper-band categories even when AI flags complex', () => {
+    const minutes = estimateMinutes(
+      makeEmail('Short.'),
+      makeClassification('ADMIN', 'LOW', { complexity: 'complex', complexityReasons: ['Multiple distinct issues'] }),
+    );
+    assert.equal(minutes, 2);
+  });
+
+  it('complexityReasonsFor returns AI reasons when AI flagged complex', () => {
+    const reasons = complexityReasonsFor(
+      makeEmail('Short.'),
+      makeClassification('CLINICAL', 'MEDIUM', {
+        complexity: 'complex',
+        complexityReasons: ['Emotionally charged', 'Records review needed'],
+      }),
+    );
+    assert.deepEqual(reasons, ['Emotionally charged', 'Records review needed']);
+  });
+
+  it('complexityReasonsFor falls back to heuristic labels when only heuristic fired', () => {
+    const reasons = complexityReasonsFor(
+      makeEmail(longBody),
+      makeClassification('CLINICAL', 'MEDIUM', { complexity: null }),
+    );
+    assert.deepEqual(reasons, ['Long detailed history']);
+  });
+
+  it('complexityReasonsFor returns empty array for simple emails', () => {
+    const reasons = complexityReasonsFor(
+      makeEmail('Short.'),
+      makeClassification('CLINICAL', 'MEDIUM', { complexity: 'simple' }),
+    );
+    assert.deepEqual(reasons, []);
   });
 });
 

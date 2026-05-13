@@ -116,6 +116,10 @@ function rubricAwareStub(expectedCategory: AiCategory, email: Email): RunPrompt 
     }
     // 2. Required JSON shape signal must be present.
     assert.ok(prompt.includes('OUTPUT JSON SHAPE'), 'prompt is missing OUTPUT JSON SHAPE block');
+    // 2b. Complexity-assessment rubric must be present so the AI judges
+    //     content-driven complexity (not just length).
+    assert.ok(prompt.includes('COMPLEXITY SIGNALS'), 'prompt is missing COMPLEXITY SIGNALS block');
+    assert.ok(prompt.includes('"complexity"'), 'prompt is missing complexity output field');
     // 3. Email body must be in the prompt.
     assert.ok(prompt.includes(email.body), 'prompt is missing the email body');
     assert.ok(prompt.includes(email.subject), 'prompt is missing the email subject');
@@ -137,6 +141,8 @@ function rubricAwareStub(expectedCategory: AiCategory, email: Email): RunPrompt 
       requiresDocument: false,
       documentType: null,
       documentDueDays: null,
+      complexity: 'simple',
+      complexityReasons: [],
     });
   };
 }
@@ -427,6 +433,92 @@ describe('classifyEmail — output validation safeguards (parsing layer only)', 
     );
     assert.equal(result.category, 'CLINICAL');
     assert.equal(result.priority, 'MEDIUM');
+  });
+
+  // Custom stub used by the complexity-payload tests below — lets each
+  // test inject arbitrary `complexity` / `complexityReasons` shapes
+  // (including invalid ones) without polluting the fixedStub interface.
+  function complexityStub(extra: Record<string, unknown>): RunPrompt {
+    return async () =>
+      JSON.stringify({
+        category: 'CLINICAL',
+        priority: 'MEDIUM',
+        confidence: 0.9,
+        reasoning: 'fixed',
+        professionalSubType: null,
+        patientName: null,
+        documentRequested: null,
+        eventDate: null,
+        registrationDeadline: null,
+        requiresDocument: false,
+        documentType: null,
+        documentDueDays: null,
+        ...extra,
+      });
+  }
+
+  it('invalid complexity string → null (no guess)', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({ complexity: 'maybe', complexityReasons: ['Emotionally charged'] }),
+    );
+    assert.equal(result.complexity, null);
+    // reasons cleared because complexity isn't 'complex'
+    assert.deepEqual(result.complexityReasons, []);
+  });
+
+  it('missing complexity field → null', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({}),
+    );
+    assert.equal(result.complexity, null);
+    assert.deepEqual(result.complexityReasons, []);
+  });
+
+  it('complexity=simple with reasons present → reasons cleared to []', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({
+        complexity: 'simple',
+        complexityReasons: ['Emotionally charged', 'Records review needed'],
+      }),
+    );
+    assert.equal(result.complexity, 'simple');
+    assert.deepEqual(result.complexityReasons, []);
+  });
+
+  it('complexityReasons not an array → sanitized to []', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({ complexity: 'complex', complexityReasons: 'Emotionally charged' }),
+    );
+    assert.equal(result.complexity, 'complex');
+    assert.deepEqual(result.complexityReasons, []);
+  });
+
+  it('complexityReasons with mixed types → only non-empty strings kept, trimmed', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({
+        complexity: 'complex',
+        complexityReasons: ['  Emotionally charged  ', 42, null, '', '   ', 'Records review needed'],
+      }),
+    );
+    assert.equal(result.complexity, 'complex');
+    assert.deepEqual(result.complexityReasons, ['Emotionally charged', 'Records review needed']);
+  });
+
+  it('complexityReasons with >3 entries → truncated to first 3', async () => {
+    const result = await classifyEmail(
+      makeEmail({ body: 'x' }),
+      complexityStub({
+        complexity: 'complex',
+        complexityReasons: ['a', 'b', 'c', 'd', 'e'],
+      }),
+    );
+    assert.equal(result.complexity, 'complex');
+    assert.deepEqual(result.complexityReasons, ['a', 'b', 'c']);
   });
 
   it('clamps confidence into [0, 1]', async () => {

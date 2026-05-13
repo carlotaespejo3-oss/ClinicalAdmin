@@ -13,6 +13,7 @@ import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
 import { findLinkedTaskForEmail, detectCompletionLanguage } from '@/lib/linkedTaskUtils';
 import { useAiClassifications, setClassification, overrideCategory, confirmDocumentDirection } from '@/lib/aiClassifyStore';
 import { classifyQueue, classifyEmail } from '@/lib/classifyEmail';
+import { complexityReasonsFor } from '@/lib/estimateMinutes';
 import { CATEGORY_LABEL, CATEGORY_BADGE, PRIORITY_LABEL, PRIORITY_BADGE } from '@/lib/aiCategory';
 import {
   buildSafeguardingFamilyPrompt,
@@ -226,6 +227,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         documentType: null,
         documentDueDays: null,
         prescriptionRequest: null,
+        complexity: null,
+        complexityReasons: [],
       });
     }
   };
@@ -603,6 +606,18 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
                   <Clock size={11} /> {selectedEmail.estMin} min to action
                 </span>
+                {(() => {
+                  const reasons = complexityReasonsFor(selectedEmail, classifications.get(selectedEmail.id));
+                  if (reasons.length === 0) return null;
+                  return (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200 cursor-help"
+                      title={`Time estimate bumped because: ${reasons.join(' • ')}`}
+                    >
+                      <Sparkles size={11} /> Complex content
+                    </span>
+                  );
+                })()}
                 {selectedEmail.deadline !== null && (
                   <span className={cn(
                     "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border",

@@ -95,6 +95,8 @@ export function overrideCategory(emailId: number, category: AiClassification['ca
         documentType: null,
         documentDueDays: null,
         prescriptionRequest: null,
+        complexity: null,
+        complexityReasons: [],
       };
   mutate((m) => m.set(emailId, next));
   applyEstimateToEmail(next, emailId);

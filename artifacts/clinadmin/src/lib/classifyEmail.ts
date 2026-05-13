@@ -63,8 +63,20 @@ OUTPUT JSON SHAPE (exact keys, no extras):
       Never set 'outgoing' just because the email mentions a document — ONLY when the sender is asking the clinician to write/produce one.>",
   "requiresDocument": <true ONLY if documentDirection is 'outgoing'. false for 'incoming', 'unclear', or null. This drives task creation and time estimates, so only set true when you are confident the clinician must produce something.>,
   "documentType": "<short label like 'NDIS report', 'EHCP letter', 'Medical certificate', 'Court report', 'Insurance form', 'Psychological assessment', 'Discharge summary' if a document is involved (any direction); else null>",
-  "documentDueDays": <integer days from today the document is due if requiresDocument and a deadline is mentioned; else null>
+  "documentDueDays": <integer days from today the document is due if requiresDocument and a deadline is mentioned; else null>,
+  "complexity": "<'simple' or 'complex'. Judge based on CONTENT, not length. A short email can be complex; a long email can be simple. Choose 'complex' when the reply is likely to take meaningfully longer than a routine email of the same category because of any of the COMPLEXITY SIGNALS below.>",
+  "complexityReasons": ["<short, user-facing phrases — at most 3 — naming the specific signals you used. Use the canonical labels from the list below verbatim. Empty array when complexity='simple'.>"]
 }
+
+COMPLEXITY SIGNALS (use these exact labels in complexityReasons):
+- "Multiple distinct issues" — the sender raises two or more separate clinical/admin matters that each need addressing.
+- "Emotionally charged" — distressed parent, complaint, frustration, grief, sensitive disclosure, or anything requiring careful tone.
+- "Ambiguous symptoms" — symptoms or situation are described in a way that needs clarification before a decision can be made.
+- "Records review needed" — replying well requires looking up the patient's history, prior letters, dosing history, or test results.
+- "Multi-party coordination" — requires checking with or copying in a school, GP, allied health, family, or service.
+- "Clinical risk / uncertainty" — diagnostic uncertainty, medication risk, or a decision with non-trivial downside if wrong.
+- "Long detailed history" — body contains a substantial chronological/clinical history the clinician must read carefully (use this rather than just "long email").
+Do NOT invent new labels. If none of these apply, set complexity='simple' and complexityReasons=[].
 
 EMAIL TO CLASSIFY:
 From: ${email.from}
@@ -162,6 +174,22 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
       documentDirection = 'unclear';
     }
   }
+  // Complexity assessment — content-driven, judged by the AI alongside
+  // category/priority. We accept the value if it's one of the two
+  // canonical strings; anything else (older payloads, hallucinated
+  // values, parse failures) collapses to null and the downstream
+  // heuristic in estimateMinutes still applies as a safety net.
+  const rawComplexity = asString(parsed?.complexity as unknown);
+  const complexity: 'simple' | 'complex' | null =
+    rawComplexity === 'complex' || rawComplexity === 'simple' ? rawComplexity : null;
+  const complexityReasonsRaw = parsed?.complexityReasons;
+  const complexityReasons: string[] = Array.isArray(complexityReasonsRaw)
+    ? complexityReasonsRaw
+        .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+        .map((r) => r.trim())
+        .slice(0, 3)
+    : [];
+
   const requiresDocument = documentDirection === 'outgoing';
   const documentType = hasDocument
     ? (aiDocType ?? heuristic.documentType ?? asString(parsed?.documentRequested as unknown))
@@ -205,6 +233,8 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     documentType,
     documentDueDays,
     prescriptionRequest,
+    complexity,
+    complexityReasons: complexity === 'complex' ? complexityReasons : [],
   };
 }
 

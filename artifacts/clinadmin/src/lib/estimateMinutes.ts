@@ -86,8 +86,33 @@ function wordCount(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export function isComplex(email: Email): boolean {
+// Email is "complex" if EITHER the deterministic heuristic (>150 words
+// or ≥2 questions/concerns) fires OR the AI explicitly flagged the
+// content as complex. The AI signal lets short-but-weighty emails
+// (e.g. distressed parent with one urgent ambiguous concern) get the
+// upper band; the heuristic stays as a safety net for older
+// classifications and for cases the AI under-rates.
+export function isComplex(email: Email, classification?: AiClassification | null): boolean {
+  if (classification?.complexity === 'complex') return true;
   return wordCount(email.body) > COMPLEX_WORD_COUNT || hasMultipleQuestionsOrConcerns(email.body);
+}
+
+// Returns the reasons the email is considered complex, suitable for
+// surfacing in a UI tooltip next to the time estimate. The AI's own
+// reasons take precedence; falls back to a heuristic-derived label
+// when only the word-count / question-mark rule fired.
+export function complexityReasonsFor(
+  email: Email,
+  classification?: AiClassification | null,
+): string[] {
+  if (classification?.complexity === 'complex' && classification.complexityReasons.length > 0) {
+    return classification.complexityReasons;
+  }
+  if (!isComplex(email, classification)) return [];
+  const reasons: string[] = [];
+  if (wordCount(email.body) > COMPLEX_WORD_COUNT) reasons.push('Long detailed history');
+  if (hasMultipleQuestionsOrConcerns(email.body)) reasons.push('Multiple distinct issues');
+  return reasons;
 }
 
 // Single source of truth for an email's estimated minutes-to-action.
@@ -108,16 +133,25 @@ export function estimateMinutes(email: Email, classification: AiClassification |
   const upper = CATEGORY_UPPER[category];
   let minutes = base;
 
-  // Complexity bump for URGENT_CLINICAL and CLINICAL.
-  if ((category === 'URGENT_CLINICAL' || category === 'CLINICAL') && upper != null && isComplex(email)) {
+  // Complexity bump for URGENT_CLINICAL and CLINICAL — now driven by
+  // either the AI's content assessment or the >150-word / multi-question
+  // heuristic (whichever fires first).
+  if ((category === 'URGENT_CLINICAL' || category === 'CLINICAL') && upper != null && isComplex(email, classification)) {
     minutes = upper;
   }
 
-  // PROFESSIONAL sub-type rule: clinical_input or document_request → upper.
+  // PROFESSIONAL: bump to upper band for clinical_input / document_request
+  // sub-types (those are inherently more involved), OR when the AI flags
+  // the content itself as complex even on a meeting/coordination email
+  // (e.g. multi-party coordination, clinical uncertainty).
   if (
     category === 'PROFESSIONAL' &&
     upper != null &&
-    (professionalSubType === 'clinical_input' || professionalSubType === 'document_request')
+    (
+      professionalSubType === 'clinical_input' ||
+      professionalSubType === 'document_request' ||
+      isComplex(email, classification)
+    )
   ) {
     minutes = upper;
   }

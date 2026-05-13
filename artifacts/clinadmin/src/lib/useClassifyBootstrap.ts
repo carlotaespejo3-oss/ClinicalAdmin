@@ -47,6 +47,8 @@ export function useClassifyBootstrap(): void {
           documentType: null,
           documentDueDays: null,
         prescriptionRequest: null,
+        complexity: null,
+        complexityReasons: [],
         });
       },
     });
