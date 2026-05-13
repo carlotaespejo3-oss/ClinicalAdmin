@@ -257,11 +257,18 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
         todaysPlan={plannerOutput.todaysPlan}
         overallStatus={plannerOutput.overallStatus}
         unclearCount={plannerOutput.unclearCount}
-        onTriageUnclear={() => {
-          // Jump to the inbox and open the first unclassified email so the
-          // clinician lands directly on the thing they need to triage.
-          const firstId = plannerOutput.unclearEmailIds[0];
-          if (firstId != null) onOpenEmail(firstId);
+        // Pass the full list so the gate banner can render every unclear
+        // email as its own clickable row — the clinician can work through
+        // them one after another (each classification removes its row via
+        // live recalc).
+        unclearEmails={plannerOutput.unclearEmailIds
+          .map(id => {
+            const e = emails.find(x => x.id === id);
+            return e ? { id: e.id, subject: e.subject, from: e.from } : null;
+          })
+          .filter((e): e is { id: number; subject: string; from: string } => e !== null)}
+        onTriageUnclear={(id) => {
+          onOpenEmail(id);
           onNavigate('Emails');
         }}
         onItemClick={(item) => {

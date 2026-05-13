@@ -2,11 +2,18 @@ import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, Fil
 import { cn } from '@/lib/utils';
 import type { DailyPlan, PlanItem, OverallStatus } from '@/lib/planner';
 
+export interface UnclearEmailSummary {
+  id: number;
+  subject: string;
+  from: string;
+}
+
 interface Props {
   todaysPlan: DailyPlan;
   overallStatus: OverallStatus;
   unclearCount: number;
-  onTriageUnclear?: () => void;
+  unclearEmails?: UnclearEmailSummary[];
+  onTriageUnclear?: (id: number) => void;
   onItemClick?: (item: PlanItem) => void;
 }
 
@@ -47,36 +54,62 @@ const STATUS_THEME: Record<OverallStatus, { dot: string; bg: string; text: strin
   red: { dot: 'bg-red-500', bg: 'bg-red-50', text: 'text-red-800', ring: 'ring-red-200' },
 };
 
-function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
-  const isUnclearGate = item.kind === 'unclear_gate';
-  const isOverdue = item.reason === 'overdue';
-  const isLinked = item.reason === 'linked_task';
-
-  if (isUnclearGate) {
-    const Wrapper: any = onClick ? 'button' : 'div';
-    return (
-      <Wrapper
-        type={onClick ? 'button' : undefined}
-        onClick={onClick}
-        className={cn(
-          'w-full flex items-start gap-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-left transition-colors',
-          onClick && 'hover:bg-amber-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400',
-        )}
-        data-testid="planner-item-unclear-gate"
-      >
+function UnclearGateBlock({
+  item,
+  unclearEmails,
+  onTriage,
+}: {
+  item: PlanItem;
+  unclearEmails?: UnclearEmailSummary[];
+  onTriage?: (id: number) => void;
+}) {
+  const list = unclearEmails ?? [];
+  return (
+    <div
+      className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2"
+      data-testid="planner-item-unclear-gate"
+    >
+      <div className="flex items-start gap-3">
         <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-amber-600" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-amber-900">{item.title}</div>
           <div className="text-xs text-amber-800 mt-0.5">{item.detail}</div>
         </div>
-        {onClick && (
-          <span className="text-[11px] font-bold text-amber-700 whitespace-nowrap mt-0.5 flex items-center gap-0.5">
-            Triage now <ChevronRight size={12} />
-          </span>
-        )}
-      </Wrapper>
-    );
-  }
+      </div>
+      {list.length > 0 && onTriage && (
+        // Inline triage queue — every unclassified email is its own
+        // clickable row so the clinician can work through them one after
+        // another without bouncing back to the dashboard between each.
+        <ul className="space-y-1.5 pl-1" data-testid="unclear-gate-list">
+          {list.map((e, i) => (
+            <li key={e.id}>
+              <button
+                type="button"
+                onClick={() => onTriage(e.id)}
+                className="w-full flex items-center gap-2 text-left bg-white border border-amber-200 rounded-md px-2.5 py-1.5 hover:bg-amber-100 hover:border-amber-300 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
+                data-testid={`unclear-gate-row-${e.id}`}
+              >
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-full tabular-nums flex-shrink-0">
+                  {i + 1} of {list.length}
+                </span>
+                <Mail size={13} className="text-amber-700 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-amber-900 truncate">{e.subject}</div>
+                  <div className="text-[11px] text-amber-700 truncate">{e.from}</div>
+                </div>
+                <ChevronRight size={12} className="text-amber-600 flex-shrink-0" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
+  const isOverdue = item.reason === 'overdue';
+  const isLinked = item.reason === 'linked_task';
 
   const Icon = item.kind === 'task' ? FileText : Mail;
 
@@ -127,7 +160,7 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   );
 }
 
-export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, onTriageUnclear, onItemClick }: Props) {
+export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, unclearEmails, onTriageUnclear, onItemClick }: Props) {
   const theme = STATUS_THEME[overallStatus];
   const items = todaysPlan.items;
   const hasItems = items.length > 0;
@@ -173,20 +206,22 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, on
           <ol className="space-y-2">
             {items.map((item, i) => (
               <li key={`${item.kind}:${item.refId ?? i}`}>
-                <ItemRow
-                  item={item}
-                  // Email rows (numeric refId) and task rows (string refId)
-                  // open the relevant detail. The unclear-gate banner uses
-                  // its own onTriageUnclear handler so it can jump straight
-                  // to the inbox filtered to the unclassified emails.
-                  onClick={
-                    item.kind === 'unclear_gate'
-                      ? onTriageUnclear
-                      : onItemClick && item.refId != null
+                {item.kind === 'unclear_gate' ? (
+                  <UnclearGateBlock
+                    item={item}
+                    unclearEmails={unclearEmails}
+                    onTriage={onTriageUnclear}
+                  />
+                ) : (
+                  <ItemRow
+                    item={item}
+                    onClick={
+                      onItemClick && item.refId != null
                         ? () => onItemClick(item)
                         : undefined
-                  }
-                />
+                    }
+                  />
+                )}
               </li>
             ))}
           </ol>
@@ -204,10 +239,10 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, on
         )}
 
         {unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
-          onTriageUnclear ? (
+          onTriageUnclear && unclearEmails && unclearEmails[0] ? (
             <button
               type="button"
-              onClick={onTriageUnclear}
+              onClick={() => onTriageUnclear(unclearEmails[0].id)}
               className="text-xs text-amber-700 hover:text-amber-900 hover:underline px-1 pt-1 inline-flex items-center gap-1"
               data-testid="link-triage-unclear-trailing"
             >
