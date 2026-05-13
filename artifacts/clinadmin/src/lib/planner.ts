@@ -483,6 +483,12 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // intended slack for arrivals.
   const futureWeek1Days = week1Days.slice(1);
   const futureWeek1CapacityMin = futureWeek1Days.reduce((a, d) => a + d.minutesAvailable, 0);
+  // Cap each day's arrivals carve-out at half its bookable capacity.
+  // Otherwise on a sparse week (e.g. clinician only works Tue/Wed/Thu)
+  // the reservation can swallow an entire day, so real work that's
+  // already in the inbox skips that day and lands further out — making
+  // it look like the day is "absorbed" when really it was emptied by
+  // a hypothetical-arrivals buffer. Real existing work always wins.
   if (futureWeek1CapacityMin > 0 && reservation.totalReserveMin > 0) {
     let remaining = Math.min(reservation.totalReserveMin, futureWeek1CapacityMin);
     for (const d of futureWeek1Days) {
@@ -490,7 +496,8 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
       const share = Math.round(
         reservation.totalReserveMin * (d.minutesAvailable / futureWeek1CapacityMin),
       );
-      const actual = Math.min(share, remaining, d.bookableMin);
+      const cap = Math.floor(d.bookableMin / 2);
+      const actual = Math.min(share, remaining, cap);
       d.bookableMin -= actual;
       remaining -= actual;
     }

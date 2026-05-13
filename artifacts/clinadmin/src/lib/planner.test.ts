@@ -412,11 +412,12 @@ describe('buildPlan — projected workload reservation', () => {
     assert.equal(out.weeklyCapacityMin, 300);
   });
 
-  it('reservation eats into week-1 bookable capacity so backlog spills to week 2', () => {
-    // 60 min Tue (week 1 only). Default reservation = 180 min, capped at
-    // 60 min for that day → bookable = 0 on week-1 Tue. A 5-min admin
-    // email therefore cannot land in week 1 and falls through to week-2
-    // Tuesday (day 8), which has untouched capacity.
+  it('reservation never swallows more than half of a day so real work still fits', () => {
+    // 60 min Tue (week 1 only). Default reservation = 180 min, but the
+    // per-day carve-out is capped at half the day's bookable so a sparse
+    // week (e.g. clinician only works one day) doesn't have its single
+    // active day fully drained by hypothetical arrivals. A 5-min admin
+    // email therefore lands on week-1 Tue, not week 2.
     const out = buildPlan(
       baseInput({
         availability: buildAvailability(MONDAY, { Tue: 1 }),
@@ -425,15 +426,9 @@ describe('buildPlan — projected workload reservation', () => {
       }),
     );
     const week1Tue = out.runway[1];
-    const week2Tue = out.runway[8];
-    assert.equal(
-      week1Tue.items.find((i) => i.refId === 1),
-      undefined,
-      'item should not land in week 1 (capacity is reserved for arrivals)',
-    );
     assert.ok(
-      week2Tue.items.find((i) => i.refId === 1),
-      'item should fall through to week-2 Tuesday',
+      week1Tue.items.find((i) => i.refId === 1),
+      'real work lands on week-1 Tue even with a large arrivals reservation',
     );
     assert.equal(out.deferredItems.length, 0);
   });
