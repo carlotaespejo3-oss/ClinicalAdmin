@@ -8,6 +8,9 @@ import { useLinkedDocTasks, type LinkedDocTask } from '@/lib/linkedDocTasksStore
 import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
+import { buildPlannerInput } from '@/lib/plannerAdapter';
+import { buildPlan } from '@/lib/planner';
+import TodaysPlan from '@/components/TodaysPlan';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -36,10 +39,28 @@ const projectedExtra = 45;
 export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks, weekSetup, onOpenWeeklySetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
   // Subscribing to classifications + linked doc tasks so totals/rows
   // recompute when new classifications stream in or doc tasks get created.
-  useAiClassifications();
+  const classifications = useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
+
+  // ---- New deterministic planner (Step 2 of the 14-day rolling planner) ---
+  // Mounted above the existing risk banner so the clinician can compare its
+  // output against the legacy AI-packed list. Once the planner-driven flow
+  // is approved (Step 7), the legacy list below will be retired.
+  const plannerOutput = useMemo(() => {
+    const input = buildPlannerInput({
+      today: new Date(),
+      emails,
+      classifications,
+      manualTasks,
+      linkedDocTasks,
+      weekSetup,
+      excludeEmailId: (id) => acknowledged.has(id) || archived.has(id),
+    });
+    return buildPlan(input);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classifications, linkedDocTasks, manualTasks, weekSetup, acknowledged, archived]);
 
   // Document/form detection: a linked doc task and its email are ONE piece
   // of work. The email's estMin already covers the combined 20/30 min, so
@@ -470,6 +491,21 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           );
         })}
       </div>
+
+      {/* Today's plan — deterministic 14-day planner (new) */}
+      <TodaysPlan
+        todaysPlan={plannerOutput.todaysPlan}
+        overallStatus={plannerOutput.overallStatus}
+        unclearCount={plannerOutput.unclearCount}
+        onItemClick={(item) => {
+          if (typeof item.refId === 'number') {
+            onOpenEmail(item.refId);
+            onNavigate('Emails');
+          } else if (item.kind === 'task') {
+            onNavigate('Tasks');
+          }
+        }}
+      />
 
       {/* Risk / Status Banner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
