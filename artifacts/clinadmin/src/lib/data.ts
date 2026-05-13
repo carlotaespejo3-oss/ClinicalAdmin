@@ -389,9 +389,9 @@ export const emails: Email[] = [
   {
     id: 58,
     from: 'Reception — CAMHS Outpatient',
-    subject: "Colm O'Neill — billing code confirmation",
-    preview: "Hi Carlota, please confirm billing code for Colm's appointment on...",
-    body: "Hi Dr Patterson,\n\nPlease confirm the billing code for Colm O'Neill's appointment last Friday. Was this a standard 30-min review or the longer complex consult? The reception team need to close out the session before submitting the claim.\n\nKind regards,\nThe admin team.",
+    subject: "Conall O'Brien — billing code confirmation",
+    preview: "Hi Carlota, please confirm billing code for Conall's appointment on...",
+    body: "Hi Dr Patterson,\n\nPlease confirm the billing code for Conall O'Brien's appointment last Friday. Was this a standard 30-min review or the longer complex consult? The reception team need to close out the session before submitting the claim.\n\nKind regards,\nThe admin team.",
     date: 'Today, 12:09',
     risk: 'none',
     cat: CAT.ADMIN,
@@ -599,7 +599,7 @@ export const emails: Email[] = [
   {
     id: 40,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Eden Cumming — email response from family',
+    subject: 'Eddie Carmody — email response from family',
     preview: "Please see below email from parent...",
     body: "Hi Dr Patterson,\n\nPlease see below email from parent — they have replied with the additional information you requested at the last appointment.\n\nKind regards,\nThe admin team.",
     date: 'Yesterday',
@@ -625,7 +625,7 @@ export const emails: Email[] = [
   {
     id: 42,
     from: 'Reception — CAMHS Outpatient',
-    subject: "For Ethan Rossendell's family",
+    subject: "For Eitan Rosen-Dahl's family",
     preview: "Emailed parent. Cindy, kind regards, the admin team...",
     body: "Hi Dr Patterson,\n\nEmailed parent on your behalf as discussed.\n\nKind regards,\nCindy\nThe admin team.",
     date: 'Yesterday',
@@ -638,7 +638,7 @@ export const emails: Email[] = [
   {
     id: 43,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Sarah Hughan — HUB patient',
+    subject: 'Selma Hughes-Anson — HUB patient',
     preview: "Hi, please see attached and advise...",
     body: "Hi Dr Patterson,\n\nPlease see attached and advise on the next step for this hub patient.\n\nKind regards,\nThe admin team.",
     date: 'Yesterday',
@@ -664,7 +664,7 @@ export const emails: Email[] = [
   {
     id: 45,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Honor Bond — NP referral',
+    subject: 'Halle Beaumont — NP referral',
     preview: "Hi, are you able to see this patient? Cindy...",
     body: "Hi Dr Patterson,\n\nAre you able to see this patient?\n\nKind regards,\nCindy\nThe admin team.",
     date: 'Yesterday',
@@ -678,8 +678,8 @@ export const emails: Email[] = [
   // === Last week — colleagues, common-patient discussions, professional invites ===
   {
     id: 46,
-    from: 'Re: Common patient — Siv Heng Sauv',
-    subject: 'Re: Common patient — Siv Heng Sauv',
+    from: 'Re: Common patient — Sok Heng Saon',
+    subject: 'Re: Common patient — Sok Heng Saon',
     preview: "Hi Dr Patterson, I agree that she presents with traits...",
     body: "Hi Dr Patterson,\n\nI agree that she presents with traits consistent with what we discussed at MDT. Happy to share my notes if useful — let me know how you'd like to coordinate the joint care plan.\n\nBest,\nDr S. Heng",
     date: '5 days ago',
@@ -705,10 +705,10 @@ export const emails: Email[] = [
   },
   {
     id: 48,
-    from: 'Jamie Maserow',
-    subject: 'RE: common patient — Bella Wolf',
+    from: 'Jamie Mazerov',
+    subject: 'RE: common patient — Beatrix Wolde',
     preview: "Hi Carlota, thank you so much for getting in touch...",
-    body: "Hi Anna,\n\nThank you so much for getting in touch about Bella. I have a few thoughts on the formulation and would value a quick phone call this week if you have a slot. Tuesday or Wednesday afternoons work for me.\n\nBest,\nJamie",
+    body: "Hi Anna,\n\nThank you so much for getting in touch about Beatrix. I have a few thoughts on the formulation and would value a quick phone call this week if you have a slot. Tuesday or Wednesday afternoons work for me.\n\nBest,\nJamie",
     date: '5 days ago',
     risk: 'medium',
     cat: CAT.PROF,
@@ -774,7 +774,7 @@ export const emails: Email[] = [
   {
     id: 53,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Eden Cumming — please advise',
+    subject: 'Eddie Carmody — please advise',
     preview: "Please advise below. Cindy, kind regards, the admin team...",
     body: "Hi Dr Patterson,\n\nPlease advise on the next step below.\n\nKind regards,\nCindy\nThe admin team.",
     date: '8 days ago',
@@ -786,10 +786,10 @@ export const emails: Email[] = [
   },
   {
     id: 54,
-    from: 'Grace Barter (parent)',
+    from: 'Greta Bartell (parent)',
     subject: 'Confidential — re: common patient',
     preview: "Hi Carlota, unfortunately I am unavailable next Friday...",
-    body: "Hi Dr Patterson,\n\nUnfortunately I am unavailable next Friday for the joint review. Could we please move it to the following week? Apologies for any inconvenience.\n\nGrace",
+    body: "Hi Dr Patterson,\n\nUnfortunately I am unavailable next Friday for the joint review. Could we please move it to the following week? Apologies for any inconvenience.\n\nGreta",
     date: '9 days ago',
     risk: 'low',
     cat: CAT.ADMIN,
