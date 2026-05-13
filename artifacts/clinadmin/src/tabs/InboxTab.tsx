@@ -84,7 +84,7 @@ const KIND_LABEL: Record<string, string> = {
   admin: 'Admin',
   meeting: 'Meeting / event',
   professional: 'Professional',
-  none: 'No action',
+  none: 'Acknowledge',
 };
 
 const KIND_COLOUR: Record<string, string> = {

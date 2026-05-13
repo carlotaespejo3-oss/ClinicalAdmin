@@ -51,7 +51,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   PROFESSIONAL: 'Professional',
   ADMIN: 'Admin',
   CPD: 'CPD',
-  NONE: 'No action',
+  NONE: 'Acknowledge',
   UNCLEAR: 'Unclear',
 };
 

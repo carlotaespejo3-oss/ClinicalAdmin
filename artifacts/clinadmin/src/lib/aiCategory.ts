@@ -7,7 +7,7 @@ export const CATEGORY_LABEL: Record<AiCategory, string> = {
   PROFESSIONAL: 'Professional',
   ADMIN: 'Admin',
   LEGAL: 'Legal',
-  NONE: 'No action',
+  NONE: 'Acknowledge',
   CPD: 'CPD',
   UNCLEAR: 'Unclear',
 };

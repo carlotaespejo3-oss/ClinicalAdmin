@@ -178,8 +178,11 @@ export function buildPlannerInput(args: AdapterArgs): PlannerInput {
   for (const e of args.emails) {
     if (excludeEmail(e.id)) continue;
     const c = args.classifications.get(e.id);
-    const resolved = resolveEmailCategory(e, c);
-    if (resolved === 'NONE') continue;
+    // NONE-category emails (acknowledge-only items) are NOT dropped —
+    // the clinician still needs to see them on the daily plan so they
+    // can review + click acknowledge. They flow into the low-priority
+    // band and consume the daily low-quota slot like any other admin
+    // item, just with a smaller estMin.
     // DONE is a legacy "completed" sentinel — no AI equivalent. Drop it
     // unconditionally; once an email is marked DONE it's not work.
     if (e.cat === CAT.DONE) continue;

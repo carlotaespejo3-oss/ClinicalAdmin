@@ -76,7 +76,7 @@ describe('resolveEmailCategory', () => {
 });
 
 describe('buildPlannerInput', () => {
-  it('skips NONE / DONE emails so they do not crowd the plan', () => {
+  it('keeps NONE emails (acknowledge-only items still need clinician review) but drops DONE', () => {
     const input = buildPlannerInput({
       today: MONDAY,
       emails: [
@@ -89,8 +89,12 @@ describe('buildPlannerInput', () => {
       linkedDocTasks: new Map(),
       weekSetup: makeWeekSetup(),
     });
-    assert.equal(input.emails.length, 1);
-    assert.equal(input.emails[0].id, 1);
+    // URGENT (1) + NONE (2) included; DONE (3) dropped.
+    assert.equal(input.emails.length, 2);
+    const ids = input.emails.map((e) => e.id).sort();
+    assert.deepEqual(ids, [1, 2]);
+    const none = input.emails.find((e) => e.id === 2);
+    assert.equal(none?.category, 'NONE');
   });
 
   it('AI classification is authoritative: a seeded-NONE email reclassified as URGENT_CLINICAL is INCLUDED', () => {
@@ -106,7 +110,9 @@ describe('buildPlannerInput', () => {
     assert.equal(input.emails[0].category, 'URGENT_CLINICAL');
   });
 
-  it('AI classification is authoritative: a seeded-ADMIN email reclassified as NONE is EXCLUDED', () => {
+  it('AI classification is authoritative: a seeded-ADMIN email reclassified as NONE is INCLUDED as NONE', () => {
+    // NONE-category emails stay in the planner — the clinician still
+    // needs to see them on the daily plan to acknowledge them.
     const input = buildPlannerInput({
       today: MONDAY,
       emails: [makeEmail({ id: 6, cat: CAT.ADMIN })],
@@ -115,7 +121,8 @@ describe('buildPlannerInput', () => {
       linkedDocTasks: new Map(),
       weekSetup: makeWeekSetup(),
     });
-    assert.equal(input.emails.length, 0);
+    assert.equal(input.emails.length, 1);
+    assert.equal(input.emails[0].category, 'NONE');
   });
 
   it('marks an email unclear when AI returns UNCLEAR category or priority', () => {
