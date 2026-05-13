@@ -228,12 +228,12 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, un
         )}
 
         {/* Buffer footer */}
-        {hasItems && todaysPlan.bufferMin > 0 && (
+        {hasItems && todaysPlan.bufferMin > 10 && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 px-1">
             <HelpCircle size={12} />
             <span>
-              {fmtMin(todaysPlan.bufferMin)} buffer left after today's plan — room for unexpected
-              items.
+              {fmtMin(todaysPlan.bufferMin)} spare after today's plan — your inbox is on track and
+              nothing else is due today.
             </span>
           </div>
         )}

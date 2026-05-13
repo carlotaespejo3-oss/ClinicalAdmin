@@ -474,12 +474,21 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     lowReserveMin: arrivals.lowReserveMin,
     totalReserveMin: arrivals.highReserveMin + arrivals.mediumReserveMin + arrivals.lowReserveMin,
   };
-  if (weeklyCapacityMin > 0 && reservation.totalReserveMin > 0) {
-    let remaining = Math.min(reservation.totalReserveMin, weeklyCapacityMin);
-    for (const d of week1Days) {
+  // Today (day 0) is intentionally EXCLUDED from the projected-arrivals
+  // reservation. Holding capacity back today for hypothetical future
+  // arrivals just means real work that's already in the inbox sits on
+  // tomorrow instead of getting cleared now. Even URGENT has a 48h SLA
+  // — anything arriving late today can be triaged first thing tomorrow.
+  // We still reserve across days 1-6 so the week as a whole has the
+  // intended slack for arrivals.
+  const futureWeek1Days = week1Days.slice(1);
+  const futureWeek1CapacityMin = futureWeek1Days.reduce((a, d) => a + d.minutesAvailable, 0);
+  if (futureWeek1CapacityMin > 0 && reservation.totalReserveMin > 0) {
+    let remaining = Math.min(reservation.totalReserveMin, futureWeek1CapacityMin);
+    for (const d of futureWeek1Days) {
       if (d.minutesAvailable === 0) continue;
       const share = Math.round(
-        reservation.totalReserveMin * (d.minutesAvailable / weeklyCapacityMin),
+        reservation.totalReserveMin * (d.minutesAvailable / futureWeek1CapacityMin),
       );
       const actual = Math.min(share, remaining, d.bookableMin);
       d.bookableMin -= actual;
@@ -488,8 +497,12 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   }
 
   // 4 — Reserve daily low-priority allocation BEFORE any packing so it
-  //    can never be cannibalised by medium work.
-  for (const d of runway) {
+  //    can never be cannibalised by medium work. Today (day 0) is
+  //    excluded — today should clear whatever real work exists; the
+  //    daily low-priority drumbeat still applies to days 1-13.
+  for (let i = 0; i < runway.length; i++) {
+    const d = runway[i];
+    if (i === 0) continue;
     if (d.bookableMin > 0) {
       const reserve = Math.min(DAILY_LOW_PRIORITY_RESERVATION_MIN, d.bookableMin);
       d.lowQuotaRemainingMin = reserve;
