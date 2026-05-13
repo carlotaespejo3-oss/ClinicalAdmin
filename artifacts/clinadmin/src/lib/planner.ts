@@ -531,51 +531,90 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   const breaches: BreachInfo[] = [];
   const deferredItems: PlanItem[] = [];
 
-  // Helper: try to place a pair on the earliest possible day.
-  // `dipIntoLowQuota` lets an item consume the day's protected low-priority
-  // slot when its bookable capacity alone isn't enough. Only overdue items
-  // get this privilege — urgent items have a 48h SLA and may legitimately
-  // be postponed to tomorrow's bookable capacity rather than cannibalising
-  // today's daily low-priority clearance slot.
+  // Helper: place a pair on the best day within its deadline window.
+  //
+  // BALANCE rule: the clinician should not face a wall of work on day 0
+  // just because the algorithm packs earliest-first. Each item still
+  // respects its SLA, but within the days it's allowed to land on
+  // (0..minDeadline) we pick the LEAST-PLANNED day. This spreads
+  // urgent/medium items across the deadline window instead of piling
+  // everything onto today.
+  //
+  // Overdue items (`dipIntoLowQuota=true`) are the exception: they're
+  // already past SLA, so we keep the original earliest-fit behaviour
+  // and let them dip into the low-quota slot if needed.
+  //
+  // We try in order:
+  //   1) within deadline window, using bookableMin
+  //   2) within deadline window, using day's remaining TOTAL capacity
+  //      (taps minutes notionally held back for projected arrivals)
+  //   3) past deadline, earliest day with bookable capacity (will
+  //      record a breach below since placedOnIdx > pair.minDeadline)
+  //   4) past deadline, earliest day with remaining total capacity
   const placePair = (pair: Pair, dipIntoLowQuota: boolean): boolean => {
     const need = pair.totalMin;
-    // Pack-tight: place on the earliest day with enough capacity. The user
-    // wants today fully used before tomorrow, tomorrow before the day after,
-    // etc., so they clear as much as possible per scheduled minute.
-    //
-    // We try in order:
-    //   1) bookableMin (+ low-quota slot for overdue items)
-    //   2) the day's remaining TOTAL capacity (minutesAvailable -
-    //      totalPlannedMin). This lets real existing work tap into
-    //      minutes that were notionally held back for "projected
-    //      arrivals" — it's better to schedule work on a day with
-    //      actual free time than skip the day and stuff it into a
-    //      packed earlier day or push it out to next week.
-    let placedOnIdx = -1;
-    for (let i = 0; i < runway.length; i++) {
-      const d = runway[i];
-      const cap = dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
-      if (cap >= need) {
-        placedOnIdx = i;
-        break;
-      }
-    }
-    if (placedOnIdx === -1) {
-      // Fallback: scan again allowing the day's reserved-for-arrivals
-      // minutes to be used. We still:
-      //   - respect the per-day total capacity (never overbook a real day)
-      //   - protect the daily low-priority quota slot (medium/urgent must
-      //     not cannibalise the daily admin clearance) UNLESS the caller
-      //     explicitly opted in via dipIntoLowQuota
-      for (let i = 0; i < runway.length; i++) {
+    const windowEnd = Math.min(pair.minDeadline, runway.length - 1);
+
+    const pickLeastPlanned = (
+      startIdx: number,
+      endIdx: number,
+      capFn: (d: DailyPlanInternal) => number,
+    ): number => {
+      let bestIdx = -1;
+      let bestPlanned = Infinity;
+      for (let i = startIdx; i <= endIdx; i++) {
         const d = runway[i];
-        const reservedFloor = dipIntoLowQuota ? 0 : d.lowQuotaRemainingMin;
-        const remainingTotal = d.minutesAvailable - d.totalPlannedMin - reservedFloor;
-        if (remainingTotal >= need) {
-          placedOnIdx = i;
-          break;
+        if (capFn(d) < need) continue;
+        if (d.totalPlannedMin < bestPlanned) {
+          bestPlanned = d.totalPlannedMin;
+          bestIdx = i;
         }
       }
+      return bestIdx;
+    };
+    const pickEarliest = (
+      startIdx: number,
+      endIdx: number,
+      capFn: (d: DailyPlanInternal) => number,
+    ): number => {
+      for (let i = startIdx; i <= endIdx; i++) {
+        if (capFn(runway[i]) >= need) return i;
+      }
+      return -1;
+    };
+
+    const bookableCap = (d: DailyPlanInternal) =>
+      dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
+    const remainingTotalCap = (d: DailyPlanInternal) => {
+      const reservedFloor = dipIntoLowQuota ? 0 : d.lowQuotaRemainingMin;
+      return d.minutesAvailable - d.totalPlannedMin - reservedFloor;
+    };
+
+    let placedOnIdx = -1;
+    if (windowEnd >= 0) {
+      if (dipIntoLowQuota) {
+        // Overdue: stay earliest-fit (no balance — clear ASAP).
+        placedOnIdx = pickEarliest(0, windowEnd, bookableCap);
+        if (placedOnIdx === -1) {
+          placedOnIdx = pickEarliest(0, windowEnd, remainingTotalCap);
+        }
+      } else {
+        // Normal urgent/medium/low: spread within deadline window.
+        placedOnIdx = pickLeastPlanned(0, windowEnd, bookableCap);
+        if (placedOnIdx === -1) {
+          placedOnIdx = pickLeastPlanned(0, windowEnd, remainingTotalCap);
+        }
+      }
+    }
+    // Past-deadline fallback. Overdue items have windowEnd < 0, so we
+    // start scanning from day 0 (clamped). The breach is recorded
+    // further below when placedOnIdx > pair.minDeadline.
+    const pastStart = Math.max(0, windowEnd + 1);
+    if (placedOnIdx === -1) {
+      placedOnIdx = pickEarliest(pastStart, runway.length - 1, bookableCap);
+    }
+    if (placedOnIdx === -1) {
+      placedOnIdx = pickEarliest(pastStart, runway.length - 1, remainingTotalCap);
     }
     if (placedOnIdx === -1) return false;
 
