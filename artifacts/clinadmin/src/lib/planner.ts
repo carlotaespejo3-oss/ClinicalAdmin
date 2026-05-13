@@ -539,40 +539,16 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // today's daily low-priority clearance slot.
   const placePair = (pair: Pair, dipIntoLowQuota: boolean): boolean => {
     const need = pair.totalMin;
-    // Load-balance within the item's deadline window so the week feels
-    // distributed instead of front-loaded. Within [today .. deadline],
-    // pick the day with the LOWEST current load ratio that still has
-    // capacity. Earlier days break ties so we never gratuitously delay.
-    // Items past their deadline (overdue) collapse the window to day 0
-    // and naturally fall through to the legacy "earliest with capacity"
-    // path below if today can't take them.
-    const windowEnd = Math.min(runway.length - 1, Math.max(0, pair.minDeadline));
+    // Pack-tight: place on the earliest day with enough capacity. The user
+    // wants today fully used before tomorrow, tomorrow before the day after,
+    // etc., so they clear as much as possible per scheduled minute.
     let placedOnIdx = -1;
-    let bestLoad = Infinity;
-    for (let i = 0; i <= windowEnd; i++) {
+    for (let i = 0; i < runway.length; i++) {
       const d = runway[i];
       const cap = dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
-      if (cap < need) continue;
-      const load = d.minutesAvailable > 0
-        ? d.totalPlannedMin / d.minutesAvailable
-        : Number.POSITIVE_INFINITY;
-      // Strict < — keeps the earliest day among ties (we iterate forward).
-      if (load < bestLoad) {
-        bestLoad = load;
+      if (cap >= need) {
         placedOnIdx = i;
-      }
-    }
-    // Fallback: if no day in the deadline window has capacity, accept the
-    // earliest day with capacity anywhere in the runway. This may still
-    // breach SLA but at least the item gets scheduled.
-    if (placedOnIdx === -1) {
-      for (let i = windowEnd + 1; i < runway.length; i++) {
-        const d = runway[i];
-        const cap = dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
-        if (cap >= need) {
-          placedOnIdx = i;
-          break;
-        }
+        break;
       }
     }
     if (placedOnIdx === -1) return false;

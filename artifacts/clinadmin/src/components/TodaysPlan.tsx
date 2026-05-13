@@ -183,6 +183,10 @@ export default function TodaysPlan({
   const theme = STATUS_THEME[overallStatus];
   const items = todaysPlan.items;
   const hasItems = items.length > 0;
+  // Count of real work rows (excludes the unclear-gate banner). Shown in the
+  // header so the clinician can see at a glance how many items are queued
+  // for this day — and it always matches the number of rows below.
+  const visibleItemCount = items.filter((i) => i.kind !== 'unclear_gate').length;
   const idle = todaysPlan.minutesAvailable === 0;
   const isToday = dayIndex == null || dayIndex === 0;
   const navEnabled = dayIndex != null && totalDays != null && totalDays > 1;
@@ -252,7 +256,14 @@ export default function TodaysPlan({
           )}
         </div>
         <div className="text-right">
-          <div className="text-xs text-muted-foreground">Planned / available</div>
+          <div className="text-xs text-muted-foreground">
+            Planned / available
+            {visibleItemCount > 0 && (
+              <span className="ml-2 text-slate-400" data-testid="day-plan-item-count">
+                · {visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
           <div className="text-sm font-bold tabular-nums">
             {fmtMin(todaysPlan.totalPlannedMin)}
             <span className="text-slate-400 font-normal"> / </span>
