@@ -8,6 +8,8 @@ import { useLinkedDocTasks, type LinkedDocTask } from '@/lib/linkedDocTasksStore
 import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
+import { buildMorningBrief } from '@/lib/morningBrief';
+import MorningBriefCard from '@/components/MorningBrief';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -299,6 +301,14 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     return counts;
   }, [manualTasks, sidebarTasks]);
 
+  // Morning brief — answers the two questions the clinician asks first
+  // thing in the morning: "what can't wait today?" and "is the week
+  // quietly building up behind me?". Pure logic in lib/morningBrief.ts.
+  const linkedDocEmailIds = useMemo(
+    () => new Set<number>(Array.from(linkedDocTasks.keys())),
+    [linkedDocTasks],
+  );
+
   const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
 
   // Build the per-day minute breakdown. If the user has explicit overrides
@@ -426,6 +436,27 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
     ...sidebarTasks.filter(t => t.done).map(task => ({ kind: 'sidebar' as const, task })),
   ];
 
+  const archivedEmailIds = useMemo(
+    () => new Set<number>(Array.from(archived.keys())),
+    [archived],
+  );
+
+  const morningBrief = buildMorningBrief({
+    emails,
+    manualTasks,
+    acknowledgedEmailIds: acknowledged,
+    archivedEmailIds,
+    linkedDocEmailIds,
+    recommendedMin: recommendedMins,
+    allocatedMin: allocatedMins,
+  });
+
+  const briefAddHourDay = recommendedDays[0];
+  const briefAddHourLabel = briefAddHourDay ? `Add 1h ${briefAddHourDay}` : undefined;
+  const handleBriefAddHour = briefAddHourDay
+    ? () => handleAddHourToDay(briefAddHourDay)
+    : undefined;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
 
@@ -439,6 +470,20 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan. Follow it and you're on top of your admin.</p>
         </div>
       </div>
+
+      {/* Morning brief — leads with the two questions the clinician
+          actually wants answered: cannot-wait list + week trajectory. */}
+      <MorningBriefCard
+        brief={morningBrief}
+        onOpenEmail={(id) => {
+          onOpenEmail(id);
+          onNavigate('Emails');
+        }}
+        onOpenTasks={() => onNavigate('Tasks')}
+        onOpenInbox={() => onNavigate('Emails')}
+        onAddHour={handleBriefAddHour}
+        addHourLabel={briefAddHourLabel}
+      />
 
       {/* Priority summary bar */}
       <div
