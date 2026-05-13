@@ -265,14 +265,18 @@ export default function TodaysPlan({
       <div className="p-4 space-y-2">
         {idle && !hasItems && (
           <div className="text-sm text-muted-foreground italic px-2 py-6 text-center">
-            No admin time scheduled today. Items have been pushed to your next available admin day.
+            {isToday
+              ? 'No admin time scheduled today. Items have been pushed to your next available admin day.'
+              : `No admin time scheduled on ${todaysPlan.dayLabel}.`}
           </div>
         )}
 
         {!hasItems && !idle && (
           <div className="flex items-center gap-2 text-sm text-green-700 px-2 py-4">
             <CheckCircle2 size={18} className="text-green-600" />
-            Inbox is empty for today. Use the time however you like.
+            {isToday
+              ? 'Inbox is empty for today. Use the time however you like.'
+              : `Nothing scheduled on ${todaysPlan.dayLabel} — earlier days absorbed the workload, so this slot is free.`}
           </div>
         )}
 
