@@ -114,7 +114,7 @@ export default function TodayTab({ manualTasks, weekSetup, onOpenWeeklySetup, on
     return [...sortedActive, ...inactive].slice(0, 2);
   }, [activeDays, minutesPerDay]);
 
-  const handleAddHourToDay = (day: string) => {
+  const handleAddMinutesToDay = (day: string, minsToAdd: number = 30) => {
     const snapshot = captureSnapshot();
     const baseDays = weekSetup?.days ?? [];
     const newDays = baseDays.includes(day)
@@ -123,13 +123,13 @@ export default function TodayTab({ manualTasks, weekSetup, onOpenWeeklySetup, on
     const nextMinutes: Record<string, number> = {};
     for (const d of newDays) {
       const current = minutesPerDay[d] ?? 0;
-      nextMinutes[d] = d === day ? current + 60 : current;
+      nextMinutes[d] = d === day ? current + minsToAdd : current;
     }
     const newTotalMins = Object.values(nextMinutes).reduce((a, b) => a + b, 0);
     const newHours = +(newTotalMins / 60).toFixed(2);
     onUpdateAvailability(newHours, newDays, nextMinutes);
     setUndoSnapshot(snapshot);
-    showRecToast(`Added 1h to every ${day} in your weekly schedule`);
+    showRecToast(`Added ${fmtMins(minsToAdd)} to every ${day} in your weekly schedule`);
   };
 
   const handleRebalance = () => {
@@ -197,33 +197,55 @@ export default function TodayTab({ manualTasks, weekSetup, onOpenWeeklySetup, on
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">AI recommendation</p>
             {isAtRisk ? (
               <>
-                <p className="text-lg font-bold text-foreground leading-tight mb-1">Add 1 extra hour this week</p>
+                <p className="text-lg font-bold text-foreground leading-tight mb-1">
+                  Top up your week by {fmtMins(Math.max(shortfall, 30))}
+                </p>
                 <div className="flex items-center gap-2 mb-4">
                   <p className="text-sm text-muted-foreground">
                     {recommendedDays[0]
-                      ? <>Best option: Add 1h {recommendedDays[0]} afternoon.</>
+                      ? <>Best option: add a 30-min slot to {recommendedDays[0]} afternoon. Tap once for +30min, twice for +1h.</>
                       : <>Top up your week to cover the shortfall.</>}
                   </p>
                   <span className="text-amber-500 text-xl">↷</span>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {recommendedDays[0] && (
-                    <button
-                      onClick={() => handleAddHourToDay(recommendedDays[0])}
-                      className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
-                      data-testid="button-rec-add-hour-primary"
-                    >
-                      Add 1h {recommendedDays[0]}
-                    </button>
+                    <div className="inline-flex rounded-lg overflow-hidden border border-primary shadow-sm" data-testid="button-rec-add-group-primary">
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[0], 30)}
+                        className="bg-primary text-white text-xs font-bold px-3 py-2 hover:bg-primary/90 transition-colors"
+                        data-testid="button-rec-add-30-primary"
+                      >
+                        +30min {recommendedDays[0]}
+                      </button>
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[0], 60)}
+                        className="bg-primary/80 text-white text-xs font-bold px-3 py-2 border-l border-white/30 hover:bg-primary/90 transition-colors"
+                        data-testid="button-rec-add-60-primary"
+                        aria-label={`Add 1 hour to ${recommendedDays[0]}`}
+                      >
+                        +1h
+                      </button>
+                    </div>
                   )}
                   {recommendedDays[1] && (
-                    <button
-                      onClick={() => handleAddHourToDay(recommendedDays[1])}
-                      className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors"
-                      data-testid="button-rec-add-hour-secondary"
-                    >
-                      Add 1h {recommendedDays[1]}
-                    </button>
+                    <div className="inline-flex rounded-lg overflow-hidden border border-border" data-testid="button-rec-add-group-secondary">
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[1], 30)}
+                        className="bg-white text-foreground text-xs font-bold px-3 py-2 hover:bg-accent transition-colors"
+                        data-testid="button-rec-add-30-secondary"
+                      >
+                        +30min {recommendedDays[1]}
+                      </button>
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[1], 60)}
+                        className="bg-slate-50 text-foreground text-xs font-bold px-3 py-2 border-l border-border hover:bg-accent transition-colors"
+                        data-testid="button-rec-add-60-secondary"
+                        aria-label={`Add 1 hour to ${recommendedDays[1]}`}
+                      >
+                        +1h
+                      </button>
+                    </div>
                   )}
                   <button
                     onClick={handleRebalance}
@@ -290,7 +312,7 @@ export default function TodayTab({ manualTasks, weekSetup, onOpenWeeklySetup, on
         <div className="lg:col-span-3">
           <Runway14Day
             runway={plannerOutput.runway}
-            onAddTimeToDay={handleAddHourToDay}
+            onAddTimeToDay={handleAddMinutesToDay}
           />
         </div>
         <div className="lg:col-span-2">

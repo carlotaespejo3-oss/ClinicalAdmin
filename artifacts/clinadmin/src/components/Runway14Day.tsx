@@ -10,7 +10,7 @@ interface Props {
   // the weekly availability schedule. Only week-1 days expose this
   // action — week 2 is the same recurring schedule, so adding to Thu
   // affects both rows.
-  onAddTimeToDay?: (dayLabel: string) => void;
+  onAddTimeToDay?: (dayLabel: string, minutes?: number) => void;
 }
 
 const CAT_BAR_COLOR: Record<string, string> = {
@@ -304,16 +304,28 @@ export default function Runway14Day({ runway, onDayClick, onAddTimeToDay }: Prop
                       {d.flags.join('; ')}
                     </div>
                     {canAct && onAddTimeToDay && (
-                      <button
-                        type="button"
-                        onClick={() => onAddTimeToDay(d.dayLabel)}
-                        data-testid={`runway-flag-${d.dayIndex}-action`}
-                        title={`Adds 1 hour to every ${d.dayLabel} in your recurring weekly schedule`}
-                        aria-label={`Add 1 hour to ${d.dayLabel}s in your weekly schedule`}
-                        className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-primary border border-primary/30 hover:bg-primary/5 px-2 py-0.5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
-                      >
-                        + Add 1h {d.dayLabel}
-                      </button>
+                      <div className="flex-shrink-0 inline-flex rounded-full overflow-hidden border border-primary/30">
+                        <button
+                          type="button"
+                          onClick={() => onAddTimeToDay(d.dayLabel, 30)}
+                          data-testid={`runway-flag-${d.dayIndex}-action`}
+                          title={`Adds 30 minutes to every ${d.dayLabel} in your recurring weekly schedule`}
+                          aria-label={`Add 30 minutes to ${d.dayLabel}s in your weekly schedule`}
+                          className="text-[11px] font-bold text-primary hover:bg-primary/5 px-2 py-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          +30min {d.dayLabel}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAddTimeToDay(d.dayLabel, 60)}
+                          data-testid={`runway-flag-${d.dayIndex}-action-1h`}
+                          title={`Adds 1 hour to every ${d.dayLabel} in your recurring weekly schedule`}
+                          aria-label={`Add 1 hour to ${d.dayLabel}s in your weekly schedule`}
+                          className="text-[11px] font-bold text-primary hover:bg-primary/5 px-2 py-0.5 border-l border-primary/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          +1h
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
