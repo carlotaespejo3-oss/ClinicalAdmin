@@ -257,6 +257,13 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
         todaysPlan={plannerOutput.todaysPlan}
         overallStatus={plannerOutput.overallStatus}
         unclearCount={plannerOutput.unclearCount}
+        onTriageUnclear={() => {
+          // Jump to the inbox and open the first unclassified email so the
+          // clinician lands directly on the thing they need to triage.
+          const firstId = plannerOutput.unclearEmailIds[0];
+          if (firstId != null) onOpenEmail(firstId);
+          onNavigate('Emails');
+        }}
         onItemClick={(item) => {
           if (typeof item.refId === 'number') {
             onOpenEmail(item.refId);

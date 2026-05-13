@@ -1,4 +1,4 @@
-import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2 } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DailyPlan, PlanItem, OverallStatus } from '@/lib/planner';
 
@@ -6,6 +6,7 @@ interface Props {
   todaysPlan: DailyPlan;
   overallStatus: OverallStatus;
   unclearCount: number;
+  onTriageUnclear?: () => void;
   onItemClick?: (item: PlanItem) => void;
 }
 
@@ -52,14 +53,28 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   const isLinked = item.reason === 'linked_task';
 
   if (isUnclearGate) {
+    const Wrapper: any = onClick ? 'button' : 'div';
     return (
-      <div className="flex items-start gap-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3" data-testid="planner-item-unclear-gate">
+      <Wrapper
+        type={onClick ? 'button' : undefined}
+        onClick={onClick}
+        className={cn(
+          'w-full flex items-start gap-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-left transition-colors',
+          onClick && 'hover:bg-amber-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400',
+        )}
+        data-testid="planner-item-unclear-gate"
+      >
         <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-amber-600" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-amber-900">{item.title}</div>
           <div className="text-xs text-amber-800 mt-0.5">{item.detail}</div>
         </div>
-      </div>
+        {onClick && (
+          <span className="text-[11px] font-bold text-amber-700 whitespace-nowrap mt-0.5 flex items-center gap-0.5">
+            Triage now <ChevronRight size={12} />
+          </span>
+        )}
+      </Wrapper>
     );
   }
 
@@ -112,7 +127,7 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   );
 }
 
-export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, onItemClick }: Props) {
+export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, onTriageUnclear, onItemClick }: Props) {
   const theme = STATUS_THEME[overallStatus];
   const items = todaysPlan.items;
   const hasItems = items.length > 0;
@@ -160,13 +175,16 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, on
               <li key={`${item.kind}:${item.refId ?? i}`}>
                 <ItemRow
                   item={item}
-                  // Allow clicks on both emails (numeric refId) and tasks
-                  // (string refId). The unclear-gate row is rendered as a
-                  // banner and intentionally non-clickable.
+                  // Email rows (numeric refId) and task rows (string refId)
+                  // open the relevant detail. The unclear-gate banner uses
+                  // its own onTriageUnclear handler so it can jump straight
+                  // to the inbox filtered to the unclassified emails.
                   onClick={
-                    onItemClick && item.refId != null && item.kind !== 'unclear_gate'
-                      ? () => onItemClick(item)
-                      : undefined
+                    item.kind === 'unclear_gate'
+                      ? onTriageUnclear
+                      : onItemClick && item.refId != null
+                        ? () => onItemClick(item)
+                        : undefined
                   }
                 />
               </li>
@@ -186,9 +204,21 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, on
         )}
 
         {unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
-          <div className="text-xs text-amber-700 px-1 pt-1">
-            {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
-          </div>
+          onTriageUnclear ? (
+            <button
+              type="button"
+              onClick={onTriageUnclear}
+              className="text-xs text-amber-700 hover:text-amber-900 hover:underline px-1 pt-1 inline-flex items-center gap-1"
+              data-testid="link-triage-unclear-trailing"
+            >
+              {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+              <ChevronRight size={11} />
+            </button>
+          ) : (
+            <div className="text-xs text-amber-700 px-1 pt-1">
+              {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+            </div>
+          )
         )}
       </div>
     </div>

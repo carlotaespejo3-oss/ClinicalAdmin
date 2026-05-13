@@ -193,6 +193,7 @@ export interface ProjectedReservation {
 export interface PlannerOutput {
   todayDate: string;
   unclearCount: number;
+  unclearEmailIds: number[];
   todaysPlan: DailyPlan;
   runway: DailyPlan[];
   overallStatus: OverallStatus;
@@ -440,7 +441,8 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // 2 — UNCLEAR gate: if any unclear emails exist, that's the first
   //    item on today's plan. Doesn't consume real capacity — it's a
   //    "do this before everything else" prompt.
-  const unclearCount = input.emails.filter((e) => e.unclear).length;
+  const unclearEmailIds = input.emails.filter((e) => e.unclear).map((e) => e.id);
+  const unclearCount = unclearEmailIds.length;
   if (unclearCount > 0 && runway.length > 0) {
     runway[0].items.push({
       kind: 'unclear_gate',
@@ -760,6 +762,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   return {
     todayDate: runway[0]?.date ?? '',
     unclearCount,
+    unclearEmailIds,
     todaysPlan: cleanRunway[0],
     runway: cleanRunway,
     overallStatus,
