@@ -6,6 +6,7 @@ import { useAiClassifications } from './aiClassifyStore';
 import { useLinkedDocTasks } from './linkedDocTasksStore';
 import { useAcknowledgedEmails } from './acknowledgedStore';
 import { useArchivedEmails } from './archivedStore';
+import { useArrivalsConfig } from './arrivalsConfigStore';
 import { buildPlannerInput } from './plannerAdapter';
 import { buildPlan, type PlannerOutput } from './planner';
 
@@ -23,6 +24,7 @@ export function usePlannerOutput(
   const linkedDocTasks = useLinkedDocTasks();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
+  const arrivals = useArrivalsConfig();
 
   return useMemo(() => {
     const input = buildPlannerInput({
@@ -34,6 +36,6 @@ export function usePlannerOutput(
       weekSetup,
       excludeEmailId: (id) => acknowledged.has(id) || archived.has(id),
     });
-    return buildPlan(input);
-  }, [classifications, linkedDocTasks, manualTasks, weekSetup, acknowledged, archived]);
+    return buildPlan({ ...input, arrivals });
+  }, [classifications, linkedDocTasks, manualTasks, weekSetup, acknowledged, archived, arrivals]);
 }

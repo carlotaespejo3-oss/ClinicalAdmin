@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, TrendingUp, CheckCircle2, Sparkles, Loader2, Mail } from 'lucide-react';
+import { AlertTriangle, TrendingUp, CheckCircle2, Sparkles, Loader2, Mail, Wand2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { emails, CAT } from '@/lib/data';
 import { cn, getEmailPriority } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useAiClassifications } from '@/lib/aiClassifyStore';
+import { useArrivalsConfig, setArrivalsConfig, resetArrivalsConfig } from '@/lib/arrivalsConfigStore';
+import { recommendArrivals } from '@/lib/arrivalsLearning';
+import { DEFAULT_ARRIVAL_CONFIG } from '@/lib/planner';
 import type { WeekSetup } from '../pages/ClinAdmin';
 
 interface Props {
@@ -13,7 +16,6 @@ interface Props {
   onOpenWeeklySetup: () => void;
 }
 
-const NEW_PER_WEEK = 60;
 const HIGH_SLA_DAYS = 5;
 const LOW_SLA_DAYS = 14;
 
@@ -30,8 +32,24 @@ export default function ForecastTab({ weekSetup, onOpenWeeklySetup }: Props) {
   // Subscribe so memos below recompute when classifications stream in
   // and mutate emails[].estMin via the rules-based estimator.
   const classifications = useAiClassifications();
+  const arrivalsConfig = useArrivalsConfig();
+  const NEW_PER_WEEK = arrivalsConfig.emailsPerWeek;
   const [aiNote, setAiNote] = useState<string>('');
   const [aiError, setAiError] = useState<string>('');
+  const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
+
+  // ---- Suggest-mode self-learning over observed email history ----
+  const arrivalsSuggestion = useMemo(
+    () => recommendArrivals(emails, new Date(), arrivalsConfig),
+    [acknowledged, classifications, arrivalsConfig],
+  );
+  const showSuggestion =
+    !dismissedSuggestion &&
+    arrivalsSuggestion.recommendation !== null &&
+    arrivalsSuggestion.diff !== null &&
+    Math.abs(arrivalsSuggestion.diff.emailsPerWeekDeltaPct) >= 10;
+  const showInsufficientHistory =
+    !dismissedSuggestion && arrivalsSuggestion.observed === null;
 
   // Available hours per week (from settings, or sensible default)
   const weeklyCapacityH = weekSetup?.hours ?? 4;
@@ -206,8 +224,114 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
   const status: 'ok' | 'tight' | 'short' =
     weeklyCapacityMin >= requiredThisWeekMin ? 'ok' : weeklyCapacityMin >= minimumSafeThisWeekMin ? 'tight' : 'short';
 
+  const isCustomConfig =
+    arrivalsConfig.emailsPerWeek !== DEFAULT_ARRIVAL_CONFIG.emailsPerWeek ||
+    arrivalsConfig.highPerWeek !== DEFAULT_ARRIVAL_CONFIG.highPerWeek ||
+    arrivalsConfig.mediumPerWeek !== DEFAULT_ARRIVAL_CONFIG.mediumPerWeek ||
+    arrivalsConfig.highReserveMin !== DEFAULT_ARRIVAL_CONFIG.highReserveMin ||
+    arrivalsConfig.mediumReserveMin !== DEFAULT_ARRIVAL_CONFIG.mediumReserveMin ||
+    arrivalsConfig.lowReserveMin !== DEFAULT_ARRIVAL_CONFIG.lowReserveMin;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Self-learning suggestion banner */}
+      {showSuggestion && arrivalsSuggestion.recommendation && arrivalsSuggestion.observed && (
+        <Card className="border-2 border-blue-200 bg-blue-50/40">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-blue-100 text-blue-700 flex-shrink-0">
+                <Wand2 size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-900/70 mb-1">
+                  Suggestion · learned from your last {arrivalsSuggestion.observed.weeksObserved} weeks
+                </p>
+                <h3 className="text-base font-bold mb-2">
+                  Adjust the planner's expected arrival rate
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {arrivalsConfig.emailsPerWeek}/wk → <strong className="text-blue-700">{arrivalsSuggestion.recommendation.emailsPerWeek}/wk</strong>
+                  </span>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">{arrivalsSuggestion.reason}</p>
+                <div className="grid grid-cols-3 gap-3 mb-3 text-xs">
+                  <div className="rounded border border-border/60 bg-background p-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">High</p>
+                    <p className="font-bold tabular-nums">
+                      {arrivalsConfig.highPerWeek}/wk → <span className="text-blue-700">{arrivalsSuggestion.recommendation.highPerWeek}/wk</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">reserve {arrivalsConfig.highReserveMin}m → {arrivalsSuggestion.recommendation.highReserveMin}m</p>
+                  </div>
+                  <div className="rounded border border-border/60 bg-background p-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Medium</p>
+                    <p className="font-bold tabular-nums">
+                      {arrivalsConfig.mediumPerWeek}/wk → <span className="text-blue-700">{arrivalsSuggestion.recommendation.mediumPerWeek}/wk</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">reserve {arrivalsConfig.mediumReserveMin}m → {arrivalsSuggestion.recommendation.mediumReserveMin}m</p>
+                  </div>
+                  <div className="rounded border border-border/60 bg-background p-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Low</p>
+                    <p className="font-bold tabular-nums">
+                      reserve {arrivalsConfig.lowReserveMin}m → <span className="text-blue-700">{arrivalsSuggestion.recommendation.lowReserveMin}m</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button
+                    onClick={() => {
+                      if (arrivalsSuggestion.recommendation) setArrivalsConfig(arrivalsSuggestion.recommendation);
+                    }}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors uppercase tracking-wider"
+                    data-testid="button-apply-arrivals-suggestion"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => setDismissedSuggestion(true)}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border hover:bg-muted/50 transition-colors uppercase tracking-wider"
+                    data-testid="button-dismiss-arrivals-suggestion"
+                  >
+                    Not now
+                  </button>
+                  <span className="text-[10px] text-muted-foreground ml-auto">
+                    Confidence: <strong className="text-foreground">{arrivalsSuggestion.confidence}</strong> · You stay in control — nothing changes until you click Apply.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Insufficient history — be transparent about why suggest-mode is unavailable */}
+      {showInsufficientHistory && !isCustomConfig && (
+        <div className="flex items-start gap-3 text-xs text-muted-foreground bg-muted/30 border border-dashed border-border/60 rounded-lg px-3 py-2.5">
+          <Wand2 size={14} className="text-muted-foreground/70 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-bold text-foreground/80 mb-0.5">Auto-tuning is warming up</p>
+            <p>{arrivalsSuggestion.reason} Until then, the planner uses the default of {DEFAULT_ARRIVAL_CONFIG.emailsPerWeek} emails/week.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Custom-config indicator: show when planner is using a non-default arrivals config */}
+      {isCustomConfig && !showSuggestion && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 border border-border/60 rounded-lg px-3 py-2">
+          <span>
+            Planner is using your tuned arrivals config: <strong className="text-foreground">{arrivalsConfig.emailsPerWeek}/wk</strong> ({arrivalsConfig.highPerWeek}H / {arrivalsConfig.mediumPerWeek}M).
+          </span>
+          <button
+            onClick={() => {
+              resetArrivalsConfig();
+              setDismissedSuggestion(false);
+            }}
+            className="text-[11px] font-bold uppercase tracking-wider hover:text-foreground transition-colors"
+            data-testid="button-reset-arrivals-config"
+          >
+            Reset to default
+          </button>
+        </div>
+      )}
+
       {/* Headline */}
       <Card className={cn(
         "border-2",
