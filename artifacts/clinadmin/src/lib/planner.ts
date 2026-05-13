@@ -24,11 +24,13 @@
 //   per spec: "Every day with any admin time must include at least 15
 //   minutes of low priority email clearing, regardless of how many
 //   urgent or medium items exist."
-// - Urgent items may dip into the low-quota slot if their natural
-//   capacity is exhausted (otherwise an urgent item could be deferred
-//   while a 15-min slot sits empty). Medium items may NOT — per spec,
-//   "always keep the Step 5 low priority allocation even if it means
-//   deferring some medium priority items."
+// - ONLY overdue items may dip into the protected low-quota slot —
+//   their SLA is already violated, so any further delay is worse than
+//   displacing 15 min of low-priority clearing. Urgent items have a
+//   48h window and are postponed to the next admin day instead of
+//   cannibalising today's low quota. Medium items may NOT dip either,
+//   per spec: "always keep the Step 5 low priority allocation even if
+//   it means deferring some medium priority items."
 
 import type { AiCategory } from './types';
 

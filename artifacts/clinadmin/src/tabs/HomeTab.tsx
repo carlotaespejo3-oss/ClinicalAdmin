@@ -507,46 +507,45 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
         }}
       />
 
-      {/* Risk / Status Banner */}
+      {/* Risk / Status Banner — left side now driven by deterministic planner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
-          {/* Left — status */}
-          <div className="p-6 flex items-start gap-4">
-            <div className={cn(
-              "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0",
-              isAtRisk ? "bg-amber-100" : "bg-green-100"
-            )}>
-              {isAtRisk
-                ? <AlertTriangle size={24} className="text-amber-500" />
-                : <CheckCircle2 size={24} className="text-green-600" />
-              }
-            </div>
-            <div className="space-y-1.5">
-              <p className="text-sm text-muted-foreground font-medium">You're currently:</p>
-              <p className={cn("text-xl font-bold", isAtRisk ? "text-amber-600" : "text-green-600")}>
-                {isAtRisk ? 'At risk' : 'On track'}
-              </p>
-              {isAtRisk ? (
-                <>
-                  <p className="text-sm text-foreground">
-                    You have <strong>{fmtMins(allocatedMins)}</strong> booked
-                    {activeDays.length > 0 && <> across <strong>{activeDays.join(', ')}</strong></>}.
+          {/* Left — status (planner-driven) */}
+          {(() => {
+            const status = plannerOutput.overallStatus;
+            const styles = {
+              red:   { bg: 'bg-red-100',   icon: 'text-red-600',   text: 'text-red-600',   Ico: ShieldAlert    },
+              amber: { bg: 'bg-amber-100', icon: 'text-amber-500', text: 'text-amber-600', Ico: AlertTriangle  },
+              green: { bg: 'bg-green-100', icon: 'text-green-600', text: 'text-green-600', Ico: CheckCircle2   },
+            }[status];
+            const Ico = styles.Ico;
+            const youAre = status === 'red' ? 'Behind' : status === 'amber' ? 'Tight' : 'On track';
+            return (
+              <div className="p-6 flex items-start gap-4" data-testid={`status-banner-${status}`}>
+                <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', styles.bg)}>
+                  <Ico size={24} className={styles.icon} />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-sm text-muted-foreground font-medium">You're currently:</p>
+                  <p className={cn('text-xl font-bold', styles.text)} data-testid="status-banner-headline">
+                    {youAre} — {plannerOutput.statusHeadline}
                   </p>
-                  <p className="text-sm font-medium text-amber-600">
-                    Based on current workload and historical trends you will likely need to add {fmtMins(shortfall)} more.
+                  <p className="text-sm text-foreground" data-testid="status-banner-detail">
+                    {plannerOutput.statusDetail}
                   </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-foreground">
+                  <p className="text-xs text-muted-foreground">
                     You have <strong>{fmtMins(allocatedMins)}</strong> admin booked this week
                     {activeDays.length > 0 && <> across <strong>{activeDays.join(', ')}</strong></>}.
                   </p>
-                  <p className="text-sm text-muted-foreground">Your allocation covers this week's workload.</p>
-                </>
-              )}
-            </div>
-          </div>
+                  {plannerOutput.recommendation && (
+                    <p className={cn('text-sm font-medium', styles.text)} data-testid="status-banner-recommendation">
+                      {plannerOutput.recommendation}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Right — AI recommendation */}
           <div className="p-6 bg-slate-50/60 border-l border-border">
