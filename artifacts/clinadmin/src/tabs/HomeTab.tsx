@@ -11,6 +11,7 @@ import { useArchivedEmails } from '@/lib/archivedStore';
 import { buildPlannerInput } from '@/lib/plannerAdapter';
 import { buildPlan } from '@/lib/planner';
 import TodaysPlan from '@/components/TodaysPlan';
+import Runway14Day from '@/components/Runway14Day';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -506,6 +507,9 @@ export default function HomeTab({ sidebarTasks, onToggleSidebarTask, manualTasks
           }
         }}
       />
+
+      {/* 14-day runway — deterministic planner output, two-week overview */}
+      <Runway14Day runway={plannerOutput.runway} />
 
       {/* Risk / Status Banner — left side now driven by deterministic planner */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
