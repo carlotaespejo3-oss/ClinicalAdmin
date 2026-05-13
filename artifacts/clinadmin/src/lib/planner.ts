@@ -542,6 +542,15 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     // Pack-tight: place on the earliest day with enough capacity. The user
     // wants today fully used before tomorrow, tomorrow before the day after,
     // etc., so they clear as much as possible per scheduled minute.
+    //
+    // We try in order:
+    //   1) bookableMin (+ low-quota slot for overdue items)
+    //   2) the day's remaining TOTAL capacity (minutesAvailable -
+    //      totalPlannedMin). This lets real existing work tap into
+    //      minutes that were notionally held back for "projected
+    //      arrivals" — it's better to schedule work on a day with
+    //      actual free time than skip the day and stuff it into a
+    //      packed earlier day or push it out to next week.
     let placedOnIdx = -1;
     for (let i = 0; i < runway.length; i++) {
       const d = runway[i];
@@ -551,6 +560,23 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
         break;
       }
     }
+    if (placedOnIdx === -1) {
+      // Fallback: scan again allowing the day's reserved-for-arrivals
+      // minutes to be used. We still:
+      //   - respect the per-day total capacity (never overbook a real day)
+      //   - protect the daily low-priority quota slot (medium/urgent must
+      //     not cannibalise the daily admin clearance) UNLESS the caller
+      //     explicitly opted in via dipIntoLowQuota
+      for (let i = 0; i < runway.length; i++) {
+        const d = runway[i];
+        const reservedFloor = dipIntoLowQuota ? 0 : d.lowQuotaRemainingMin;
+        const remainingTotal = d.minutesAvailable - d.totalPlannedMin - reservedFloor;
+        if (remainingTotal >= need) {
+          placedOnIdx = i;
+          break;
+        }
+      }
+    }
     if (placedOnIdx === -1) return false;
 
     const day = runway[placedOnIdx];
@@ -558,7 +584,16 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     const fromBookable = Math.min(toConsume, day.bookableMin);
     day.bookableMin -= fromBookable;
     toConsume -= fromBookable;
-    if (toConsume > 0) day.lowQuotaRemainingMin -= toConsume;
+    if (toConsume > 0 && dipIntoLowQuota) {
+      const fromQuota = Math.min(toConsume, day.lowQuotaRemainingMin);
+      day.lowQuotaRemainingMin -= fromQuota;
+      toConsume -= fromQuota;
+    }
+    // Remaining minutes (if any) come from the reserved-for-arrivals
+    // pool. We don't track that pool per-day separately; the per-day
+    // `minutesAvailable - totalPlannedMin` invariant stays correct
+    // because we add to totalPlannedMin below regardless.
+
 
     for (const wi of pair.items) {
       day.items.push(planItemFromWork(wi));

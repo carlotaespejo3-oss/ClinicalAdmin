@@ -430,11 +430,13 @@ describe('buildPlan — projected workload reservation', () => {
     assert.equal(out.deferredItems.length, 0);
   });
 
-  it('defers when even week-2 capacity is exhausted by reservation + work', () => {
-    // Only one admin day in the entire 14-day window. Reservation eats
-    // it. Anything else has nowhere to go.
-    const avail = buildAvailability(MONDAY, { Tue: 1 }, { days: 7 });
-    // Pad to 14 days with empty days so the runway shape is consistent.
+  it('defers only when there is no real availability anywhere in the runway', () => {
+    // Real existing work should NEVER be deferred just because the
+    // projected-arrivals reservation notionally claimed every minute —
+    // the reservation is for hypothetical future emails, real ones in
+    // hand take priority. To truly force a deferral the runway must
+    // have zero scheduleable minutes.
+    const avail = buildAvailability(MONDAY, {}, { days: 7 });
     while (avail.length < 14) {
       const last = avail[avail.length - 1];
       const d = new Date(last.date);
@@ -454,5 +456,35 @@ describe('buildPlan — projected workload reservation', () => {
       }),
     );
     assert.equal(out.deferredItems.length, 1);
+  });
+
+  it('places real work onto a day even when reservation claimed all of it', () => {
+    // Inverse of the test above: when there IS some availability but
+    // the projected-arrivals reservation has eaten the bookable pool,
+    // a real existing item must still be scheduled (not deferred or
+    // pushed past its deadline). This is the "Thursday looks empty
+    // even though I have an hour free" bug.
+    const avail = buildAvailability(MONDAY, { Tue: 1 }, { days: 7 });
+    while (avail.length < 14) {
+      const last = avail[avail.length - 1];
+      const d = new Date(last.date);
+      d.setDate(d.getDate() + 1);
+      avail.push({
+        date: d.toISOString().slice(0, 10),
+        dayLabel: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()],
+        displayLabel: 'pad',
+        minutesAvailable: 0,
+      });
+    }
+    const out = buildPlan(
+      baseInput({
+        availability: avail,
+        emails: [makeEmail({ id: 1, category: 'ADMIN', estMin: 5, deadlineDays: 14 })],
+        arrivals: DEFAULT_ARRIVAL_CONFIG,
+      }),
+    );
+    assert.equal(out.deferredItems.length, 0);
+    const tue = out.runway[1];
+    assert.ok(tue.items.find((i) => i.refId === 1), 'item lands on Tue despite reservation');
   });
 });
