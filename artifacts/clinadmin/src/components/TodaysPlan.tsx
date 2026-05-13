@@ -1,4 +1,4 @@
-import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2, ChevronRight } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2, ChevronRight, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DailyPlan, PlanItem, OverallStatus } from '@/lib/planner';
 
@@ -15,6 +15,13 @@ interface Props {
   unclearEmails?: UnclearEmailSummary[];
   onTriageUnclear?: (id: number) => void;
   onItemClick?: (item: PlanItem) => void;
+  // Day navigation — when provided, the header shows prev/next chevrons
+  // so the clinician can step through the runway without leaving Home.
+  dayIndex?: number;
+  totalDays?: number;
+  onPrevDay?: () => void;
+  onNextDay?: () => void;
+  onJumpToday?: () => void;
 }
 
 function fmtMin(min: number): string {
@@ -160,22 +167,89 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   );
 }
 
-export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, unclearEmails, onTriageUnclear, onItemClick }: Props) {
+export default function TodaysPlan({
+  todaysPlan,
+  overallStatus,
+  unclearCount,
+  unclearEmails,
+  onTriageUnclear,
+  onItemClick,
+  dayIndex,
+  totalDays,
+  onPrevDay,
+  onNextDay,
+  onJumpToday,
+}: Props) {
   const theme = STATUS_THEME[overallStatus];
   const items = todaysPlan.items;
   const hasItems = items.length > 0;
   const idle = todaysPlan.minutesAvailable === 0;
+  const isToday = dayIndex == null || dayIndex === 0;
+  const navEnabled = dayIndex != null && totalDays != null && totalDays > 1;
+  const canPrev = navEnabled && dayIndex! > 0;
+  const canNext = navEnabled && dayIndex! < totalDays! - 1;
+  // Title: "Today's plan" on day 0, "Tomorrow's plan" on day 1, otherwise
+  // the day label ("Wed's plan"). Empty days still get a title.
+  const headerTitle = isToday
+    ? "Today's plan"
+    : dayIndex === 1
+      ? "Tomorrow's plan"
+      : `${todaysPlan.dayLabel}'s plan`;
 
   return (
     <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden" data-testid="todays-plan-card">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
+          {navEnabled && (
+            <button
+              type="button"
+              onClick={canPrev ? onPrevDay : undefined}
+              disabled={!canPrev}
+              className={cn(
+                'w-8 h-8 flex items-center justify-center rounded-full border border-border transition-colors flex-shrink-0',
+                canPrev ? 'hover:bg-slate-100 text-slate-700' : 'text-slate-300 cursor-not-allowed',
+              )}
+              aria-label="Previous day"
+              data-testid="day-nav-prev"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
           <span className={cn('w-2.5 h-2.5 rounded-full ring-4', theme.dot, theme.ring)} aria-hidden />
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-foreground">Today's plan</h2>
-            <p className="text-xs text-muted-foreground">{todaysPlan.displayLabel}</p>
+            <h2 className="text-base font-bold text-foreground" data-testid="day-plan-title">
+              {headerTitle}
+            </h2>
+            <p className="text-xs text-muted-foreground flex items-center gap-2">
+              <span>{todaysPlan.displayLabel}</span>
+              {!isToday && onJumpToday && (
+                <button
+                  type="button"
+                  onClick={onJumpToday}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline"
+                  data-testid="day-nav-today"
+                >
+                  ← back to today
+                </button>
+              )}
+            </p>
           </div>
+          {navEnabled && (
+            <button
+              type="button"
+              onClick={canNext ? onNextDay : undefined}
+              disabled={!canNext}
+              className={cn(
+                'w-8 h-8 flex items-center justify-center rounded-full border border-border transition-colors flex-shrink-0',
+                canNext ? 'hover:bg-slate-100 text-slate-700' : 'text-slate-300 cursor-not-allowed',
+              )}
+              aria-label="Next day"
+              data-testid="day-nav-next"
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
         </div>
         <div className="text-right">
           <div className="text-xs text-muted-foreground">Planned / available</div>
@@ -238,7 +312,9 @@ export default function TodaysPlan({ todaysPlan, overallStatus, unclearCount, un
           </div>
         )}
 
-        {unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
+        {/* Trailing "X emails still need classifying" only makes sense on
+            today's view — the unclear gate is a today-only prompt. */}
+        {isToday && unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
           onTriageUnclear && unclearEmails && unclearEmails[0] ? (
             <button
               type="button"

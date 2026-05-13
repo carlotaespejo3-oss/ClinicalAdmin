@@ -37,6 +37,14 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
   const archived = useArchivedEmails();
   const plannerOutput = usePlannerOutput(manualTasks, weekSetup);
 
+  // Day navigation in the Home dashboard — clinician can step through the
+  // runway with prev/next chevrons to see how the AI organised the week.
+  // Default = today (index 0). Clamps if the runway shrinks under us.
+  const [dayIndex, setDayIndex] = useState(0);
+  const runwayLen = plannerOutput.runway.length;
+  const safeDayIndex = Math.min(dayIndex, Math.max(0, runwayLen - 1));
+  const currentDay = plannerOutput.runway[safeDayIndex] ?? plannerOutput.todaysPlan;
+
   const isLinkedDocTask = (t: ManualTask) =>
     !!t.linkedEmailId && linkedDocTasks.has(t.linkedEmailId);
 
@@ -254,9 +262,14 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
           tasks, week setup), so it recomputes the moment any of those
           change in another tab. */}
       <TodaysPlan
-        todaysPlan={plannerOutput.todaysPlan}
+        todaysPlan={currentDay}
         overallStatus={plannerOutput.overallStatus}
         unclearCount={plannerOutput.unclearCount}
+        dayIndex={safeDayIndex}
+        totalDays={runwayLen}
+        onPrevDay={() => setDayIndex(i => Math.max(0, i - 1))}
+        onNextDay={() => setDayIndex(i => Math.min(runwayLen - 1, i + 1))}
+        onJumpToday={() => setDayIndex(0)}
         // Pass the full list so the gate banner can render every unclear
         // email as its own clickable row — the clinician can work through
         // them one after another (each classification removes its row via
