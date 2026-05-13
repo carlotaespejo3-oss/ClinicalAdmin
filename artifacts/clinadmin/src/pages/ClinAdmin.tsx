@@ -288,7 +288,7 @@ export default function ClinAdmin() {
   const renderTab = () => {
     switch (activeTab) {
       case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
-      case 'Detailed View': return <TodayTab />;
+      case 'Detailed View': return <TodayTab manualTasks={manualTaskList} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'Archive': return <ArchiveTab />;
       case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
