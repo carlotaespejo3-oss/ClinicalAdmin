@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { classifyEmail, type RunPrompt } from './classifyEmail.ts';
+import { classifyEmail, classifyQueue, type RunPrompt } from './classifyEmail.ts';
 import type {
   AiCategory,
   AiClassification,
@@ -441,6 +441,258 @@ describe('classifyEmail — output validation safeguards (parsing layer only)', 
       fixedStub({ category: 'NONE', priority: 'LOW', confidence: -0.5 }),
     );
     assert.equal(tooLow.confidence, 0);
+  });
+});
+
+// =============================================================================
+// classifyQueue — batch runner tests.
+//
+// Guards the worker-pool that fans classifyEmail out across the inbox. The
+// regressions we are catching are the ones the user actually feels:
+//   - emails being silently dropped from triage
+//   - one bad email blocking the whole queue
+//   - aborting a run still letting late results dribble in
+//   - concurrency limit being ignored, hammering the model
+// =============================================================================
+
+function queueEmail(id: number): Email {
+  return makeEmail({ id, body: `body ${id}`, subject: `subj ${id}` });
+}
+
+// A controllable RunPrompt: each call returns a Promise the test resolves
+// or rejects on demand. Lets us observe in-flight count precisely.
+function makeControllablePrompt() {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const pending: Array<{
+    resolve: (v: string) => void;
+    reject: (e: unknown) => void;
+    onStart: () => void;
+  }> = [];
+  const waitersForCount: Array<{ n: number; resolve: () => void }> = [];
+
+  const tryWake = () => {
+    for (let i = waitersForCount.length - 1; i >= 0; i--) {
+      if (pending.length >= waitersForCount[i].n) {
+        waitersForCount[i].resolve();
+        waitersForCount.splice(i, 1);
+      }
+    }
+  };
+
+  const runPrompt: RunPrompt = () =>
+    new Promise<string>((resolve, reject) => {
+      const entry = {
+        resolve,
+        reject,
+        onStart: () => {
+          inFlight++;
+          if (inFlight > maxInFlight) maxInFlight = inFlight;
+        },
+      };
+      pending.push(entry);
+      entry.onStart();
+      tryWake();
+    });
+
+  return {
+    runPrompt,
+    get pendingCount() {
+      return pending.length;
+    },
+    get maxInFlight() {
+      return maxInFlight;
+    },
+    waitForPending(n: number) {
+      if (pending.length >= n) return Promise.resolve();
+      return new Promise<void>((resolve) => waitersForCount.push({ n, resolve }));
+    },
+    resolveNext(payload: Partial<{ category: string; priority: string }> = {}) {
+      const next = pending.shift();
+      if (!next) throw new Error('no pending prompt to resolve');
+      inFlight--;
+      next.resolve(
+        JSON.stringify({
+          category: payload.category ?? 'NONE',
+          priority: payload.priority ?? 'LOW',
+          confidence: 0.9,
+          reasoning: 'ok',
+          professionalSubType: null,
+          patientName: null,
+          documentRequested: null,
+          eventDate: null,
+          registrationDeadline: null,
+          requiresDocument: false,
+          documentType: null,
+          documentDueDays: null,
+        }),
+      );
+    },
+    rejectNext(err: unknown) {
+      const next = pending.shift();
+      if (!next) throw new Error('no pending prompt to reject');
+      inFlight--;
+      next.reject(err);
+    },
+  };
+}
+
+describe('classifyQueue — batch runner', () => {
+  it('classifies every email and calls onResult exactly once per email', async () => {
+    const emails = [queueEmail(1), queueEmail(2), queueEmail(3), queueEmail(4)];
+    const results: AiClassification[] = [];
+    const ctl = makeControllablePrompt();
+
+    const done = classifyQueue(
+      emails,
+      ctl.runPrompt,
+      (c) => results.push(c),
+      { concurrency: 2 },
+    );
+
+    // Drain the queue, resolving as work appears.
+    while (results.length < emails.length) {
+      await ctl.waitForPending(1);
+      ctl.resolveNext();
+      // Yield so workers can pick up the next item.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await done;
+
+    assert.equal(results.length, emails.length);
+    const ids = results.map((r) => r.emailId).sort((a, b) => a - b);
+    assert.deepEqual(ids, [1, 2, 3, 4]);
+  });
+
+  it('respects the concurrency limit (no more than N in-flight)', async () => {
+    const emails = Array.from({ length: 6 }, (_, i) => queueEmail(i + 1));
+    const ctl = makeControllablePrompt();
+    const concurrency = 2;
+
+    const done = classifyQueue(emails, ctl.runPrompt, () => {}, { concurrency });
+
+    // The pool should ramp up to exactly `concurrency` and never exceed it.
+    await ctl.waitForPending(concurrency);
+    // Give any rogue extra worker a chance to start.
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(ctl.pendingCount, concurrency, 'too many in-flight at start');
+
+    // Drain and keep checking the cap holds throughout.
+    let resolved = 0;
+    while (resolved < emails.length) {
+      ctl.resolveNext();
+      resolved++;
+      await new Promise((r) => setTimeout(r, 0));
+      assert.ok(
+        ctl.pendingCount <= concurrency,
+        `in-flight ${ctl.pendingCount} exceeded limit ${concurrency}`,
+      );
+    }
+    await done;
+
+    assert.equal(ctl.maxInFlight, concurrency, `max in-flight ${ctl.maxInFlight} != ${concurrency}`);
+  });
+
+  it('isolates a failing email: onError fires, other emails still classify', async () => {
+    const emails = [queueEmail(1), queueEmail(2), queueEmail(3)];
+    const results: AiClassification[] = [];
+    const errors: Array<{ id: number; err: unknown }> = [];
+    const ctl = makeControllablePrompt();
+
+    const done = classifyQueue(
+      emails,
+      ctl.runPrompt,
+      (c) => results.push(c),
+      {
+        concurrency: 1,
+        onError: (id, err) => errors.push({ id, err }),
+      },
+    );
+
+    await ctl.waitForPending(1);
+    ctl.rejectNext(new Error('model exploded'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    await ctl.waitForPending(1);
+    ctl.resolveNext();
+    await new Promise((r) => setTimeout(r, 0));
+
+    await ctl.waitForPending(1);
+    ctl.resolveNext();
+    await done;
+
+    assert.equal(errors.length, 1, 'exactly one onError');
+    assert.equal(errors[0].id, 1);
+    assert.match(String((errors[0].err as Error).message), /model exploded/);
+
+    assert.equal(results.length, 2, 'remaining emails still classified');
+    const ids = results.map((r) => r.emailId).sort((a, b) => a - b);
+    assert.deepEqual(ids, [2, 3]);
+  });
+
+  it('aborting the signal stops further onResult calls', async () => {
+    const emails = [queueEmail(1), queueEmail(2), queueEmail(3), queueEmail(4)];
+    const results: AiClassification[] = [];
+    const ctl = makeControllablePrompt();
+    const ac = new AbortController();
+
+    const done = classifyQueue(
+      emails,
+      ctl.runPrompt,
+      (c) => results.push(c),
+      { concurrency: 2, signal: ac.signal },
+    );
+
+    // Let the first two start and complete normally.
+    await ctl.waitForPending(2);
+    ctl.resolveNext();
+    ctl.resolveNext();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(results.length, 2);
+
+    // Two more workers should have picked up the next emails.
+    await ctl.waitForPending(2);
+
+    // Abort, then resolve the in-flight work. Because they finish AFTER the
+    // abort, onResult must NOT be called for them — that is the contract
+    // the UI relies on to stop showing stale rows after a cancel.
+    ac.abort();
+    ctl.resolveNext();
+    ctl.resolveNext();
+    await done;
+
+    assert.equal(results.length, 2, 'no further onResult after abort');
+  });
+
+  it('aborting before any work completes yields zero results', async () => {
+    const emails = [queueEmail(1), queueEmail(2), queueEmail(3)];
+    const results: AiClassification[] = [];
+    const ctl = makeControllablePrompt();
+    const ac = new AbortController();
+
+    const done = classifyQueue(
+      emails,
+      ctl.runPrompt,
+      (c) => results.push(c),
+      { concurrency: 2, signal: ac.signal },
+    );
+
+    await ctl.waitForPending(2);
+    ac.abort();
+    // Drain any in-flight prompts so the workers settle.
+    ctl.resolveNext();
+    ctl.resolveNext();
+    await done;
+
+    assert.equal(results.length, 0);
+  });
+
+  it('handles an empty input list cleanly', async () => {
+    let called = 0;
+    await classifyQueue([], async () => '{}', () => {
+      called++;
+    });
+    assert.equal(called, 0);
   });
 });
 
