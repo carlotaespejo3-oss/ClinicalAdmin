@@ -515,14 +515,17 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   const deferredItems: PlanItem[] = [];
 
   // Helper: try to place a pair on the earliest possible day.
-  // `urgentMode` lets an item dip into the day's low quota if the bookable
-  // capacity alone isn't enough (urgent pairs only, per spec).
-  const placePair = (pair: Pair, urgentMode: boolean): boolean => {
+  // `dipIntoLowQuota` lets an item consume the day's protected low-priority
+  // slot when its bookable capacity alone isn't enough. Only overdue items
+  // get this privilege — urgent items have a 48h SLA and may legitimately
+  // be postponed to tomorrow's bookable capacity rather than cannibalising
+  // today's daily low-priority clearance slot.
+  const placePair = (pair: Pair, dipIntoLowQuota: boolean): boolean => {
     const need = pair.totalMin;
     let placedOnIdx = -1;
     for (let i = 0; i < runway.length; i++) {
       const d = runway[i];
-      const cap = urgentMode ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
+      const cap = dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
       if (cap >= need) {
         placedOnIdx = i;
         break;
@@ -566,10 +569,12 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   };
 
   // 6a — Pack ALL overdue pairs first (any band). Per spec they are
-  //    treated as urgent regardless of original priority. They may dip
-  //    into the day's low quota since SLA is already violated.
+  //    treated as urgent regardless of original priority. Overdue items
+  //    are the ONLY band allowed to dip into the day's protected low
+  //    quota — their SLA is already violated, so any further delay is
+  //    worse than displacing 15 minutes of low-priority clearing.
   for (const pair of overduePairs) {
-    const placed = placePair(pair, /* urgentMode */ true);
+    const placed = placePair(pair, /* dipIntoLowQuota */ true);
     if (!placed) {
       const lead = pair.items[0];
       breaches.push({
@@ -584,10 +589,11 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   }
 
   // 6 — Pack URGENT pairs (safeguarding / urgent_clinical / legal,
-  //    items due today/tomorrow). May dip into the day's low quota
-  //    if needed.
+  //    items due today/tomorrow). Urgent has a 48h window, so postponing
+  //    to the next available admin day is acceptable — it does NOT dip
+  //    into the protected daily low-quota slot.
   for (const pair of urgentPairs) {
-    const placed = placePair(pair, /* urgentMode */ true);
+    const placed = placePair(pair, /* dipIntoLowQuota */ false);
     if (!placed) {
       // Couldn't fit anywhere in 14 days — that's a breach + defer.
       const lead = pair.items[0];
@@ -605,7 +611,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // 7 — Pack MEDIUM pairs into bookable capacity only (must not consume
   //    the protected daily low quota).
   for (const pair of mediumPairs) {
-    const placed = placePair(pair, /* urgentMode */ false);
+    const placed = placePair(pair, /* dipIntoLowQuota */ false);
     if (!placed) {
       const lead = pair.items[0];
       breaches.push({

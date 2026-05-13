@@ -249,23 +249,46 @@ describe('buildPlan — daily low-priority allocation', () => {
     assert.equal(lowItem!.refId, 2);
   });
 
-  it('lets an urgent item dip into the low quota when natural capacity is exhausted', () => {
-    // 30 min capacity, all needed for one safeguarding email (25 min).
-    // Bookable after low reservation = 30 - 15 = 15. Urgent (25) doesn't
-    // fit in bookable alone, so it dips into low quota — which is allowed
-    // for urgent only.
+  it('does NOT let an urgent item dip into the low quota — it postpones to the next admin day instead', () => {
+    // Tue has 30 min capacity → 15 bookable + 15 protected low quota.
+    // Urgent (25 min) with a 48h window (deadlineDays=2) cannot fit in
+    // Tuesday's 15-min bookable and is NOT allowed to cannibalise the
+    // protected low quota. With Wed (60 min) available it should land on
+    // Wednesday — still within the 48h SLA — and Tuesday's low quota
+    // stays intact.
     const out = buildPlan(
       baseInput({
-        availability: buildAvailability(MONDAY, { Tue: 0.5 }),
+        availability: buildAvailability(MONDAY, { Tue: 0.5, Wed: 1 }),
         emails: [
-          makeEmail({ id: 1, category: 'SAFEGUARDING', estMin: 25, deadlineDays: 1 }),
+          makeEmail({ id: 1, category: 'SAFEGUARDING', estMin: 25, deadlineDays: 2 }),
         ],
       }),
     );
     const tue = out.runway[1];
-    const placed = tue.items.find((i) => i.refId === 1);
-    assert.ok(placed, 'safeguarding email was placed despite tight capacity');
+    const wed = out.runway[2];
+    assert.equal(tue.items.find((i) => i.refId === 1), undefined, 'urgent did not land on Tuesday');
+    assert.ok(wed.items.find((i) => i.refId === 1), 'urgent was postponed to Wednesday');
+    // Tuesday's protected low quota (15 min) was not consumed → nothing
+    // unrelated should be planned on Tue beyond the low slot itself.
+    assert.ok(tue.totalPlannedMin <= 15, 'Tuesday low-quota slot was not cannibalised');
+    // Within 48h, so no SLA breach.
     assert.equal(out.breaches.length, 0);
+  });
+
+  it('overdue items DO dip into the low quota since their SLA is already violated', () => {
+    // Same shape as above but the item is already overdue. Overdue
+    // privileges kick in: the 25-min urgent dips into Tuesday's low
+    // quota and lands today rather than tomorrow.
+    const out = buildPlan(
+      baseInput({
+        availability: buildAvailability(MONDAY, { Tue: 0.5, Wed: 1 }),
+        emails: [
+          makeEmail({ id: 1, category: 'URGENT_CLINICAL', estMin: 25, deadlineDays: -1 }),
+        ],
+      }),
+    );
+    const tue = out.runway[1];
+    assert.ok(tue.items.find((i) => i.refId === 1), 'overdue lands on first available day');
   });
 
   it('does NOT let a medium item consume the protected daily low quota', () => {
