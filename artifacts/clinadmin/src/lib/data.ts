@@ -17,7 +17,7 @@ export const CAT = {
 export const emails: Email[] = [
   {
     id: 1,
-    from: 'Sarah Chen (parent)',
+    from: 'Sasha Chenoweth (parent)',
     subject: "Mia hasn't eaten/self-harm ideation",
     preview: "I'm very worried about Mia, she hasn't eaten properly for 2 days and...",
     body: "I'm very worried about Mia, she hasn't eaten properly for 2 days and is talking about self-harm again. Please can you advise what we should do?",
@@ -310,9 +310,9 @@ export const emails: Email[] = [
   {
     id: 23,
     from: 'Reception — CAMHS Outpatient',
-    subject: "FW: Feedback from Niamh's teacher",
+    subject: "FW: Feedback from Naia's teacher",
     preview: "In file. Kind regards, the admin team on behalf of...",
-    body: "Hi Dr Patterson,\n\nIn file. Kind regards,\nThe admin team on behalf of CAMHS Outpatient.\n\nForwarded teacher's note: Niamh has had two settled weeks at school. The new SEMH support plan appears to be helping. Will update the team at the next review.",
+    body: "Hi Dr Patterson,\n\nIn file. Kind regards,\nThe admin team on behalf of CAMHS Outpatient.\n\nForwarded teacher's note: Naia has had two settled weeks at school. The new SEMH support plan appears to be helping. Will update the team at the next review.",
     date: 'Today, 09:43',
     risk: 'low',
     cat: CAT.REVIEW,
@@ -349,7 +349,7 @@ export const emails: Email[] = [
   {
     id: 26,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Referrals — MSFM — Miss Vivienne T.',
+    subject: 'Referrals — MSFM — Miss Vienna T.',
     preview: "Good morning, can you accept this patient? Kind regards...",
     body: "Good morning Dr Patterson,\n\nCan you accept this patient? MSFM referral attached for your decision.\n\nKind regards,\nThe admin team",
     date: 'Today, 08:07',
@@ -456,7 +456,7 @@ export const emails: Email[] = [
   {
     id: 29,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Monty Brougham — uploaded to file',
+    subject: 'Marlow Brockman — uploaded to file',
     preview: "Uploaded to file. Kind regards, the admin team...",
     body: "Hi Dr Patterson,\n\nUploaded to file.\n\nKind regards,\nThe admin team.",
     date: 'Yesterday',
@@ -508,9 +508,9 @@ export const emails: Email[] = [
   {
     id: 33,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'Charlotte Smith — new patient',
+    subject: 'Coralie Smythe — new patient',
     preview: "Are you able to see this patient? Cindy, the admin team...",
-    body: "Hi Dr Patterson,\n\nAre you able to see this patient? Charlotte's mum has asked for an appointment as soon as possible.\n\nKind regards,\nCindy\nThe admin team.",
+    body: "Hi Dr Patterson,\n\nAre you able to see this patient? Coralie's mum has asked for an appointment as soon as possible.\n\nKind regards,\nCindy\nThe admin team.",
     date: 'Yesterday',
     risk: 'low',
     cat: CAT.REVIEW,
@@ -534,7 +534,7 @@ export const emails: Email[] = [
   {
     id: 35,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'VGP PD Specialist Referral — Miss Willow B.',
+    subject: 'VGP PD Specialist Referral — Miss Wynn B.',
     preview: "Hi, please advise if you can see patient...",
     body: "Hi Dr Patterson,\n\nPlease advise if you can see this patient.\n\nKind regards,\nCindy\nThe admin team.",
     date: 'Yesterday',
@@ -560,7 +560,7 @@ export const emails: Email[] = [
   {
     id: 37,
     from: 'Reception — CAMHS Outpatient',
-    subject: 'New Patient Registration — Lowell C.',
+    subject: 'New Patient Registration — Linus C.',
     preview: "Hi, are you able to see this patient? Cindy, kind regards...",
     body: "Hi Dr Patterson,\n\nAre you able to see this patient? New patient registration completed.\n\nKind regards,\nCindy\nThe admin team.",
     date: 'Yesterday',
@@ -746,7 +746,7 @@ export const emails: Email[] = [
   },
   {
     id: 51,
-    from: 'Dr James Mulvany',
+    from: 'Dr James Mullaney',
     subject: 'Re: telehealth at Sentinel',
     preview: "Hi Carlota, sounds great. I've cc'd Bronti on this...",
     body: "Hi Anna,\n\nSounds great. I've cc'd Bronti on this so she can coordinate the telehealth slots for the joint clinic. Will follow up next week.\n\nBest,\nJames",
@@ -760,10 +760,10 @@ export const emails: Email[] = [
   },
   {
     id: 52,
-    from: 'Julie Stephens-Sim (parent)',
+    from: 'Juliet Stevens-Sim (parent)',
     subject: 'Leave dates',
     preview: "Hi Dr Patterson, thank you for your email. I will update...",
-    body: "Hi Dr Patterson,\n\nThank you for your email. I will update you with our leave dates over the school holidays once they are confirmed, so we can plan around the next appointment.\n\nKind regards,\nJulie",
+    body: "Hi Dr Patterson,\n\nThank you for your email. I will update you with our leave dates over the school holidays once they are confirmed, so we can plan around the next appointment.\n\nKind regards,\nJuliet",
     date: '8 days ago',
     risk: 'none',
     cat: CAT.NONE,
@@ -930,9 +930,9 @@ export const homePlan: HomePlanItem[] = [
     time: '15 min',
     done: false,
     emailId: 1,
-    draftTo: 'Sarah Chen (parent)',
+    draftTo: 'Sasha Chenoweth (parent)',
     draftSubject: 'Re: Mia — urgent safeguarding response',
-    draftReply: `Dear Mrs. Chen,
+    draftReply: `Dear Mrs. Chenoweth,
 
 Thank you for getting in touch. I take what you have shared about Mia very seriously.
 
@@ -1056,7 +1056,7 @@ export const weekHistory: WeekHistoryItem[] = [
 export const histEmails: Email[] = [
   {
     id: 101,
-    from: 'Sarah Chen (parent)',
+    from: 'Sasha Chenoweth (parent)',
     subject: "Mia — still not eating, worsening self-harm",
     preview: "Dr. Patterson, Mia has not eaten for 4 days and has been cutting herself...",
     body: "Dr. Patterson, Mia has not eaten for 4 days and has been cutting herself daily. We are very frightened. Please can someone call us urgently.",
