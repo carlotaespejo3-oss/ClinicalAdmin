@@ -100,9 +100,13 @@ function extractDueDays(text: string): number | null {
 function detectDirection(text: string): DocumentDirection {
   const outgoing = OUTGOING_SIGNALS.some((re) => re.test(text));
   const incoming = INCOMING_SIGNALS.some((re) => re.test(text));
-  // Outgoing wins when both are present — action language is the more
-  // expensive signal to miss (an unmade task is worse than an extra
-  // "received" badge).
+  // Mixed signals → 'unclear' (was: outgoing-wins). FYI emails routinely
+  // contain incidental request-shaped phrases ("please find attached the
+  // report — let me know if you could send a copy to the school"). Auto-
+  // creating a task in those cases produces the false-positive task
+  // prompts the clinician complained about. When both fire, defer to
+  // the AI/clinician via the "Was this a request?" banner.
+  if (outgoing && incoming) return 'unclear';
   if (outgoing) return 'outgoing';
   if (incoming) return 'incoming';
   return 'unclear';

@@ -344,6 +344,7 @@ interface StubResponse {
   priority: AiPriority | string;
   confidence?: number;
   professionalSubType?: 'clinical_input' | 'document_request' | 'meeting' | string | null;
+  documentDirection?: 'incoming' | 'outgoing' | 'unclear' | null;
   requiresDocument?: boolean;
   documentType?: string | null;
   documentDueDays?: number | null;
@@ -361,6 +362,7 @@ function fixedStub(response: StubResponse, opts: { wrapInFence?: boolean; preamb
       documentRequested: null,
       eventDate: null,
       registrationDeadline: null,
+      documentDirection: response.documentDirection ?? null,
       requiresDocument: response.requiresDocument ?? false,
       documentType: response.documentType ?? null,
       documentDueDays: response.documentDueDays ?? null,
@@ -789,21 +791,103 @@ describe('classifyQueue — batch runner', () => {
 });
 
 describe('classifyEmail — document detection wiring', () => {
-  it('AI requiresDocument=true is preserved with documentType', async () => {
+  it('AI documentDirection=outgoing → requiresDocument true with documentType', async () => {
     const result = await classifyEmail(
       makeEmail({ body: 'Please write something for the school file.' }),
       fixedStub({
         category: 'PROFESSIONAL',
         priority: 'MEDIUM',
         professionalSubType: 'document_request',
+        documentDirection: 'outgoing',
         requiresDocument: true,
         documentType: 'School support letter',
         documentDueDays: 7,
       }),
     );
+    assert.equal(result.documentDirection, 'outgoing');
     assert.equal(result.requiresDocument, true);
     assert.equal(result.documentType, 'School support letter');
     assert.equal(result.documentDueDays, 7);
+  });
+
+  it('AI bare requiresDocument=true with NO direction → unclear, no task', async () => {
+    // Regression guard: previously a bare requiresDocument flag without
+    // any directional signal would tip 'unclear' to 'outgoing' and
+    // auto-create a phantom task. That tiebreaker has been removed —
+    // explicit direction is now required to commit to outgoing.
+    const result = await classifyEmail(
+      makeEmail({ body: 'Quick note about the patient.' }),
+      fixedStub({
+        category: 'CLINICAL',
+        priority: 'MEDIUM',
+        documentDirection: null,
+        requiresDocument: true,
+        documentType: 'Some document',
+      }),
+    );
+    assert.equal(result.documentDirection, 'unclear');
+    assert.equal(result.requiresDocument, false);
+  });
+
+  it('AI says incoming on an FYI report → incoming, no task', async () => {
+    // The common case: a colleague shares a psych assessment for the
+    // file. Must not create a task or bump the time estimate.
+    const result = await classifyEmail(
+      makeEmail({
+        body: 'Please find attached the psychological assessment for our shared patient. I hope this is helpful.',
+      }),
+      fixedStub({
+        category: 'PROFESSIONAL',
+        priority: 'LOW',
+        documentDirection: 'incoming',
+        requiresDocument: false,
+        documentType: 'Psychological assessment',
+      }),
+    );
+    assert.equal(result.documentDirection, 'incoming');
+    assert.equal(result.requiresDocument, false);
+    assert.equal(result.documentDueDays, null);
+  });
+
+  it('AI says incoming but heuristic regex says outgoing → unclear, no auto-task', async () => {
+    // Heuristic-only outgoing body (no incoming cues), but the AI saw
+    // the wider context and flagged it as an FYI. The cross-source
+    // disagreement must defer to the clinician via the unclear
+    // banner rather than auto-creating a phantom task.
+    const result = await classifyEmail(
+      makeEmail({
+        body: 'Please complete the NDIS report for our shared patient by next week.',
+      }),
+      fixedStub({
+        category: 'PROFESSIONAL',
+        priority: 'MEDIUM',
+        documentDirection: 'incoming',
+        requiresDocument: false,
+        documentType: 'NDIS report',
+      }),
+    );
+    assert.equal(result.documentDirection, 'unclear');
+    assert.equal(result.requiresDocument, false);
+  });
+
+  it('AI says outgoing but heuristic says incoming → unclear, no auto-task', async () => {
+    // Symmetric guard: heuristic-only incoming body (FYI psych
+    // assessment), AI somehow flipped to outgoing. Defer rather than
+    // auto-create.
+    const result = await classifyEmail(
+      makeEmail({
+        body: 'Please find attached the psychological assessment for your records.',
+      }),
+      fixedStub({
+        category: 'PROFESSIONAL',
+        priority: 'MEDIUM',
+        documentDirection: 'outgoing',
+        requiresDocument: true,
+        documentType: 'Psychological assessment',
+      }),
+    );
+    assert.equal(result.documentDirection, 'unclear');
+    assert.equal(result.requiresDocument, false);
   });
 
   it('regex heuristic catches NDIS report request even when AI says false', async () => {

@@ -93,10 +93,13 @@ describe('detectDocumentRequest — direction-aware', () => {
       assert.equal(result.direction, 'outgoing');
     });
 
-    it('outgoing wins when both incoming and outgoing cues are present', () => {
-      // Sometimes a colleague attaches a partial form and asks for the
-      // rest to be completed. Action language must win — the unmade
-      // task is worse than the extra "received" badge.
+    it('mixed incoming + outgoing cues → unclear (defer to clinician)', () => {
+      // FYI emails routinely contain incidental request-shaped phrases
+      // (e.g. attached report + "could you send a copy to the school").
+      // Auto-creating a task in those cases is the false-positive the
+      // clinician complained about. When both signals fire, return
+      // 'unclear' so the UI surfaces the "Was this a request?" banner
+      // and the clinician decides — no phantom task is auto-created.
       const result = detectDocumentRequest({
         subject: 'NDIS report — section 2',
         body:
@@ -104,7 +107,9 @@ describe('detectDocumentRequest — direction-aware', () => {
           'please complete section 2 of the form by next week?',
       });
       assert.equal(result.hasDocument, true);
-      assert.equal(result.direction, 'outgoing');
+      assert.equal(result.direction, 'unclear');
+      assert.equal(result.documentDueDays, null,
+        'unclear documents must not carry an auto-deadline');
     });
   });
 

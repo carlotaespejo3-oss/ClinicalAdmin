@@ -55,12 +55,16 @@ OUTPUT JSON SHAPE (exact keys, no extras):
   "documentRequested": "<short description of document if PROFESSIONAL+document_request, else null>",
   "eventDate": "<event/meeting date if CPD and detectable, else null>",
   "registrationDeadline": "<registration deadline if CPD and detectable, else null>",
-  "documentDirection": "<one of 'outgoing' | 'incoming' | 'unclear' | null. CRITICAL distinction:
-      - 'outgoing'  → the sender is asking the CLINICIAN to PRODUCE a document (NDIS report request, EHCP letter request, court report, school support letter request, insurance certificate request, medical certificate request, referral letter request). Cues: 'please complete', 'please provide', 'we need a letter/report', 'could you write', 'requesting a letter/report', 'we would be grateful if you could provide', 'please fill in', 'can you send us'.
-      - 'incoming'  → the sender is sending the CLINICIAN a document FOR INFORMATION (a colleague sharing their psych assessment, a GP sharing a discharge summary, allied health sharing a progress note, school sharing a report, pathology sharing results). Cues: 'please find attached', 'I am sending you', 'attached is', 'enclosed', 'for your information', 'for your records', 'I wanted to share', 'I hope this is helpful'.
-      - 'unclear'   → a document is mentioned but you cannot tell direction with confidence.
+  "documentDirection": "<one of 'outgoing' | 'incoming' | 'unclear' | null. CRITICAL distinction. The DEFAULT when in doubt is 'incoming' — the clinician receives many FYI reports from colleagues that sit on the file until the next appointment and DO NOT need a reply or a task. Setting 'outgoing' incorrectly creates phantom tasks the clinician has to dismiss, which is worse than under-flagging.
+      - 'outgoing'  → the sender is asking the CLINICIAN to PRODUCE a NEW document. The email must contain an EXPLICIT request directed at the clinician personally. Cues: 'please complete', 'please provide [a letter/report]', 'we need [a letter/report] from you', 'could you write', 'requesting a [letter/report]', 'we would be grateful if you could provide', 'please fill in', 'can you send us a [letter/report]', 'please draft', 'kindly forward us'. Examples: NDIS asking for a report, school asking for an EHCP letter, solicitor requesting a court report, GP asking for a referral letter, parent asking for a medical certificate.
+      - 'incoming'  → the sender is sending the CLINICIAN a document FOR INFORMATION. This is the default for any email where the sender attached or shared a document and is not explicitly asking for something to be written. Cues: 'please find attached', 'I am sending you', 'attached is', 'enclosed', 'for your information', 'for your records', 'I wanted to share', 'I hope this is helpful', 'thought you might want to see', 'sharing this for context'. Examples: another psychiatrist sharing their assessment, GP sharing a discharge summary, school sharing a behaviour report, pathology sharing results, allied health sharing a progress note.
+      - 'unclear'   → a document is mentioned but you genuinely cannot tell direction with confidence.
       - null        → no document is involved at all.
-      Never set 'outgoing' just because the email mentions a document — ONLY when the sender is asking the clinician to write/produce one.>",
+      RULES:
+      1. Mentioning, attaching, or sharing a document does NOT make it 'outgoing'. Only an explicit request to PRODUCE something does.
+      2. If the email both shares a document AND mentions something the clinician 'could' or 'might' do, that is 'incoming' unless there is a clear, direct request for a NEW document.
+      3. Polite closings like 'let me know if you need anything else' do NOT count as a request — that is 'incoming'.
+      4. If the document already exists (it was attached, shared, sent, enclosed) and no NEW document is being asked for, it is 'incoming'.>",
   "requiresDocument": <true ONLY if documentDirection is 'outgoing'. false for 'incoming', 'unclear', or null. This drives task creation and time estimates, so only set true when you are confident the clinician must produce something.>,
   "documentType": "<short label like 'NDIS report', 'EHCP letter', 'Medical certificate', 'Court report', 'Insurance form', 'Psychological assessment', 'Discharge summary' if a document is involved (any direction); else null>",
   "documentDueDays": <integer days from today the document is due if requiresDocument and a deadline is mentioned; else null>,
@@ -135,12 +139,20 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
   // Document detection — direction-aware. Combine the AI's
   // documentDirection with the regex heuristic. Either source can flag a
   // document; once a document is detected, direction is decided as:
-  //   - if either source says 'outgoing' → 'outgoing' (action wins,
-  //     because an unmade task is worse than an extra "received" badge)
-  //   - else if either source says 'incoming' → 'incoming'
-  //   - else 'unclear'
+  //   - 'outgoing' ONLY when the agreeing source says outgoing AND the
+  //     other source does NOT say incoming. (Pure outgoing or
+  //     outgoing+unclear → outgoing. Outgoing+incoming → unclear.)
+  //   - 'incoming' when either source says incoming AND no source says
+  //     outgoing. (FYI documents are the common case for this clinic;
+  //     the cost of missing an FYI badge is far smaller than the cost
+  //     of an auto-created phantom task.)
+  //   - 'unclear' when sources disagree, when only the AI's bare
+  //     `requiresDocument` flag fires without an explicit direction,
+  //     or when no directional signal is present.
   // requiresDocument is then set ONLY when direction is 'outgoing', so
   // the linked task and combined time block don't fire for FYI emails.
+  // The "Was this a request?" banner asks the clinician to confirm any
+  // 'unclear' case before a task is created.
   const aiDocDir = asString(parsed?.documentDirection as unknown);
   const aiDirection: 'incoming' | 'outgoing' | 'unclear' | null =
     aiDocDir === 'outgoing' || aiDocDir === 'incoming' || aiDocDir === 'unclear'
@@ -158,18 +170,21 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
   const hasDocument = heuristic.hasDocument || aiDirection !== null || aiRequiresDoc;
   let documentDirection: 'incoming' | 'outgoing' | 'unclear' | null = null;
   if (hasDocument) {
-    // Direction requires explicit directional evidence — never derive
-    // 'outgoing' from a bare requiresDocument flag, because a stale or
-    // contradictory AI payload (e.g. direction='incoming' AND
-    // requiresDocument=true) would otherwise spawn a false-positive task.
-    // We only honour requiresDocument when no source contradicts it
-    // (i.e. it acts as a tiebreaker that nudges 'unclear' → 'outgoing').
-    if (aiDirection === 'outgoing' || heuristic.direction === 'outgoing') {
+    const aiOut = aiDirection === 'outgoing';
+    const aiIn = aiDirection === 'incoming';
+    const heurOut = heuristic.direction === 'outgoing';
+    const heurIn = heuristic.direction === 'incoming';
+    if ((aiOut || heurOut) && (aiIn || heurIn)) {
+      // Direct disagreement — defer to the clinician via the unclear
+      // banner rather than auto-creating a task on a likely FYI.
+      documentDirection = 'unclear';
+    } else if (aiOut || heurOut) {
       documentDirection = 'outgoing';
-    } else if (aiDirection === 'incoming' || heuristic.direction === 'incoming') {
+    } else if (aiIn || heurIn) {
+      // FYI route — the common case. Bare `requiresDocument:true` from
+      // the AI is intentionally NOT honoured here because it has been
+      // the dominant source of phantom tasks on incoming reports.
       documentDirection = 'incoming';
-    } else if (aiRequiresDoc) {
-      documentDirection = 'outgoing';
     } else {
       documentDirection = 'unclear';
     }
