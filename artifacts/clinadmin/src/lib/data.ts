@@ -874,15 +874,6 @@ export const sentEmails: SentEmail[] = [
 
 export const manualTasks: ManualTask[] = [
   {
-    id: 'm1',
-    title: 'ADHD assessment report Zara Ali',
-    cat: CAT.REVIEW,
-    deadline: 12,
-    risk: 'low',
-    type: 'Report',
-    estMin: 60
-  },
-  {
     id: 'm2',
     title: 'Phone callback Dr. Osei re case formulation',
     cat: CAT.PROF,

@@ -63,7 +63,6 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
 ];
 
 const defaultSidebarTasks: SidebarTask[] = [
-  { id: 's1', title: 'ADHD assessment report — Zara Ali', estMin: 60, priority: 'normal', done: false },
   { id: 's2', title: 'Phone callback Dr. Osei re case formulation', estMin: 10, priority: 'high', done: false },
   { id: 's3', title: 'Sign off discharge letter — Thomas Wright', estMin: 10, priority: 'normal', done: false },
 ];

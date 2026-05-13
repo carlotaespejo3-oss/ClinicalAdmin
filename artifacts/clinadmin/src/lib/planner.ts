@@ -686,24 +686,43 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //    placement fails entirely AND the item's deadline lies within the
   //    14-day runway, record an explicit breach (low items also have an
   //    SLA — typically 14 days for ADMIN/CPD/NONE).
+  //
+  //    For low items we deliberately SPREAD across days (emptiest day
+  //    first, within the deadline window) instead of pack-tight. Real
+  //    work still packs tight on early days, but acknowledge-only and
+  //    daily-clearing items distribute across the week so that later
+  //    days don't look empty while earlier days bunch a wall of tiny
+  //    1–3 minute items. This gives the clinician a steady daily
+  //    clearance rhythm rather than 11 items piled on one day.
   const stillUnplacedLow: Pair[] = [];
   for (const pair of lowPairs) {
     let placed = false;
     if (pair.totalMin <= DAILY_LOW_PRIORITY_RESERVATION_MIN) {
-      for (let i = 0; i < runway.length; i++) {
+      // Candidate days: any day with quota space, on or before the
+      // pair's deadline. Prefer the LEAST-PLANNED day so low items
+      // spread visually across the runway.
+      const maxIdx = Math.min(pair.minDeadline, runway.length - 1);
+      let bestIdx = -1;
+      let bestPlanned = Infinity;
+      for (let i = 0; i <= maxIdx; i++) {
         const d = runway[i];
-        if (d.lowQuotaRemainingMin >= pair.totalMin) {
-          for (const wi of pair.items) {
-            const item = planItemFromWork(wi);
-            item.reason = 'low_daily';
-            item.reasonText = 'Daily low-priority clearing';
-            d.items.push(item);
-            d.totalPlannedMin += wi.estMin;
-          }
-          d.lowQuotaRemainingMin -= pair.totalMin;
-          placed = true;
-          break;
+        if (d.lowQuotaRemainingMin < pair.totalMin) continue;
+        if (d.totalPlannedMin < bestPlanned) {
+          bestPlanned = d.totalPlannedMin;
+          bestIdx = i;
         }
+      }
+      if (bestIdx !== -1) {
+        const d = runway[bestIdx];
+        for (const wi of pair.items) {
+          const item = planItemFromWork(wi);
+          item.reason = 'low_daily';
+          item.reasonText = 'Daily low-priority clearing';
+          d.items.push(item);
+          d.totalPlannedMin += wi.estMin;
+        }
+        d.lowQuotaRemainingMin -= pair.totalMin;
+        placed = true;
       }
     }
     if (!placed) stillUnplacedLow.push(pair);
