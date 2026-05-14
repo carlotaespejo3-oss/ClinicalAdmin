@@ -579,16 +579,23 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
 
   // Helper: place a pair on the best day within its deadline window.
   //
-  // BALANCE rule: the clinician should not face a wall of work on day 0
-  // just because the algorithm packs earliest-first. Each item still
-  // respects its SLA, but within the days it's allowed to land on
-  // (0..minDeadline) we pick the LEAST-PLANNED day. This spreads
-  // urgent/medium items across the deadline window instead of piling
-  // everything onto today.
+  // Two placement strategies, picked per call:
   //
-  // Overdue items (`dipIntoLowQuota=true`) are the exception: they're
-  // already past SLA, so we keep the original earliest-fit behaviour
-  // and let them dip into the low-quota slot if needed.
+  //   'earliest'  — pick the first day in [0..minDeadline] that fits.
+  //                 Used for SAFEGUARDING / URGENT_CLINICAL / LEGAL
+  //                 (the urgentPairs bucket) and for overdue items.
+  //                 Clinical safety trumps schedule aesthetics: a
+  //                 safeguarding email that fits today must NOT be
+  //                 pushed to Wednesday just because Wednesday looks
+  //                 lighter.
+  //
+  //   'balanced'  — pick the LEAST-PLANNED day in the same window.
+  //                 Used for MEDIUM (CLINICAL / PROFESSIONAL) work
+  //                 where the SLA gives genuine room to breathe and
+  //                 spreading prevents a wall of items on day 0.
+  //
+  // Overdue items still set `dipIntoLowQuota=true` so they may consume
+  // the protected daily low-quota slot when nothing else is available.
   //
   // We try in order:
   //   1) within deadline window, using bookableMin
@@ -597,7 +604,12 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //   3) past deadline, earliest day with bookable capacity (will
   //      record a breach below since placedOnIdx > pair.minDeadline)
   //   4) past deadline, earliest day with remaining total capacity
-  const placePair = (pair: Pair, dipIntoLowQuota: boolean): boolean => {
+  type PlaceStrategy = 'earliest' | 'balanced';
+  const placePair = (
+    pair: Pair,
+    dipIntoLowQuota: boolean,
+    strategy: PlaceStrategy,
+  ): boolean => {
     const need = pair.totalMin;
     const windowEnd = Math.min(pair.minDeadline, runway.length - 1);
 
@@ -638,14 +650,15 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
 
     let placedOnIdx = -1;
     if (windowEnd >= 0) {
-      if (dipIntoLowQuota) {
-        // Overdue: stay earliest-fit (no balance — clear ASAP).
+      // Overdue items always force earliest, regardless of caller's
+      // strategy — they're past SLA, clear ASAP.
+      const effective: PlaceStrategy = dipIntoLowQuota ? 'earliest' : strategy;
+      if (effective === 'earliest') {
         placedOnIdx = pickEarliest(0, windowEnd, bookableCap);
         if (placedOnIdx === -1) {
           placedOnIdx = pickEarliest(0, windowEnd, remainingTotalCap);
         }
       } else {
-        // Normal urgent/medium/low: spread within deadline window.
         placedOnIdx = pickLeastPlanned(0, windowEnd, bookableCap);
         if (placedOnIdx === -1) {
           placedOnIdx = pickLeastPlanned(0, windowEnd, remainingTotalCap);
@@ -714,7 +727,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //    quota — their SLA is already violated, so any further delay is
   //    worse than displacing 15 minutes of low-priority clearing.
   for (const pair of overduePairs) {
-    const placed = placePair(pair, /* dipIntoLowQuota */ true);
+    const placed = placePair(pair, /* dipIntoLowQuota */ true, 'earliest');
     if (!placed) {
       const lead = pair.items[0];
       breaches.push({
@@ -732,8 +745,13 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //    items due today/tomorrow). Urgent has a 48h window, so postponing
   //    to the next available admin day is acceptable — it does NOT dip
   //    into the protected daily low-quota slot.
+  //
+  //    Strategy: 'earliest', NOT 'balanced'. For SAFEGUARDING /
+  //    URGENT_CLINICAL / LEGAL, clinical safety trumps schedule
+  //    aesthetics — if it fits today, it lands today. The balanced
+  //    spread is reserved for medium work where the SLA gives room.
   for (const pair of urgentPairs) {
-    const placed = placePair(pair, /* dipIntoLowQuota */ false);
+    const placed = placePair(pair, /* dipIntoLowQuota */ false, 'earliest');
     if (!placed) {
       // Couldn't fit anywhere in 14 days — that's a breach + defer.
       const lead = pair.items[0];
@@ -749,9 +767,12 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   }
 
   // 7 — Pack MEDIUM pairs into bookable capacity only (must not consume
-  //    the protected daily low quota).
+  //    the protected daily low quota). Strategy: 'balanced' — these
+  //    are CLINICAL / PROFESSIONAL items with genuine SLA breathing
+  //    room, so spreading them across the deadline window prevents a
+  //    wall of items piling onto day 0.
   for (const pair of mediumPairs) {
-    const placed = placePair(pair, /* dipIntoLowQuota */ false);
+    const placed = placePair(pair, /* dipIntoLowQuota */ false, 'balanced');
     if (!placed) {
       const lead = pair.items[0];
       breaches.push({
@@ -813,7 +834,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     if (!placed) stillUnplacedLow.push(pair);
   }
   for (const pair of stillUnplacedLow) {
-    const placed = placePair(pair, false);
+    const placed = placePair(pair, /* dipIntoLowQuota */ false, 'balanced');
     if (!placed) {
       const lead = pair.items[0];
       // Only record a breach when the runway actually extends past the
