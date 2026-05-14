@@ -1,6 +1,7 @@
-import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, CheckCircle2, Clock, HelpCircle, Mail, FileText, Link2, ChevronRight, ChevronLeft, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DailyPlan, PlanItem, OverallStatus } from '@/lib/planner';
+import { emails } from '@/lib/data';
 
 export interface UnclearEmailSummary {
   id: number;
@@ -117,6 +118,17 @@ function UnclearGateBlock({
 function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   const isOverdue = item.reason === 'overdue';
   const isLinked = item.reason === 'linked_task';
+  const wasDeferred = (item.deferralCount ?? 0) > 0;
+  const hardWarn = item.deferralWarning === 'twice_or_more';
+
+  // Look up the email's original received date so a previously-
+  // deferred email shows when it ACTUALLY arrived, not the date it
+  // re-entered the runway. Only relevant for email items with a
+  // numeric refId.
+  const originalReceived =
+    wasDeferred && item.kind === 'email' && typeof item.refId === 'number'
+      ? emails.find((e) => e.id === item.refId)?.date ?? null
+      : null;
 
   const Icon = item.kind === 'task' ? FileText : Mail;
 
@@ -128,6 +140,8 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
         'w-full flex items-start gap-3 rounded-lg border bg-white p-3 text-left transition-colors',
         onClick ? 'hover:bg-slate-50' : 'cursor-default',
         isOverdue && 'border-red-300 bg-red-50',
+        // Hard warn (deferred 2+ times) outranks linked-task styling.
+        hardWarn && !isOverdue && 'border-amber-400 bg-amber-50',
         isLinked && 'ml-6 border-l-2 border-l-slate-300',
       )}
       data-testid={`planner-item-${item.refId ?? item.title}`}
@@ -152,16 +166,48 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
           >
             {CATEGORY_LABEL[item.category] ?? item.category}
           </span>
+          {wasDeferred && (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border',
+                hardWarn
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-slate-100 text-slate-700 border-slate-300',
+              )}
+              data-testid={`planner-item-deferred-${item.refId}`}
+              title={
+                hardWarn
+                  ? 'This email has been deferred twice. It needs to be scheduled this week.'
+                  : 'This email was deferred from a previous planning window.'
+              }
+            >
+              <History size={10} />
+              Deferred {item.deferralCount}×
+            </span>
+          )}
         </div>
         {item.detail && (
           <div className="text-xs text-muted-foreground mt-0.5 truncate">{item.detail}</div>
         )}
-        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
           <Clock size={12} />
           <span>{fmtMin(item.estMin)}</span>
           <span className="text-slate-300">·</span>
           <span className={cn(isOverdue && 'text-red-700 font-medium')}>{item.reasonText}</span>
+          {originalReceived && (
+            <>
+              <span className="text-slate-300">·</span>
+              <span className={cn(hardWarn && 'text-amber-800 font-medium')}>
+                Received {originalReceived}
+              </span>
+            </>
+          )}
         </div>
+        {hardWarn && (
+          <div className="mt-2 text-xs text-amber-900 font-medium bg-amber-100/60 border border-amber-200 rounded px-2 py-1">
+            Deferred twice already — must be scheduled this week.
+          </div>
+        )}
       </div>
     </button>
   );

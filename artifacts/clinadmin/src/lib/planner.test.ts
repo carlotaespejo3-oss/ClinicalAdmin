@@ -357,6 +357,92 @@ describe('buildPlan — low-priority handling', () => {
   });
 });
 
+describe('buildPlan — deferral history annotation', () => {
+  it('adds deferralCount to placed email items with prior deferrals', () => {
+    const out = buildPlan(
+      baseInput({
+        emails: [
+          makeEmail({ id: 42, category: 'CLINICAL', estMin: 30, deadlineDays: 3 }),
+        ],
+        deferralHistory: new Map([[42, 1]]),
+      }),
+    );
+    const placed = out.runway
+      .flatMap((d) => d.items)
+      .find((i) => i.refId === 42);
+    assert.ok(placed, 'item should be placed');
+    assert.equal(placed!.deferralCount, 1);
+    assert.equal(placed!.deferralWarning, undefined);
+  });
+
+  it('raises deferralWarning at count >= 2', () => {
+    const out = buildPlan(
+      baseInput({
+        emails: [
+          makeEmail({ id: 7, category: 'CLINICAL', estMin: 30, deadlineDays: 5 }),
+        ],
+        deferralHistory: new Map([[7, 2]]),
+      }),
+    );
+    const placed = out.runway
+      .flatMap((d) => d.items)
+      .find((i) => i.refId === 7);
+    assert.ok(placed);
+    assert.equal(placed!.deferralCount, 2);
+    assert.equal(placed!.deferralWarning, 'twice_or_more');
+  });
+
+  it('annotates items that get deferred again (in deferredItems)', () => {
+    // No availability → everything defers.
+    const out = buildPlan(
+      baseInput({
+        emails: [
+          makeEmail({ id: 99, category: 'ADMIN', estMin: 30, deadlineDays: 10 }),
+        ],
+        availability: buildAvailability(MONDAY, {}),
+        deferralHistory: new Map([[99, 3]]),
+      }),
+    );
+    const def = out.deferredItems.find((i) => i.refId === 99);
+    assert.ok(def, 'should be in deferredItems');
+    assert.equal(def!.deferralCount, 3);
+    assert.equal(def!.deferralWarning, 'twice_or_more');
+  });
+
+  it('does not annotate items with no prior history', () => {
+    const out = buildPlan(
+      baseInput({
+        emails: [
+          makeEmail({ id: 1, category: 'CLINICAL', estMin: 30, deadlineDays: 3 }),
+        ],
+        deferralHistory: new Map(),
+      }),
+    );
+    const placed = out.runway
+      .flatMap((d) => d.items)
+      .find((i) => i.refId === 1);
+    assert.ok(placed);
+    assert.equal(placed!.deferralCount, undefined);
+    assert.equal(placed!.deferralWarning, undefined);
+  });
+
+  it('never annotates task items even with matching id', () => {
+    // Task ids are strings, but ensure tasks generally aren't annotated.
+    const out = buildPlan(
+      baseInput({
+        tasks: [makeTask({ id: 't42', deadlineDays: 3 })],
+        deferralHistory: new Map([[42, 5]]),
+      }),
+    );
+    const placed = out.runway
+      .flatMap((d) => d.items)
+      .find((i) => i.kind === 'task');
+    assert.ok(placed);
+    assert.equal(placed!.deferralCount, undefined);
+    assert.equal(placed!.deferralWarning, undefined);
+  });
+});
+
 describe('buildPlan — breach detection', () => {
   it('flags no_capacity_before_sla when an urgent item lands after its deadline', () => {
     // Tuesday only (no Mon). Urgent due TODAY (Mon, day 0) → earliest

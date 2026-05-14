@@ -132,6 +132,12 @@ export interface PlannerInput {
   tasks: PlannerTask[];
   availability: DayAvailability[];
   arrivals?: ArrivalConfig;
+  // Number of past planning windows (ISO weeks) in which each email
+  // was deferred. Read by Step 9 to flag items that have slipped
+  // before — without this, an email deferred twice would silently
+  // become a 28-day-old unanswered email with no UI signal. Keyed
+  // by email id; absent / 0 = never deferred before.
+  deferralHistory?: ReadonlyMap<number, number>;
 }
 
 // ============================================================================
@@ -159,6 +165,14 @@ export interface PlanItem {
   reasonText: string;
   daysOverdue?: number;
   linkedToEmailId?: number;
+  // Number of past planning windows (ISO weeks) this email was
+  // deferred. Only populated when > 0. UI uses this to surface the
+  // original received date and a warning badge.
+  deferralCount?: number;
+  // Set to 'twice_or_more' when deferralCount >= 2 — a hard signal
+  // that the item must be scheduled this week or it risks becoming
+  // a 28+ day unanswered email. Tasks (kind='task') never carry this.
+  deferralWarning?: 'twice_or_more';
 }
 
 export type DayStatus = 'safe' | 'tight' | 'breach' | 'idle';
@@ -955,6 +969,27 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     statusDetail = nextAdminDay
       ? `Your inbox is manageable this week. Complete today's plan and you are safe until ${nextAdminDay.dayLabel}.`
       : 'Your inbox is manageable this week.';
+  }
+
+  // Step 9b — Annotate items with prior-deferral history. An email
+  // that's been bounced out of one or more previous planning windows
+  // gets a deferralCount; at >=2 we raise deferralWarning so the UI
+  // can show "Deferred 2× — must be scheduled this week". Only
+  // applies to email items (tasks don't carry this signal — they're
+  // generated, not received). The annotation runs over BOTH the
+  // runway (items we've placed) and the deferredItems list (items
+  // we're about to defer again — those are the most urgent to flag).
+  const history = input.deferralHistory;
+  if (history && history.size > 0) {
+    const annotate = (item: PlanItem): void => {
+      if (item.kind !== 'email' || typeof item.refId !== 'number') return;
+      const count = history.get(item.refId);
+      if (!count || count <= 0) return;
+      item.deferralCount = count;
+      if (count >= 2) item.deferralWarning = 'twice_or_more';
+    };
+    for (const day of runway) for (const it of day.items) annotate(it);
+    for (const it of deferredItems) annotate(it);
   }
 
   // Strip internal-only fields from runway for the public output.
