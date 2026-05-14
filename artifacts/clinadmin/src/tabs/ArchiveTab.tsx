@@ -6,6 +6,8 @@ import { cn, initials, avatarColor } from '@/lib/utils';
 import { useArchivedEmails, unarchiveEmail } from '@/lib/archivedStore';
 import { unacknowledgeEmail } from '@/lib/acknowledgedStore';
 import { useAiClassifications } from '@/lib/aiClassifyStore';
+import { useSentLog, lastSentByEmailId } from '@/lib/sentLogStore';
+import { Send } from 'lucide-react';
 import { CATEGORY_LABEL, CATEGORY_BADGE } from '@/lib/aiCategory';
 
 function fmtAgo(epochMs: number): string {
@@ -22,6 +24,8 @@ function fmtAgo(epochMs: number): string {
 export default function ArchiveTab() {
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
+  const sentLog = useSentLog();
+  const lastSentMap = useMemo(() => lastSentByEmailId(sentLog), [sentLog]);
 
   const items = useMemo(() => {
     const entries = Array.from(archived.values()).sort((a, b) => b.at - a.at);
@@ -129,6 +133,19 @@ export default function ArchiveTab() {
                             {CATEGORY_LABEL[cls.category]}
                           </span>
                         )}
+                        {(() => {
+                          const sent = lastSentMap.get(email.id);
+                          if (!sent) return null;
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold border border-primary/30 bg-primary/5 text-primary px-2 py-0.5 rounded-full"
+                              title={`Reply opened in your mail app ${fmtAgo(sent.sentAt)} via ${sent.variant} draft${sent.to ? ` to ${sent.to}` : ''}`}
+                              data-testid={`archive-sent-${email.id}`}
+                            >
+                              <Send size={10} /> Reply drafted {fmtAgo(sent.sentAt)}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <button

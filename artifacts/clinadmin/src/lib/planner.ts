@@ -826,12 +826,13 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
 
   // 9 — Finalise day status, totals, and flags.
   //
-  // Thresholds (recalibrated alongside the tiered arrivals buffer — the old
-  // 95%/100% bands were too sensitive once the inflated weekly reserve was
-  // removed and weeks legitimately run lighter):
-  //   safe   — planned work ≤ 90% of available
-  //   tight  — planned work between 90% and 110% of available
-  //   breach — planned work > 110% of available
+  // Thresholds (recalibrated alongside the tiered arrivals buffer — the
+  // old 95%/100% bands were too sensitive once the inflated weekly
+  // reserve was removed and weeks legitimately run lighter). Boundaries
+  // are inclusive on the lower edge of each band:
+  //   safe   — planned work <  90% of available
+  //   tight  — planned work in [90%, 110%] of available
+  //   breach — planned work >  110% of available
   // The 10% slack on either side stops the indicator flickering on small
   // estimation errors (a 5-min email can't be the difference between
   // green and amber on a 60-min day).

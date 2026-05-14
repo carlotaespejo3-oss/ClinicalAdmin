@@ -28,6 +28,8 @@ import {
   buildExtraDraftPrompt,
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
+import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
+import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
 
@@ -111,6 +113,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const [draftLoading, setDraftLoading] = useState<Record<number, Partial<Record<DraftSlot, boolean>>>>({});
   const [draftError, setDraftError] = useState<Record<number, Partial<Record<DraftSlot, boolean>>>>({});
   const [copiedSlot, setCopiedSlot] = useState<{ id: number; slot: DraftSlot } | null>(null);
+  const sentLog = useSentLog();
+  const lastSentMap = useMemo(() => lastSentByEmailId(sentLog), [sentLog]);
 
   const selectedEmail = emails.find(e => e.id === selectedId);
   const aiComplete = useAiComplete();
@@ -435,6 +439,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     } catch {
       // ignore
     }
+  };
+
+  // Send handoff: record to local sent log, copy body as a backstop in
+  // case the mail client truncates the mailto body, then open the
+  // user's default mail app with To/Subject/Body pre-filled. We
+  // intentionally do NOT auto-archive — the clinician may want to
+  // send follow-ups (e.g. single + admin variants for the same thread).
+  const handleSend = (email: Email, slot: DraftSlot, text: string) => {
+    if (!text) return;
+    const subject = buildReplySubject(email.subject);
+    const to = extractAddress(email.from);
+    const variant: DraftVariant = slot;
+    recordSent({
+      emailId: email.id,
+      to,
+      toLabel: email.from,
+      subject,
+      body: text,
+      variant,
+    });
+    // Best-effort clipboard backup in case the mailto body gets
+    // truncated or the user's client refuses long URLs.
+    try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
+    const url = buildMailtoUrl({ to, subject, body: text });
+    window.location.href = url;
   };
 
   const handleDraftEdit = (id: number, slot: DraftSlot, text: string) => {
@@ -837,6 +866,29 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   </div>
                 )}
 
+                {/* "Already replied" indicator — surfaced above the
+                    draft area regardless of category mode so the
+                    clinician knows a reply has gone out before they
+                    start drafting (or re-drafting) again. */}
+                {(() => {
+                  const alreadySent = lastSentMap.get(selectedEmail.id);
+                  if (!alreadySent) return null;
+                  return (
+                    <div
+                      className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-primary bg-primary/5 border border-primary/20 rounded-lg px-3 py-2"
+                      data-testid="banner-already-sent"
+                    >
+                      <Send size={12} />
+                      <span>
+                        You opened a reply in your mail app earlier (
+                        <strong>{alreadySent.variant}</strong> draft
+                        {alreadySent.to ? `, to ${alreadySent.to}` : ''}).
+                        Send again only if you intend a follow-up.
+                      </span>
+                    </div>
+                  );
+                })()}
+
                 {/* ---- Category-driven draft area (Step 3) ---- */}
                 {(() => {
                   const cls = classifications.get(selectedEmail.id);
@@ -895,10 +947,19 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           <button
                             onClick={() => text && handleCopy(selectedEmail.id, slot, text)}
                             disabled={!text}
-                            className="text-[10px] font-bold bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary/90 transition-colors uppercase tracking-tight disabled:opacity-50"
+                            className="text-[10px] font-bold text-slate-700 bg-white border border-slate-300 px-3 py-2 rounded hover:bg-slate-100 transition-colors uppercase tracking-tight disabled:opacity-50"
                             data-testid={`button-copy-${slot}`}
                           >
-                            {isCopied ? 'Copied!' : 'Copy to Clipboard'}
+                            {isCopied ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button
+                            onClick={() => text && handleSend(selectedEmail, slot, text)}
+                            disabled={!text}
+                            className="text-[10px] font-bold bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary/90 transition-colors uppercase tracking-tight disabled:opacity-50 inline-flex items-center gap-1.5"
+                            data-testid={`button-send-${slot}`}
+                            title="Open in your default mail app with this draft pre-filled. Review and click Send in your mail app to actually send."
+                          >
+                            <Send size={11} /> Open in mail app
                           </button>
                         </div>
                       </div>
