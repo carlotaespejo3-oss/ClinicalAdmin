@@ -99,3 +99,97 @@ export interface ArchiveEmailInput {
 export interface AcknowledgeEmailInput {
   outlookEmailId: string;
 }
+
+export type UserTaskSource =
+  (typeof UserTaskSource)[keyof typeof UserTaskSource];
+
+export const UserTaskSource = {
+  cpd: "cpd",
+  manual: "manual",
+} as const;
+
+/**
+ * A clinician-added task. Stores their own organisational data (chosen title, optional dates). Never email body content.
+ */
+export interface UserTaskRecord {
+  /** Client-generated 'ut_<base36>_<rand>' */
+  id: string;
+  /** Source email reference; null for manual tasks */
+  outlookEmailId?: string | null;
+  title: string;
+  source: UserTaskSource;
+  /** ISO YYYY-MM-DD; CPD event start */
+  eventDate?: string | null;
+  /** ISO YYYY-MM-DD; CPD registration cut-off */
+  registrationDeadline?: string | null;
+  createdAt: string;
+}
+
+export type TaskRisk = (typeof TaskRisk)[keyof typeof TaskRisk];
+
+export const TaskRisk = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+} as const;
+
+/**
+ * Document task auto-created for emails the classifier flagged as requiring a written document. Title is a short organisational label; no email body text is stored.
+ */
+export interface LinkedDocTaskRecord {
+  outlookEmailId: string;
+  title: string;
+  cat: string;
+  type: string;
+  deadline: number;
+  risk: TaskRisk;
+  estMin: number;
+  autoCompleteOnReply: boolean;
+  done: boolean;
+  noteAfterEmailDone?: string | null;
+  createdAt: string;
+}
+
+/**
+ * An accepted "Possible task detected" prompt — the clinician's edited and saved form values. The pre-edit AI suggestion is never stored; only what the clinician approved.
+ */
+export interface PromptedTaskRecord {
+  /** Client-generated 'pt_<emailId>_<kind>_<base36>' */
+  taskId: string;
+  outlookEmailId: string;
+  kind: string;
+  title: string;
+  type: string;
+  estMin: number;
+  priority: TaskRisk;
+  patientName?: string | null;
+  dueDays?: number | null;
+  notes: string;
+  done: boolean;
+  controlledDrug?: boolean | null;
+  medicationName?: string | null;
+  medicationDose?: string | null;
+  travelMentioned?: boolean | null;
+  createdAt: string;
+}
+
+export interface PromptedTaskDismissalKey {
+  outlookEmailId: string;
+  kind: string;
+}
+
+export interface PromptedTasksState {
+  tasks: PromptedTaskRecord[];
+  dismissed: PromptedTaskDismissalKey[];
+}
+
+export interface DismissPromptedTaskInput {
+  outlookEmailId: string;
+  kind: string;
+}
+
+export interface SetPromptedTaskDoneInput {
+  outlookEmailId: string;
+  kind: string;
+  done: boolean;
+}

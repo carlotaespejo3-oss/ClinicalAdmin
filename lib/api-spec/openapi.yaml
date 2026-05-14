@@ -20,6 +20,12 @@ tags:
     description: Per-email archive state (acknowledged or done)
   - name: acknowledged
     description: Per-email "seen, no action needed" flag
+  - name: userTasks
+    description: Clinician-added tasks (CPD one-click, future manual entries)
+  - name: linkedDocTasks
+    description: Auto-created document tasks for emails flagged as requiring a written document
+  - name: promptedTasks
+    description: Clinician's response to "Possible task detected" inbox prompts
 paths:
   /healthz:
     get:
@@ -322,6 +328,171 @@ paths:
       responses:
         "204":
           description: Cleared (idempotent — 204 even if no record existed)
+  /user-tasks:
+    get:
+      operationId: listUserTasks
+      tags: [userTasks]
+      summary: List every clinician-added task
+      description: >-
+        Returns the clinician's task list (CPD one-click adds today, manual
+        entries in future). Stores their own organisational data only — no
+        email body content. outlookEmailId is a reference back to the source
+        email when the task was created from one.
+      responses:
+        "200":
+          description: All user tasks for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserTaskRecord"
+    post:
+      operationId: createUserTask
+      tags: [userTasks]
+      summary: Add a task to the clinician's task list
+      description: >-
+        Idempotent on `id` — re-posting the same id is a no-op (the
+        client generates the id locally so it knows it immediately and
+        can fire-and-forget the POST).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserTaskRecord"
+      responses:
+        "204":
+          description: Created
+  /user-tasks/{id}:
+    delete:
+      operationId: deleteUserTask
+      tags: [userTasks]
+      summary: Remove a task from the clinician's task list
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted (idempotent — 204 even if no record existed)
+  /linked-doc-tasks:
+    get:
+      operationId: listLinkedDocTasks
+      tags: [linkedDocTasks]
+      summary: List every linked document task for the current clinician
+      description: >-
+        Document task = task auto-created when the classifier flags an
+        email as requiring a written document. Title is a short
+        organisational label ("EHCP Letter — Jamie B — requested by Mrs
+        Davies"); no email body text is stored.
+      responses:
+        "200":
+          description: All linked-doc tasks for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinkedDocTaskRecord"
+    post:
+      operationId: upsertLinkedDocTask
+      tags: [linkedDocTasks]
+      summary: Create or update a linked document task
+      description: >-
+        Idempotent on (clinicianId, outlookEmailId). Used both for
+        initial creation and for mutations to `done` / note. Server
+        replaces the whole row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkedDocTaskRecord"
+      responses:
+        "204":
+          description: Saved
+  /linked-doc-tasks/{outlookEmailId}:
+    delete:
+      operationId: deleteLinkedDocTask
+      tags: [linkedDocTasks]
+      summary: Remove a linked document task
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted (idempotent — 204 even if no record existed)
+  /prompted-tasks:
+    get:
+      operationId: listPromptedTasks
+      tags: [promptedTasks]
+      summary: List the clinician's responses to "Possible task detected" prompts
+      description: >-
+        Returns two arrays — accepted tasks (with the clinician's saved
+        form values) and dismissed prompt keys. Implicit-dismiss-on-accept
+        is captured by the same row; an accepted entry also suppresses
+        the prompt for that (email, kind).
+      responses:
+        "200":
+          description: Accepted tasks and dismissed prompt keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptedTasksState"
+    post:
+      operationId: acceptPromptedTask
+      tags: [promptedTasks]
+      summary: Save an accepted (clinician-edited) prompted task
+      description: >-
+        Idempotent on (clinicianId, outlookEmailId, kind) — re-posting
+        is a no-op (matches the client's hasPromptedTaskForKind dedupe).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromptedTaskRecord"
+      responses:
+        "204":
+          description: Saved
+  /prompted-tasks/dismiss:
+    post:
+      operationId: dismissPromptedTask
+      tags: [promptedTasks]
+      summary: Record that the clinician rejected a "Possible task" prompt
+      description: >-
+        Idempotent — if a row already exists for (email, kind) (accepted
+        or dismissed) the call is a no-op so we never overwrite a saved
+        accepted task with a dismissal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DismissPromptedTaskInput"
+      responses:
+        "204":
+          description: Recorded
+  /prompted-tasks/done:
+    post:
+      operationId: setPromptedTaskDoneApi
+      tags: [promptedTasks]
+      summary: Toggle the `done` flag on an accepted prompted task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPromptedTaskDoneInput"
+      responses:
+        "204":
+          description: Updated (no-op if the row doesn't exist or isn't accepted)
 components:
   schemas:
     HealthStatus:
@@ -505,3 +676,189 @@ components:
           type: string
       required:
         - outlookEmailId
+    UserTaskSource:
+      type: string
+      enum: [cpd, manual]
+    UserTaskRecord:
+      type: object
+      description: >-
+        A clinician-added task. Stores their own organisational data
+        (chosen title, optional dates). Never email body content.
+      properties:
+        id:
+          type: string
+          description: Client-generated 'ut_<base36>_<rand>'
+        outlookEmailId:
+          type: string
+          nullable: true
+          description: Source email reference; null for manual tasks
+        title:
+          type: string
+        source:
+          $ref: "#/components/schemas/UserTaskSource"
+        eventDate:
+          type: string
+          nullable: true
+          description: ISO YYYY-MM-DD; CPD event start
+        registrationDeadline:
+          type: string
+          nullable: true
+          description: ISO YYYY-MM-DD; CPD registration cut-off
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - source
+        - createdAt
+    TaskRisk:
+      type: string
+      enum: [high, medium, low]
+    LinkedDocTaskRecord:
+      type: object
+      description: >-
+        Document task auto-created for emails the classifier flagged as
+        requiring a written document. Title is a short organisational
+        label; no email body text is stored.
+      properties:
+        outlookEmailId:
+          type: string
+        title:
+          type: string
+        cat:
+          type: string
+        type:
+          type: string
+        deadline:
+          type: integer
+        risk:
+          $ref: "#/components/schemas/TaskRisk"
+        estMin:
+          type: integer
+        autoCompleteOnReply:
+          type: boolean
+        done:
+          type: boolean
+        noteAfterEmailDone:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - outlookEmailId
+        - title
+        - cat
+        - type
+        - deadline
+        - risk
+        - estMin
+        - autoCompleteOnReply
+        - done
+        - createdAt
+    PromptedTaskRecord:
+      type: object
+      description: >-
+        An accepted "Possible task detected" prompt — the clinician's
+        edited and saved form values. The pre-edit AI suggestion is
+        never stored; only what the clinician approved.
+      properties:
+        taskId:
+          type: string
+          description: Client-generated 'pt_<emailId>_<kind>_<base36>'
+        outlookEmailId:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        estMin:
+          type: integer
+        priority:
+          $ref: "#/components/schemas/TaskRisk"
+        patientName:
+          type: string
+          nullable: true
+        dueDays:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+        done:
+          type: boolean
+        controlledDrug:
+          type: boolean
+          nullable: true
+        medicationName:
+          type: string
+          nullable: true
+        medicationDose:
+          type: string
+          nullable: true
+        travelMentioned:
+          type: boolean
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - taskId
+        - outlookEmailId
+        - kind
+        - title
+        - type
+        - estMin
+        - priority
+        - notes
+        - done
+        - createdAt
+    PromptedTaskDismissalKey:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        kind:
+          type: string
+      required:
+        - outlookEmailId
+        - kind
+    PromptedTasksState:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptedTaskRecord"
+        dismissed:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptedTaskDismissalKey"
+      required:
+        - tasks
+        - dismissed
+    DismissPromptedTaskInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        kind:
+          type: string
+      required:
+        - outlookEmailId
+        - kind
+    SetPromptedTaskDoneInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        kind:
+          type: string
+        done:
+          type: boolean
+      required:
+        - outlookEmailId
+        - kind
+        - done

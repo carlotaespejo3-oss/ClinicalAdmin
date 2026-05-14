@@ -30,8 +30,14 @@ import type {
   ArchiveEmailInput,
   ArchivedRecord,
   DeferralRecord,
+  DismissPromptedTaskInput,
   HealthStatus,
+  LinkedDocTaskRecord,
+  PromptedTaskRecord,
+  PromptedTasksState,
   RecordDeferralsInput,
+  SetPromptedTaskDoneInput,
+  UserTaskRecord,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -1466,4 +1472,836 @@ export const useUnacknowledgeEmail = <
   TContext
 > => {
   return useMutation(getUnacknowledgeEmailMutationOptions(options));
+};
+
+/**
+ * Returns the clinician's task list (CPD one-click adds today, manual entries in future). Stores their own organisational data only — no email body content. outlookEmailId is a reference back to the source email when the task was created from one.
+ * @summary List every clinician-added task
+ */
+export const getListUserTasksUrl = () => {
+  return `/api/user-tasks`;
+};
+
+export const listUserTasks = async (
+  options?: RequestInit,
+): Promise<UserTaskRecord[]> => {
+  return customFetch<UserTaskRecord[]>(getListUserTasksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListUserTasksQueryKey = () => {
+  return [`/api/user-tasks`] as const;
+};
+
+export const getListUserTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listUserTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listUserTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListUserTasksQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listUserTasks>>> = ({
+    signal,
+  }) => listUserTasks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listUserTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListUserTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listUserTasks>>
+>;
+export type ListUserTasksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every clinician-added task
+ */
+
+export function useListUserTasks<
+  TData = Awaited<ReturnType<typeof listUserTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listUserTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListUserTasksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on `id` — re-posting the same id is a no-op (the client generates the id locally so it knows it immediately and can fire-and-forget the POST).
+ * @summary Add a task to the clinician's task list
+ */
+export const getCreateUserTaskUrl = () => {
+  return `/api/user-tasks`;
+};
+
+export const createUserTask = async (
+  userTaskRecord: UserTaskRecord,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getCreateUserTaskUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(userTaskRecord),
+  });
+};
+
+export const getCreateUserTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createUserTask>>,
+    TError,
+    { data: BodyType<UserTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createUserTask>>,
+  TError,
+  { data: BodyType<UserTaskRecord> },
+  TContext
+> => {
+  const mutationKey = ["createUserTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createUserTask>>,
+    { data: BodyType<UserTaskRecord> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createUserTask(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateUserTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createUserTask>>
+>;
+export type CreateUserTaskMutationBody = BodyType<UserTaskRecord>;
+export type CreateUserTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a task to the clinician's task list
+ */
+export const useCreateUserTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createUserTask>>,
+    TError,
+    { data: BodyType<UserTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createUserTask>>,
+  TError,
+  { data: BodyType<UserTaskRecord> },
+  TContext
+> => {
+  return useMutation(getCreateUserTaskMutationOptions(options));
+};
+
+/**
+ * @summary Remove a task from the clinician's task list
+ */
+export const getDeleteUserTaskUrl = (id: string) => {
+  return `/api/user-tasks/${id}`;
+};
+
+export const deleteUserTask = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteUserTaskUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteUserTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteUserTask>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteUserTask>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteUserTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteUserTask>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteUserTask(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteUserTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteUserTask>>
+>;
+
+export type DeleteUserTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a task from the clinician's task list
+ */
+export const useDeleteUserTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteUserTask>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteUserTask>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteUserTaskMutationOptions(options));
+};
+
+/**
+ * Document task = task auto-created when the classifier flags an email as requiring a written document. Title is a short organisational label ("EHCP Letter — Jamie B — requested by Mrs Davies"); no email body text is stored.
+ * @summary List every linked document task for the current clinician
+ */
+export const getListLinkedDocTasksUrl = () => {
+  return `/api/linked-doc-tasks`;
+};
+
+export const listLinkedDocTasks = async (
+  options?: RequestInit,
+): Promise<LinkedDocTaskRecord[]> => {
+  return customFetch<LinkedDocTaskRecord[]>(getListLinkedDocTasksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListLinkedDocTasksQueryKey = () => {
+  return [`/api/linked-doc-tasks`] as const;
+};
+
+export const getListLinkedDocTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLinkedDocTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLinkedDocTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListLinkedDocTasksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listLinkedDocTasks>>
+  > = ({ signal }) => listLinkedDocTasks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLinkedDocTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLinkedDocTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLinkedDocTasks>>
+>;
+export type ListLinkedDocTasksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every linked document task for the current clinician
+ */
+
+export function useListLinkedDocTasks<
+  TData = Awaited<ReturnType<typeof listLinkedDocTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLinkedDocTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLinkedDocTasksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). Used both for initial creation and for mutations to `done` / note. Server replaces the whole row.
+ * @summary Create or update a linked document task
+ */
+export const getUpsertLinkedDocTaskUrl = () => {
+  return `/api/linked-doc-tasks`;
+};
+
+export const upsertLinkedDocTask = async (
+  linkedDocTaskRecord: LinkedDocTaskRecord,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertLinkedDocTaskUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(linkedDocTaskRecord),
+  });
+};
+
+export const getUpsertLinkedDocTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertLinkedDocTask>>,
+    TError,
+    { data: BodyType<LinkedDocTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertLinkedDocTask>>,
+  TError,
+  { data: BodyType<LinkedDocTaskRecord> },
+  TContext
+> => {
+  const mutationKey = ["upsertLinkedDocTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertLinkedDocTask>>,
+    { data: BodyType<LinkedDocTaskRecord> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return upsertLinkedDocTask(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertLinkedDocTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertLinkedDocTask>>
+>;
+export type UpsertLinkedDocTaskMutationBody = BodyType<LinkedDocTaskRecord>;
+export type UpsertLinkedDocTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or update a linked document task
+ */
+export const useUpsertLinkedDocTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertLinkedDocTask>>,
+    TError,
+    { data: BodyType<LinkedDocTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertLinkedDocTask>>,
+  TError,
+  { data: BodyType<LinkedDocTaskRecord> },
+  TContext
+> => {
+  return useMutation(getUpsertLinkedDocTaskMutationOptions(options));
+};
+
+/**
+ * @summary Remove a linked document task
+ */
+export const getDeleteLinkedDocTaskUrl = (outlookEmailId: string) => {
+  return `/api/linked-doc-tasks/${outlookEmailId}`;
+};
+
+export const deleteLinkedDocTask = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteLinkedDocTaskUrl(outlookEmailId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteLinkedDocTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLinkedDocTask>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLinkedDocTask>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteLinkedDocTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteLinkedDocTask>>,
+    { outlookEmailId: string }
+  > = (props) => {
+    const { outlookEmailId } = props ?? {};
+
+    return deleteLinkedDocTask(outlookEmailId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLinkedDocTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteLinkedDocTask>>
+>;
+
+export type DeleteLinkedDocTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a linked document task
+ */
+export const useDeleteLinkedDocTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLinkedDocTask>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLinkedDocTask>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  return useMutation(getDeleteLinkedDocTaskMutationOptions(options));
+};
+
+/**
+ * Returns two arrays — accepted tasks (with the clinician's saved form values) and dismissed prompt keys. Implicit-dismiss-on-accept is captured by the same row; an accepted entry also suppresses the prompt for that (email, kind).
+ * @summary List the clinician's responses to "Possible task detected" prompts
+ */
+export const getListPromptedTasksUrl = () => {
+  return `/api/prompted-tasks`;
+};
+
+export const listPromptedTasks = async (
+  options?: RequestInit,
+): Promise<PromptedTasksState> => {
+  return customFetch<PromptedTasksState>(getListPromptedTasksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPromptedTasksQueryKey = () => {
+  return [`/api/prompted-tasks`] as const;
+};
+
+export const getListPromptedTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPromptedTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPromptedTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPromptedTasksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPromptedTasks>>
+  > = ({ signal }) => listPromptedTasks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPromptedTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPromptedTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPromptedTasks>>
+>;
+export type ListPromptedTasksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the clinician's responses to "Possible task detected" prompts
+ */
+
+export function useListPromptedTasks<
+  TData = Awaited<ReturnType<typeof listPromptedTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPromptedTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPromptedTasksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId, kind) — re-posting is a no-op (matches the client's hasPromptedTaskForKind dedupe).
+ * @summary Save an accepted (clinician-edited) prompted task
+ */
+export const getAcceptPromptedTaskUrl = () => {
+  return `/api/prompted-tasks`;
+};
+
+export const acceptPromptedTask = async (
+  promptedTaskRecord: PromptedTaskRecord,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getAcceptPromptedTaskUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(promptedTaskRecord),
+  });
+};
+
+export const getAcceptPromptedTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptPromptedTask>>,
+    TError,
+    { data: BodyType<PromptedTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acceptPromptedTask>>,
+  TError,
+  { data: BodyType<PromptedTaskRecord> },
+  TContext
+> => {
+  const mutationKey = ["acceptPromptedTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acceptPromptedTask>>,
+    { data: BodyType<PromptedTaskRecord> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return acceptPromptedTask(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcceptPromptedTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acceptPromptedTask>>
+>;
+export type AcceptPromptedTaskMutationBody = BodyType<PromptedTaskRecord>;
+export type AcceptPromptedTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save an accepted (clinician-edited) prompted task
+ */
+export const useAcceptPromptedTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acceptPromptedTask>>,
+    TError,
+    { data: BodyType<PromptedTaskRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acceptPromptedTask>>,
+  TError,
+  { data: BodyType<PromptedTaskRecord> },
+  TContext
+> => {
+  return useMutation(getAcceptPromptedTaskMutationOptions(options));
+};
+
+/**
+ * Idempotent — if a row already exists for (email, kind) (accepted or dismissed) the call is a no-op so we never overwrite a saved accepted task with a dismissal.
+ * @summary Record that the clinician rejected a "Possible task" prompt
+ */
+export const getDismissPromptedTaskUrl = () => {
+  return `/api/prompted-tasks/dismiss`;
+};
+
+export const dismissPromptedTask = async (
+  dismissPromptedTaskInput: DismissPromptedTaskInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDismissPromptedTaskUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dismissPromptedTaskInput),
+  });
+};
+
+export const getDismissPromptedTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissPromptedTask>>,
+    TError,
+    { data: BodyType<DismissPromptedTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissPromptedTask>>,
+  TError,
+  { data: BodyType<DismissPromptedTaskInput> },
+  TContext
+> => {
+  const mutationKey = ["dismissPromptedTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissPromptedTask>>,
+    { data: BodyType<DismissPromptedTaskInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dismissPromptedTask(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissPromptedTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissPromptedTask>>
+>;
+export type DismissPromptedTaskMutationBody =
+  BodyType<DismissPromptedTaskInput>;
+export type DismissPromptedTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record that the clinician rejected a "Possible task" prompt
+ */
+export const useDismissPromptedTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissPromptedTask>>,
+    TError,
+    { data: BodyType<DismissPromptedTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissPromptedTask>>,
+  TError,
+  { data: BodyType<DismissPromptedTaskInput> },
+  TContext
+> => {
+  return useMutation(getDismissPromptedTaskMutationOptions(options));
+};
+
+/**
+ * @summary Toggle the `done` flag on an accepted prompted task
+ */
+export const getSetPromptedTaskDoneApiUrl = () => {
+  return `/api/prompted-tasks/done`;
+};
+
+export const setPromptedTaskDoneApi = async (
+  setPromptedTaskDoneInput: SetPromptedTaskDoneInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getSetPromptedTaskDoneApiUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setPromptedTaskDoneInput),
+  });
+};
+
+export const getSetPromptedTaskDoneApiMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setPromptedTaskDoneApi>>,
+    TError,
+    { data: BodyType<SetPromptedTaskDoneInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setPromptedTaskDoneApi>>,
+  TError,
+  { data: BodyType<SetPromptedTaskDoneInput> },
+  TContext
+> => {
+  const mutationKey = ["setPromptedTaskDoneApi"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setPromptedTaskDoneApi>>,
+    { data: BodyType<SetPromptedTaskDoneInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return setPromptedTaskDoneApi(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetPromptedTaskDoneApiMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setPromptedTaskDoneApi>>
+>;
+export type SetPromptedTaskDoneApiMutationBody =
+  BodyType<SetPromptedTaskDoneInput>;
+export type SetPromptedTaskDoneApiMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Toggle the `done` flag on an accepted prompted task
+ */
+export const useSetPromptedTaskDoneApi = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setPromptedTaskDoneApi>>,
+    TError,
+    { data: BodyType<SetPromptedTaskDoneInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setPromptedTaskDoneApi>>,
+  TError,
+  { data: BodyType<SetPromptedTaskDoneInput> },
+  TContext
+> => {
+  return useMutation(getSetPromptedTaskDoneApiMutationOptions(options));
 };

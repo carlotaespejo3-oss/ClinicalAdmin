@@ -22,3 +22,6 @@ export * from "./messages";
 export * from "./deferralHistory";
 export * from "./archivedEmails";
 export * from "./acknowledgedEmails";
+export * from "./userTasks";
+export * from "./linkedDocTasks";
+export * from "./promptedTasks";

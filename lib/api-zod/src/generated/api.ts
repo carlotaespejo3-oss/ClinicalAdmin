@@ -202,3 +202,205 @@ export const AcknowledgeEmailBody = zod.object({
 export const UnacknowledgeEmailParams = zod.object({
   outlookEmailId: zod.coerce.string(),
 });
+
+/**
+ * Returns the clinician's task list (CPD one-click adds today, manual entries in future). Stores their own organisational data only — no email body content. outlookEmailId is a reference back to the source email when the task was created from one.
+ * @summary List every clinician-added task
+ */
+export const ListUserTasksResponseItem = zod
+  .object({
+    id: zod.string().describe("Client-generated 'ut_<base36>_<rand>'"),
+    outlookEmailId: zod
+      .string()
+      .nullish()
+      .describe("Source email reference; null for manual tasks"),
+    title: zod.string(),
+    source: zod.enum(["cpd", "manual"]),
+    eventDate: zod
+      .string()
+      .nullish()
+      .describe("ISO YYYY-MM-DD; CPD event start"),
+    registrationDeadline: zod
+      .string()
+      .nullish()
+      .describe("ISO YYYY-MM-DD; CPD registration cut-off"),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    "A clinician-added task. Stores their own organisational data (chosen title, optional dates). Never email body content.",
+  );
+export const ListUserTasksResponse = zod.array(ListUserTasksResponseItem);
+
+/**
+ * Idempotent on `id` — re-posting the same id is a no-op (the client generates the id locally so it knows it immediately and can fire-and-forget the POST).
+ * @summary Add a task to the clinician's task list
+ */
+export const CreateUserTaskBody = zod
+  .object({
+    id: zod.string().describe("Client-generated 'ut_<base36>_<rand>'"),
+    outlookEmailId: zod
+      .string()
+      .nullish()
+      .describe("Source email reference; null for manual tasks"),
+    title: zod.string(),
+    source: zod.enum(["cpd", "manual"]),
+    eventDate: zod
+      .string()
+      .nullish()
+      .describe("ISO YYYY-MM-DD; CPD event start"),
+    registrationDeadline: zod
+      .string()
+      .nullish()
+      .describe("ISO YYYY-MM-DD; CPD registration cut-off"),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    "A clinician-added task. Stores their own organisational data (chosen title, optional dates). Never email body content.",
+  );
+
+/**
+ * @summary Remove a task from the clinician's task list
+ */
+export const DeleteUserTaskParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * Document task = task auto-created when the classifier flags an email as requiring a written document. Title is a short organisational label ("EHCP Letter — Jamie B — requested by Mrs Davies"); no email body text is stored.
+ * @summary List every linked document task for the current clinician
+ */
+export const ListLinkedDocTasksResponseItem = zod
+  .object({
+    outlookEmailId: zod.string(),
+    title: zod.string(),
+    cat: zod.string(),
+    type: zod.string(),
+    deadline: zod.number(),
+    risk: zod.enum(["high", "medium", "low"]),
+    estMin: zod.number(),
+    autoCompleteOnReply: zod.boolean(),
+    done: zod.boolean(),
+    noteAfterEmailDone: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    "Document task auto-created for emails the classifier flagged as requiring a written document. Title is a short organisational label; no email body text is stored.",
+  );
+export const ListLinkedDocTasksResponse = zod.array(
+  ListLinkedDocTasksResponseItem,
+);
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). Used both for initial creation and for mutations to `done` / note. Server replaces the whole row.
+ * @summary Create or update a linked document task
+ */
+export const UpsertLinkedDocTaskBody = zod
+  .object({
+    outlookEmailId: zod.string(),
+    title: zod.string(),
+    cat: zod.string(),
+    type: zod.string(),
+    deadline: zod.number(),
+    risk: zod.enum(["high", "medium", "low"]),
+    estMin: zod.number(),
+    autoCompleteOnReply: zod.boolean(),
+    done: zod.boolean(),
+    noteAfterEmailDone: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    "Document task auto-created for emails the classifier flagged as requiring a written document. Title is a short organisational label; no email body text is stored.",
+  );
+
+/**
+ * @summary Remove a linked document task
+ */
+export const DeleteLinkedDocTaskParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+/**
+ * Returns two arrays — accepted tasks (with the clinician's saved form values) and dismissed prompt keys. Implicit-dismiss-on-accept is captured by the same row; an accepted entry also suppresses the prompt for that (email, kind).
+ * @summary List the clinician's responses to "Possible task detected" prompts
+ */
+export const ListPromptedTasksResponse = zod.object({
+  tasks: zod.array(
+    zod
+      .object({
+        taskId: zod
+          .string()
+          .describe("Client-generated 'pt_<emailId>_<kind>_<base36>'"),
+        outlookEmailId: zod.string(),
+        kind: zod.string(),
+        title: zod.string(),
+        type: zod.string(),
+        estMin: zod.number(),
+        priority: zod.enum(["high", "medium", "low"]),
+        patientName: zod.string().nullish(),
+        dueDays: zod.number().nullish(),
+        notes: zod.string(),
+        done: zod.boolean(),
+        controlledDrug: zod.boolean().nullish(),
+        medicationName: zod.string().nullish(),
+        medicationDose: zod.string().nullish(),
+        travelMentioned: zod.boolean().nullish(),
+        createdAt: zod.coerce.date(),
+      })
+      .describe(
+        'An accepted \"Possible task detected\" prompt — the clinician\'s edited and saved form values. The pre-edit AI suggestion is never stored; only what the clinician approved.',
+      ),
+  ),
+  dismissed: zod.array(
+    zod.object({
+      outlookEmailId: zod.string(),
+      kind: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId, kind) — re-posting is a no-op (matches the client's hasPromptedTaskForKind dedupe).
+ * @summary Save an accepted (clinician-edited) prompted task
+ */
+export const AcceptPromptedTaskBody = zod
+  .object({
+    taskId: zod
+      .string()
+      .describe("Client-generated 'pt_<emailId>_<kind>_<base36>'"),
+    outlookEmailId: zod.string(),
+    kind: zod.string(),
+    title: zod.string(),
+    type: zod.string(),
+    estMin: zod.number(),
+    priority: zod.enum(["high", "medium", "low"]),
+    patientName: zod.string().nullish(),
+    dueDays: zod.number().nullish(),
+    notes: zod.string(),
+    done: zod.boolean(),
+    controlledDrug: zod.boolean().nullish(),
+    medicationName: zod.string().nullish(),
+    medicationDose: zod.string().nullish(),
+    travelMentioned: zod.boolean().nullish(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    'An accepted \"Possible task detected\" prompt — the clinician\'s edited and saved form values. The pre-edit AI suggestion is never stored; only what the clinician approved.',
+  );
+
+/**
+ * Idempotent — if a row already exists for (email, kind) (accepted or dismissed) the call is a no-op so we never overwrite a saved accepted task with a dismissal.
+ * @summary Record that the clinician rejected a "Possible task" prompt
+ */
+export const DismissPromptedTaskBody = zod.object({
+  outlookEmailId: zod.string(),
+  kind: zod.string(),
+});
+
+/**
+ * @summary Toggle the `done` flag on an accepted prompted task
+ */
+export const SetPromptedTaskDoneApiBody = zod.object({
+  outlookEmailId: zod.string(),
+  kind: zod.string(),
+  done: zod.boolean(),
+});
