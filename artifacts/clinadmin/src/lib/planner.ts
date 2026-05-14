@@ -472,7 +472,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // 3 — Compute weekly capacity (week 1 = first 7 days) and apply the
   //    tiered arrivals reservation:
   //      (a) URGENT — 10 min on each future admin day (one urgent ~per day)
-  //      (b) MEDIUM — a single 30-min block on the busiest future admin day
+  //      (b) MEDIUM — a single 30-min block on the LIGHTEST future admin day
   //      (c) LOW    — nothing extra; the daily 15-min low allocation handles it
   //
   //    Today (day 0) is intentionally EXCLUDED. Holding capacity back today
@@ -507,19 +507,27 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     }
   }
 
-  // (b) Single weekly medium block — placed on the future admin day with
-  //     the most remaining bookable capacity AFTER the urgent reserve. A
-  //     light day shouldn't carry the medium block.
+  // (b) Single weekly medium block — placed on the LIGHTEST future admin
+  //     day with any remaining bookable capacity AFTER the urgent reserve.
+  //
+  //     Clinical reasoning (intentionally inverted from "put it on the
+  //     busiest day because it has more slack"): an admin day that's
+  //     already packed is cognitively loaded — a medium-priority email
+  //     arriving onto it gets rushed or skipped. The lightest day is
+  //     where the clinician actually has breathing room, so reserving
+  //     the medium buffer there protects real attention rather than
+  //     paper capacity. The cap at bookableMin/2 still prevents a very
+  //     sparse day from being fully drained.
   if (arrivals.mediumWeeklyReserveMin > 0) {
-    let bestDay: DailyPlanInternal | null = null;
+    let lightestDay: DailyPlanInternal | null = null;
     for (const d of futureWeek1Days) {
       if (d.bookableMin === 0) continue;
-      if (!bestDay || d.bookableMin > bestDay.bookableMin) bestDay = d;
+      if (!lightestDay || d.bookableMin < lightestDay.bookableMin) lightestDay = d;
     }
-    if (bestDay) {
-      const cap = Math.floor(bestDay.bookableMin / 2);
+    if (lightestDay) {
+      const cap = Math.floor(lightestDay.bookableMin / 2);
       const actual = Math.min(arrivals.mediumWeeklyReserveMin, cap);
-      bestDay.bookableMin -= actual;
+      lightestDay.bookableMin -= actual;
       mediumReservedMin += actual;
     }
   }
