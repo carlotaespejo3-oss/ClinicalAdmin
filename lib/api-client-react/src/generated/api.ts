@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AcknowledgeEmailInput,
   AiCompleteInput,
   AiCompleteResult,
   AiError,
@@ -26,6 +27,8 @@ import type {
   AnthropicError,
   AnthropicMessage,
   AnthropicMessageInput,
+  ArchiveEmailInput,
+  ArchivedRecord,
   DeferralRecord,
   HealthStatus,
   RecordDeferralsInput,
@@ -969,4 +972,498 @@ export const useDeleteDeferral = <
   TContext
 > => {
   return useMutation(getDeleteDeferralMutationOptions(options));
+};
+
+/**
+ * Returns metadata only — no email content. Subject, body, and sender are fetched live from Microsoft Graph at display time using outlookEmailId.
+ * @summary List every archived email for the current clinician
+ */
+export const getListArchivedUrl = () => {
+  return `/api/archived`;
+};
+
+export const listArchived = async (
+  options?: RequestInit,
+): Promise<ArchivedRecord[]> => {
+  return customFetch<ArchivedRecord[]>(getListArchivedUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListArchivedQueryKey = () => {
+  return [`/api/archived`] as const;
+};
+
+export const getListArchivedQueryOptions = <
+  TData = Awaited<ReturnType<typeof listArchived>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listArchived>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListArchivedQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listArchived>>> = ({
+    signal,
+  }) => listArchived({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listArchived>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListArchivedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listArchived>>
+>;
+export type ListArchivedQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every archived email for the current clinician
+ */
+
+export function useListArchived<
+  TData = Awaited<ReturnType<typeof listArchived>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listArchived>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListArchivedQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent — re-archiving the same email updates the kind and archivedAt to "now". Server stores reference + kind only.
+ * @summary Archive an email (acknowledged or done)
+ */
+export const getArchiveEmailUrl = () => {
+  return `/api/archived`;
+};
+
+export const archiveEmail = async (
+  archiveEmailInput: ArchiveEmailInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getArchiveEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(archiveEmailInput),
+  });
+};
+
+export const getArchiveEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEmail>>,
+    TError,
+    { data: BodyType<ArchiveEmailInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveEmail>>,
+  TError,
+  { data: BodyType<ArchiveEmailInput> },
+  TContext
+> => {
+  const mutationKey = ["archiveEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveEmail>>,
+    { data: BodyType<ArchiveEmailInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return archiveEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveEmail>>
+>;
+export type ArchiveEmailMutationBody = BodyType<ArchiveEmailInput>;
+export type ArchiveEmailMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Archive an email (acknowledged or done)
+ */
+export const useArchiveEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEmail>>,
+    TError,
+    { data: BodyType<ArchiveEmailInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveEmail>>,
+  TError,
+  { data: BodyType<ArchiveEmailInput> },
+  TContext
+> => {
+  return useMutation(getArchiveEmailMutationOptions(options));
+};
+
+/**
+ * @summary Remove an email from the archive
+ */
+export const getUnarchiveEmailUrl = (outlookEmailId: string) => {
+  return `/api/archived/${outlookEmailId}`;
+};
+
+export const unarchiveEmail = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUnarchiveEmailUrl(outlookEmailId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getUnarchiveEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveEmail>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveEmail>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveEmail>>,
+    { outlookEmailId: string }
+  > = (props) => {
+    const { outlookEmailId } = props ?? {};
+
+    return unarchiveEmail(outlookEmailId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveEmail>>
+>;
+
+export type UnarchiveEmailMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove an email from the archive
+ */
+export const useUnarchiveEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveEmail>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveEmail>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveEmailMutationOptions(options));
+};
+
+/**
+ * Returns reference IDs only — no email content. The "acknowledged" flag is purely behavioural (the clinician saw this email and chose not to act on it).
+ * @summary List every acknowledged email for the current clinician
+ */
+export const getListAcknowledgedUrl = () => {
+  return `/api/acknowledged`;
+};
+
+export const listAcknowledged = async (
+  options?: RequestInit,
+): Promise<string[]> => {
+  return customFetch<string[]>(getListAcknowledgedUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAcknowledgedQueryKey = () => {
+  return [`/api/acknowledged`] as const;
+};
+
+export const getListAcknowledgedQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAcknowledged>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAcknowledged>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAcknowledgedQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAcknowledged>>
+  > = ({ signal }) => listAcknowledged({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAcknowledged>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAcknowledgedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAcknowledged>>
+>;
+export type ListAcknowledgedQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every acknowledged email for the current clinician
+ */
+
+export function useListAcknowledged<
+  TData = Awaited<ReturnType<typeof listAcknowledged>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAcknowledged>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAcknowledgedQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent — re-acknowledging is a no-op.
+ * @summary Mark an email as acknowledged
+ */
+export const getAcknowledgeEmailUrl = () => {
+  return `/api/acknowledged`;
+};
+
+export const acknowledgeEmail = async (
+  acknowledgeEmailInput: AcknowledgeEmailInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getAcknowledgeEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(acknowledgeEmailInput),
+  });
+};
+
+export const getAcknowledgeEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeEmail>>,
+    TError,
+    { data: BodyType<AcknowledgeEmailInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acknowledgeEmail>>,
+  TError,
+  { data: BodyType<AcknowledgeEmailInput> },
+  TContext
+> => {
+  const mutationKey = ["acknowledgeEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acknowledgeEmail>>,
+    { data: BodyType<AcknowledgeEmailInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return acknowledgeEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcknowledgeEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acknowledgeEmail>>
+>;
+export type AcknowledgeEmailMutationBody = BodyType<AcknowledgeEmailInput>;
+export type AcknowledgeEmailMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mark an email as acknowledged
+ */
+export const useAcknowledgeEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeEmail>>,
+    TError,
+    { data: BodyType<AcknowledgeEmailInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acknowledgeEmail>>,
+  TError,
+  { data: BodyType<AcknowledgeEmailInput> },
+  TContext
+> => {
+  return useMutation(getAcknowledgeEmailMutationOptions(options));
+};
+
+/**
+ * @summary Clear the acknowledged flag for an email
+ */
+export const getUnacknowledgeEmailUrl = (outlookEmailId: string) => {
+  return `/api/acknowledged/${outlookEmailId}`;
+};
+
+export const unacknowledgeEmail = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUnacknowledgeEmailUrl(outlookEmailId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getUnacknowledgeEmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unacknowledgeEmail>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unacknowledgeEmail>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  const mutationKey = ["unacknowledgeEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unacknowledgeEmail>>,
+    { outlookEmailId: string }
+  > = (props) => {
+    const { outlookEmailId } = props ?? {};
+
+    return unacknowledgeEmail(outlookEmailId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnacknowledgeEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unacknowledgeEmail>>
+>;
+
+export type UnacknowledgeEmailMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Clear the acknowledged flag for an email
+ */
+export const useUnacknowledgeEmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unacknowledgeEmail>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unacknowledgeEmail>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  return useMutation(getUnacknowledgeEmailMutationOptions(options));
 };

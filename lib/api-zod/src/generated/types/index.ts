@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./acknowledgeEmailInput";
 export * from "./aiCompleteInput";
 export * from "./aiCompleteResult";
 export * from "./aiError";
@@ -15,6 +16,9 @@ export * from "./anthropicConversationWithMessages";
 export * from "./anthropicError";
 export * from "./anthropicMessage";
 export * from "./anthropicMessageInput";
+export * from "./archivedRecord";
+export * from "./archiveEmailInput";
+export * from "./archiveKind";
 export * from "./deferralRecord";
 export * from "./healthStatus";
 export * from "./recordDeferralsInput";

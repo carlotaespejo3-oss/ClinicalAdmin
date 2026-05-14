@@ -16,6 +16,10 @@ tags:
     description: ClinAdmin AI operations
   - name: deferrals
     description: Per-email deferral history (planning-window tracking)
+  - name: archived
+    description: Per-email archive state (acknowledged or done)
+  - name: acknowledged
+    description: Per-email "seen, no action needed" flag
 paths:
   /healthz:
     get:
@@ -223,6 +227,101 @@ paths:
       responses:
         "204":
           description: Deleted (idempotent — 204 even if no record existed)
+  /archived:
+    get:
+      operationId: listArchived
+      tags: [archived]
+      summary: List every archived email for the current clinician
+      description: >-
+        Returns metadata only — no email content. Subject, body, and
+        sender are fetched live from Microsoft Graph at display time
+        using outlookEmailId.
+      responses:
+        "200":
+          description: All archive entries for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArchivedRecord"
+    post:
+      operationId: archiveEmail
+      tags: [archived]
+      summary: Archive an email (acknowledged or done)
+      description: >-
+        Idempotent — re-archiving the same email updates the kind and
+        archivedAt to "now". Server stores reference + kind only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveEmailInput"
+      responses:
+        "204":
+          description: Archived
+  /archived/{outlookEmailId}:
+    delete:
+      operationId: unarchiveEmail
+      tags: [archived]
+      summary: Remove an email from the archive
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Unarchived (idempotent — 204 even if no record existed)
+  /acknowledged:
+    get:
+      operationId: listAcknowledged
+      tags: [acknowledged]
+      summary: List every acknowledged email for the current clinician
+      description: >-
+        Returns reference IDs only — no email content. The
+        "acknowledged" flag is purely behavioural (the clinician saw
+        this email and chose not to act on it).
+      responses:
+        "200":
+          description: All acknowledged email IDs for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  description: Microsoft Graph message ID — reference only
+    post:
+      operationId: acknowledgeEmail
+      tags: [acknowledged]
+      summary: Mark an email as acknowledged
+      description: Idempotent — re-acknowledging is a no-op.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcknowledgeEmailInput"
+      responses:
+        "204":
+          description: Acknowledged
+  /acknowledged/{outlookEmailId}:
+    delete:
+      operationId: unacknowledgeEmail
+      tags: [acknowledged]
+      summary: Clear the acknowledged flag for an email
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cleared (idempotent — 204 even if no record existed)
 components:
   schemas:
     HealthStatus:
@@ -367,3 +466,42 @@ components:
       required:
         - outlookEmailIds
         - weekMonday
+    ArchiveKind:
+      type: string
+      enum: [acknowledged, done]
+    ArchivedRecord:
+      type: object
+      description: >-
+        Behavioural metadata only — reference to the Outlook message,
+        the archive reason, and when it was archived. NEVER contains
+        email content.
+      properties:
+        outlookEmailId:
+          type: string
+          description: Microsoft Graph message ID — reference only
+        kind:
+          $ref: "#/components/schemas/ArchiveKind"
+        archivedAt:
+          type: string
+          format: date-time
+      required:
+        - outlookEmailId
+        - kind
+        - archivedAt
+    ArchiveEmailInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/ArchiveKind"
+      required:
+        - outlookEmailId
+        - kind
+    AcknowledgeEmailInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+      required:
+        - outlookEmailId

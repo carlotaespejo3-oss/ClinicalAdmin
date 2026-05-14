@@ -1,4 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import {
+  listArchived,
+  archiveEmail as apiArchiveEmail,
+  unarchiveEmail as apiUnarchiveEmail,
+} from '@workspace/api-client-react';
 import { clearDeferralsForEmail } from './deferralStore';
 
 export type ArchiveKind = 'acknowledged' | 'done';
@@ -9,107 +14,105 @@ export interface ArchiveEntry {
   at: number; // epoch ms
 }
 
-const KEY = 'clinadmin-archived-v1';
+// Tracks which emails are archived (acknowledged-no-action OR done).
+//
+// PERSISTENCE: this used to be localStorage. It now lives in Postgres
+// via /api/archived. Same hydrate-once + fire-and-forget model as
+// deferralStore. See that file for the full rationale.
+//
+// Storage rule: behavioural metadata + reference only. NEVER any
+// email content. The legacy localStorage migration that pulled
+// orphaned acknowledged-only IDs into the archive has been removed —
+// we're starting clean from the database.
+
 const listeners = new Set<() => void>();
-let cache: Map<number, ArchiveEntry> | null = null;
+let cache: Map<number, ArchiveEntry> = new Map();
+let hydrationStarted = false;
+let hydrationDone = false;
 
-// Legacy data: before Step 2, "Acknowledge — no action" only wrote into
-// `clinadmin-acknowledged-v1`. Those IDs would now be hidden from the inbox
-// (because acknowledged.has(id) is true) but invisible in the Archive tab
-// (because they're not in archivedStore). One-shot migration on first load
-// pulls any orphaned IDs into this store as kind='acknowledged'.
-const LEGACY_ACK_KEY = 'clinadmin-acknowledged-v1';
-const MIGRATION_KEY = 'clinadmin-archived-v1-migrated';
-
-function migrateLegacyAcknowledged(into: Map<number, ArchiveEntry>) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (window.localStorage.getItem(MIGRATION_KEY)) return;
-    const raw = window.localStorage.getItem(LEGACY_ACK_KEY);
-    if (raw) {
-      const ids = JSON.parse(raw) as unknown;
-      if (Array.isArray(ids)) {
-        const now = Date.now();
-        for (const id of ids) {
-          if (typeof id === 'number' && !into.has(id)) {
-            into.set(id, { id, kind: 'acknowledged', at: now });
-          }
-        }
-      }
-    }
-    window.localStorage.setItem(MIGRATION_KEY, '1');
-  } catch {
-    // ignore migration errors
-  }
-}
-
-function load(): Map<number, ArchiveEntry> {
-  if (cache) return cache;
-  let map: Map<number, ArchiveEntry>;
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(KEY) : null;
-    const arr = raw ? (JSON.parse(raw) as ArchiveEntry[]) : [];
-    map = new Map(arr.map((e) => [e.id, e]));
-  } catch {
-    map = new Map();
-  }
-  migrateLegacyAcknowledged(map);
-  cache = map;
-  // Persist if migration added anything so it survives a page reload.
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(Array.from(map.values())));
-    } catch {
-      // ignore quota errors
-    }
-  }
-  return cache;
-}
-
-function persist() {
-  if (!cache || typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(Array.from(cache.values())));
-  } catch {
-    // ignore quota errors
-  }
-}
-
-function mutate(fn: (m: Map<number, ArchiveEntry>) => void) {
-  const next = new Map(load());
-  fn(next);
-  cache = next;
-  persist();
+function emit() {
+  cache = new Map(cache);
   listeners.forEach((l) => l());
 }
 
+async function hydrate(): Promise<void> {
+  if (hydrationStarted) return;
+  hydrationStarted = true;
+  try {
+    const rows = await listArchived();
+    for (const r of rows) {
+      const id = Number(r.outlookEmailId);
+      if (!Number.isFinite(id)) continue;
+      // Don't overwrite local entries recorded before hydration finished.
+      if (cache.has(id)) continue;
+      cache.set(id, {
+        id,
+        kind: r.kind,
+        at: new Date(r.archivedAt).getTime(),
+      });
+    }
+    hydrationDone = true;
+    emit();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[archivedStore] failed to hydrate from server', err);
+    hydrationDone = true;
+  }
+}
+
 export function archiveEmail(id: number, kind: ArchiveKind) {
-  mutate((m) => m.set(id, { id, kind, at: Date.now() }));
+  cache.set(id, { id, kind, at: Date.now() });
+  emit();
   // Resolution clears any deferral history — the "deferred 2×" warning
   // is meaningful only on active unresolved emails, and a stale record
   // would resurface if the email is ever restored from archive.
   clearDeferralsForEmail(id);
+  apiArchiveEmail({ outlookEmailId: String(id), kind }).catch(
+    (err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[archivedStore] failed to persist archive', err);
+    },
+  );
 }
 
 export function unarchiveEmail(id: number) {
-  if (!load().has(id)) return;
-  mutate((m) => m.delete(id));
+  const had = cache.has(id);
+  if (had) {
+    cache.delete(id);
+    emit();
+  }
+  // Always attempt DELETE even if cache miss (hydration may be pending).
+  apiUnarchiveEmail(encodeURIComponent(String(id))).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn('[archivedStore] failed to persist unarchive', err);
+  });
 }
 
+// Test-only / dev-only: wipe local cache. Does NOT touch the server.
 export function clearArchive() {
-  mutate((m) => m.clear());
+  cache = new Map();
+  hydrationStarted = false;
+  hydrationDone = false;
+  listeners.forEach((l) => l());
 }
 
 function subscribe(l: () => void): () => void {
   listeners.add(l);
+  if (!hydrationStarted) {
+    void hydrate();
+  }
   return () => {
     listeners.delete(l);
   };
 }
 
-const getSnapshot = () => load();
-const getServerSnapshot = () => load();
+const getSnapshot = () => cache;
+const getServerSnapshot = () => cache;
 
 export function useArchivedEmails(): Map<number, ArchiveEntry> {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+export function isHydrated(): boolean {
+  return hydrationDone;
 }

@@ -145,3 +145,60 @@ export const RecordDeferralsBody = zod.object({
 export const DeleteDeferralParams = zod.object({
   outlookEmailId: zod.coerce.string(),
 });
+
+/**
+ * Returns metadata only — no email content. Subject, body, and sender are fetched live from Microsoft Graph at display time using outlookEmailId.
+ * @summary List every archived email for the current clinician
+ */
+export const ListArchivedResponseItem = zod
+  .object({
+    outlookEmailId: zod
+      .string()
+      .describe("Microsoft Graph message ID — reference only"),
+    kind: zod.enum(["acknowledged", "done"]),
+    archivedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Behavioural metadata only — reference to the Outlook message, the archive reason, and when it was archived. NEVER contains email content.",
+  );
+export const ListArchivedResponse = zod.array(ListArchivedResponseItem);
+
+/**
+ * Idempotent — re-archiving the same email updates the kind and archivedAt to "now". Server stores reference + kind only.
+ * @summary Archive an email (acknowledged or done)
+ */
+export const ArchiveEmailBody = zod.object({
+  outlookEmailId: zod.string(),
+  kind: zod.enum(["acknowledged", "done"]),
+});
+
+/**
+ * @summary Remove an email from the archive
+ */
+export const UnarchiveEmailParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+/**
+ * Returns reference IDs only — no email content. The "acknowledged" flag is purely behavioural (the clinician saw this email and chose not to act on it).
+ * @summary List every acknowledged email for the current clinician
+ */
+export const ListAcknowledgedResponseItem = zod
+  .string()
+  .describe("Microsoft Graph message ID — reference only");
+export const ListAcknowledgedResponse = zod.array(ListAcknowledgedResponseItem);
+
+/**
+ * Idempotent — re-acknowledging is a no-op.
+ * @summary Mark an email as acknowledged
+ */
+export const AcknowledgeEmailBody = zod.object({
+  outlookEmailId: zod.string(),
+});
+
+/**
+ * @summary Clear the acknowledged flag for an email
+ */
+export const UnacknowledgeEmailParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});

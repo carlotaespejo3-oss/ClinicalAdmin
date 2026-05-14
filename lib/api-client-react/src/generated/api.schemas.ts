@@ -73,3 +73,29 @@ export interface RecordDeferralsInput {
   /** ISO 'YYYY-MM-DD' Monday string for the planning window */
   weekMonday: string;
 }
+
+export type ArchiveKind = (typeof ArchiveKind)[keyof typeof ArchiveKind];
+
+export const ArchiveKind = {
+  acknowledged: "acknowledged",
+  done: "done",
+} as const;
+
+/**
+ * Behavioural metadata only — reference to the Outlook message, the archive reason, and when it was archived. NEVER contains email content.
+ */
+export interface ArchivedRecord {
+  /** Microsoft Graph message ID — reference only */
+  outlookEmailId: string;
+  kind: ArchiveKind;
+  archivedAt: string;
+}
+
+export interface ArchiveEmailInput {
+  outlookEmailId: string;
+  kind: ArchiveKind;
+}
+
+export interface AcknowledgeEmailInput {
+  outlookEmailId: string;
+}

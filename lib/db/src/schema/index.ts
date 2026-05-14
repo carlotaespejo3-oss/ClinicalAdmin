@@ -20,3 +20,5 @@
 export * from "./conversations";
 export * from "./messages";
 export * from "./deferralHistory";
+export * from "./archivedEmails";
+export * from "./acknowledgedEmails";
