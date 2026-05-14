@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { clearDeferralsForEmail } from './deferralStore';
 
 export type ArchiveKind = 'acknowledged' | 'done';
 
@@ -84,6 +85,10 @@ function mutate(fn: (m: Map<number, ArchiveEntry>) => void) {
 
 export function archiveEmail(id: number, kind: ArchiveKind) {
   mutate((m) => m.set(id, { id, kind, at: Date.now() }));
+  // Resolution clears any deferral history — the "deferred 2×" warning
+  // is meaningful only on active unresolved emails, and a stale record
+  // would resurface if the email is ever restored from archive.
+  clearDeferralsForEmail(id);
 }
 
 export function unarchiveEmail(id: number) {

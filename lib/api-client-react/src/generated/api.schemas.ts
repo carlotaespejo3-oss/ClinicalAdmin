@@ -55,3 +55,15 @@ export interface AnthropicConversationWithMessages {
 export interface AnthropicError {
   error: string;
 }
+
+export interface DeferralRecord {
+  emailId: number;
+  weeksDeferred: string[];
+}
+
+export interface RecordDeferralsInput {
+  /** @minItems 1 */
+  emailIds: number[];
+  /** ISO 'YYYY-MM-DD' Monday string for the planning window */
+  weekMonday: string;
+}

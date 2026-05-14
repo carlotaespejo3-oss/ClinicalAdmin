@@ -104,3 +104,34 @@ export const SendAnthropicMessageParams = zod.object({
 export const SendAnthropicMessageBody = zod.object({
   content: zod.string(),
 });
+
+/**
+ * @summary List every email's deferral history
+ */
+export const ListDeferralsResponseItem = zod.object({
+  emailId: zod.number(),
+  weeksDeferred: zod.array(
+    zod.string().describe("ISO 'YYYY-MM-DD' Monday string"),
+  ),
+});
+export const ListDeferralsResponse = zod.array(ListDeferralsResponseItem);
+
+/**
+ * Idempotent: recording the same (emailId, weekMonday) pair more than once adds only one entry. Counts only ever increase across distinct weeks.
+ * @summary Record that one or more emails were deferred in a given ISO week
+ */
+
+export const RecordDeferralsBody = zod.object({
+  emailIds: zod.array(zod.number()).min(1),
+  weekMonday: zod
+    .string()
+    .describe("ISO 'YYYY-MM-DD' Monday string for the planning window"),
+});
+
+/**
+ * Called when the email is archived, acknowledged, or marked done. The deferral warning is meaningful only on active unresolved emails, so resolution clears the record completely.
+ * @summary Remove an email's entire deferral history
+ */
+export const DeleteDeferralParams = zod.object({
+  emailId: zod.coerce.number(),
+});

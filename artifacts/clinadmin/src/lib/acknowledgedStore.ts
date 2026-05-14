@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { clearDeferralsForEmail } from './deferralStore';
 
 const KEY = 'clinadmin-acknowledged-v1';
 const listeners = new Set<() => void>();
@@ -35,6 +36,8 @@ function mutate(fn: (s: Set<number>) => void) {
 export function acknowledgeEmail(id: number) {
   if (load().has(id)) return;
   mutate((s) => s.add(id));
+  // Resolution clears deferral history — see archivedStore for rationale.
+  clearDeferralsForEmail(id);
 }
 
 export function unacknowledgeEmail(id: number) {

@@ -15,4 +15,6 @@ export * from "./anthropicConversationWithMessages";
 export * from "./anthropicError";
 export * from "./anthropicMessage";
 export * from "./anthropicMessageInput";
+export * from "./deferralRecord";
 export * from "./healthStatus";
+export * from "./recordDeferralsInput";

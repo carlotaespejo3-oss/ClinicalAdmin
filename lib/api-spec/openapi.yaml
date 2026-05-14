@@ -14,6 +14,8 @@ tags:
     description: Anthropic AI chat operations
   - name: clinadmin
     description: ClinAdmin AI operations
+  - name: deferrals
+    description: Per-email deferral history (planning-window tracking)
 paths:
   /healthz:
     get:
@@ -167,6 +169,56 @@ paths:
           description: SSE stream of assistant response chunks
           content:
             text/event-stream: {}
+  /deferrals:
+    get:
+      operationId: listDeferrals
+      tags: [deferrals]
+      summary: List every email's deferral history
+      responses:
+        "200":
+          description: All deferral records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeferralRecord"
+  /deferrals/record:
+    post:
+      operationId: recordDeferrals
+      tags: [deferrals]
+      summary: Record that one or more emails were deferred in a given ISO week
+      description: >-
+        Idempotent: recording the same (emailId, weekMonday) pair more than
+        once adds only one entry. Counts only ever increase across distinct
+        weeks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordDeferralsInput"
+      responses:
+        "204":
+          description: Recorded
+  /deferrals/{emailId}:
+    delete:
+      operationId: deleteDeferral
+      tags: [deferrals]
+      summary: Remove an email's entire deferral history
+      description: >-
+        Called when the email is archived, acknowledged, or marked done.
+        The deferral warning is meaningful only on active unresolved emails,
+        so resolution clears the record completely.
+      parameters:
+        - name: emailId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted (idempotent — 204 even if no record existed)
 components:
   schemas:
     HealthStatus:
@@ -275,3 +327,30 @@ components:
           type: string
       required:
         - error
+    DeferralRecord:
+      type: object
+      properties:
+        emailId:
+          type: integer
+        weeksDeferred:
+          type: array
+          items:
+            type: string
+            description: ISO 'YYYY-MM-DD' Monday string
+      required:
+        - emailId
+        - weeksDeferred
+    RecordDeferralsInput:
+      type: object
+      properties:
+        emailIds:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+        weekMonday:
+          type: string
+          description: ISO 'YYYY-MM-DD' Monday string for the planning window
+      required:
+        - emailIds
+        - weekMonday

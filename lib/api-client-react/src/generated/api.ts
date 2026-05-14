@@ -26,7 +26,9 @@ import type {
   AnthropicError,
   AnthropicMessage,
   AnthropicMessageInput,
+  DeferralRecord,
   HealthStatus,
+  RecordDeferralsInput,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -719,4 +721,251 @@ export const useSendAnthropicMessage = <
   TContext
 > => {
   return useMutation(getSendAnthropicMessageMutationOptions(options));
+};
+
+/**
+ * @summary List every email's deferral history
+ */
+export const getListDeferralsUrl = () => {
+  return `/api/deferrals`;
+};
+
+export const listDeferrals = async (
+  options?: RequestInit,
+): Promise<DeferralRecord[]> => {
+  return customFetch<DeferralRecord[]>(getListDeferralsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDeferralsQueryKey = () => {
+  return [`/api/deferrals`] as const;
+};
+
+export const getListDeferralsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDeferrals>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDeferrals>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDeferralsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDeferrals>>> = ({
+    signal,
+  }) => listDeferrals({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDeferrals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDeferralsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDeferrals>>
+>;
+export type ListDeferralsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every email's deferral history
+ */
+
+export function useListDeferrals<
+  TData = Awaited<ReturnType<typeof listDeferrals>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDeferrals>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDeferralsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent: recording the same (emailId, weekMonday) pair more than once adds only one entry. Counts only ever increase across distinct weeks.
+ * @summary Record that one or more emails were deferred in a given ISO week
+ */
+export const getRecordDeferralsUrl = () => {
+  return `/api/deferrals/record`;
+};
+
+export const recordDeferrals = async (
+  recordDeferralsInput: RecordDeferralsInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRecordDeferralsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(recordDeferralsInput),
+  });
+};
+
+export const getRecordDeferralsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDeferrals>>,
+    TError,
+    { data: BodyType<RecordDeferralsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordDeferrals>>,
+  TError,
+  { data: BodyType<RecordDeferralsInput> },
+  TContext
+> => {
+  const mutationKey = ["recordDeferrals"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordDeferrals>>,
+    { data: BodyType<RecordDeferralsInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return recordDeferrals(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordDeferralsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordDeferrals>>
+>;
+export type RecordDeferralsMutationBody = BodyType<RecordDeferralsInput>;
+export type RecordDeferralsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record that one or more emails were deferred in a given ISO week
+ */
+export const useRecordDeferrals = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDeferrals>>,
+    TError,
+    { data: BodyType<RecordDeferralsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordDeferrals>>,
+  TError,
+  { data: BodyType<RecordDeferralsInput> },
+  TContext
+> => {
+  return useMutation(getRecordDeferralsMutationOptions(options));
+};
+
+/**
+ * Called when the email is archived, acknowledged, or marked done. The deferral warning is meaningful only on active unresolved emails, so resolution clears the record completely.
+ * @summary Remove an email's entire deferral history
+ */
+export const getDeleteDeferralUrl = (emailId: number) => {
+  return `/api/deferrals/${emailId}`;
+};
+
+export const deleteDeferral = async (
+  emailId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDeferralUrl(emailId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDeferralMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDeferral>>,
+    TError,
+    { emailId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDeferral>>,
+  TError,
+  { emailId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDeferral"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDeferral>>,
+    { emailId: number }
+  > = (props) => {
+    const { emailId } = props ?? {};
+
+    return deleteDeferral(emailId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDeferralMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDeferral>>
+>;
+
+export type DeleteDeferralMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove an email's entire deferral history
+ */
+export const useDeleteDeferral = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDeferral>>,
+    TError,
+    { emailId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDeferral>>,
+  TError,
+  { emailId: number },
+  TContext
+> => {
+  return useMutation(getDeleteDeferralMutationOptions(options));
 };

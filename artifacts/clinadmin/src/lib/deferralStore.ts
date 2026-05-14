@@ -1,20 +1,33 @@
 import { useSyncExternalStore } from 'react';
+import {
+  listDeferrals,
+  recordDeferrals,
+  deleteDeferral,
+} from '@workspace/api-client-react';
 
 // Tracks which emails have been deferred from past planning windows
 // (i.e. items the planner couldn't fit into a previous week's runway).
 //
-// Without this, a low-priority email deferred twice would silently
-// become a 28-day-old unanswered email — it leaves the runway when
-// it can't fit, and there is no signal next week that it has slipped
-// before. Step 9 of the planner reads this history and annotates the
-// PlanItem so the UI can warn "deferred 2× — received {date}".
+// PERSISTENCE: this used to be localStorage. It now lives in Postgres
+// via /api/deferrals so the warning persists across devices and survives
+// a browser clear — a clinician switching from desk to laptop must still
+// see "deferred 2×" on a slipping email.
 //
-// Granularity is per ISO-week (Monday): refreshing the page mid-week
-// must NOT inflate counts. Each unique week the email appears in the
-// planner's deferredItems list adds exactly one entry to its
-// `weeksDeferred` array. The count is `weeksDeferred.length`.
+// CACHE MODEL: a single in-memory Map<emailId, DeferralRecord> backs
+// `useDeferralHistory()`. On first subscription we hydrate from the
+// server with a one-shot `listDeferrals()` and emit when it resolves.
+// Mutations (record / clear) update the local cache synchronously so
+// the UI is instant, then fire-and-forget the server call. We accept
+// that a network failure leaves local and server briefly out of sync;
+// the next page load reconciles. We deliberately do NOT show the user
+// a toast for these failures — the deferral warning is advisory, not
+// safety-critical, and a banner every time a flaky network hiccupped
+// would be far more annoying than helpful.
+//
+// IDEMPOTENCY: granularity is per ISO-week (Monday). Refreshing the
+// page mid-week must NOT inflate counts. Both the local cache and the
+// server route enforce "skip if (emailId, weekMonday) already present".
 
-const KEY = 'clinadmin-deferral-history-v1';
 const listeners = new Set<() => void>();
 
 export interface DeferralRecord {
@@ -22,33 +35,42 @@ export interface DeferralRecord {
   weeksDeferred: string[]; // ISO date strings of Mondays, ascending
 }
 
-let cache: Map<number, DeferralRecord> | null = null;
-
-function load(): Map<number, DeferralRecord> {
-  if (cache) return cache;
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(KEY) : null;
-    const arr = raw ? (JSON.parse(raw) as DeferralRecord[]) : [];
-    cache = new Map(arr.map((r) => [r.emailId, r]));
-  } catch {
-    cache = new Map();
-  }
-  return cache;
-}
-
-function persist() {
-  if (!cache || typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(Array.from(cache.values())));
-  } catch {
-    // ignore quota errors
-  }
-}
+let cache: Map<number, DeferralRecord> = new Map();
+let hydrationStarted = false;
+let hydrationDone = false;
 
 function emit() {
-  cache = cache ? new Map(cache) : new Map();
-  persist();
+  // Allocate a new Map reference so useSyncExternalStore sees a
+  // changed snapshot — React bails out otherwise.
+  cache = new Map(cache);
   listeners.forEach((l) => l());
+}
+
+async function hydrate(): Promise<void> {
+  if (hydrationStarted) return;
+  hydrationStarted = true;
+  try {
+    const rows = await listDeferrals();
+    // Merge server rows into the local cache. Local entries that the
+    // user just recorded but haven't been confirmed by the server yet
+    // win on key collision — server rows simply backfill missing keys.
+    for (const r of rows) {
+      if (!cache.has(r.emailId)) {
+        cache.set(r.emailId, {
+          emailId: r.emailId,
+          weeksDeferred: r.weeksDeferred,
+        });
+      }
+    }
+    hydrationDone = true;
+    emit();
+  } catch (err) {
+    // Surface to the dev console but don't throw — planner falls back
+    // to "no prior deferrals known" which is the safe default.
+    // eslint-disable-next-line no-console
+    console.warn('[deferralStore] failed to hydrate from server', err);
+    hydrationDone = true;
+  }
 }
 
 // Returns the Monday-of-this-week as an ISO date string (YYYY-MM-DD).
@@ -68,51 +90,89 @@ export function isoMondayOf(date: Date): string {
 
 // Idempotent: recording the same emailId for the same Monday twice
 // adds only one entry. Counts only ever increase across distinct weeks.
-export function recordDeferralsForWeek(emailIds: number[], weekMondayISO: string): void {
+// Local cache updates synchronously; the server POST is fire-and-forget.
+export function recordDeferralsForWeek(
+  emailIds: number[],
+  weekMondayISO: string,
+): void {
   if (emailIds.length === 0) return;
-  const map = load();
   let changed = false;
+  const idsToPersist: number[] = [];
   for (const id of emailIds) {
-    const existing = map.get(id);
+    const existing = cache.get(id);
     if (!existing) {
-      map.set(id, { emailId: id, weeksDeferred: [weekMondayISO] });
+      cache.set(id, { emailId: id, weeksDeferred: [weekMondayISO] });
       changed = true;
+      idsToPersist.push(id);
     } else if (!existing.weeksDeferred.includes(weekMondayISO)) {
       existing.weeksDeferred.push(weekMondayISO);
       changed = true;
+      idsToPersist.push(id);
     }
   }
   if (changed) emit();
+  if (idsToPersist.length > 0) {
+    recordDeferrals({ emailIds: idsToPersist, weekMonday: weekMondayISO }).catch(
+      (err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn('[deferralStore] failed to persist deferrals', err);
+      },
+    );
+  }
 }
 
-// Drop history for an email when it's archived/acknowledged — once
-// it's resolved, the deferral count is no longer meaningful, and we
-// don't want stale data to resurface if the email ever returns to the
-// inbox via "restore from archive".
+// Drop history for an email when it's archived/acknowledged/done — the
+// deferral warning is meaningful only on active unresolved emails. Local
+// cache updates synchronously; server DELETE is fire-and-forget. Safe
+// to call when there is no record (no-op locally, server returns 204).
 export function clearDeferralsForEmail(id: number): void {
-  const map = load();
-  if (!map.has(id)) return;
-  map.delete(id);
-  emit();
+  const had = cache.has(id);
+  if (had) {
+    cache.delete(id);
+    emit();
+  }
+  // Always attempt the DELETE — the local cache may be empty simply
+  // because hydration hasn't finished yet, but a server-side row could
+  // still exist that needs removing.
+  deleteDeferral(id).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn('[deferralStore] failed to delete deferral history', err);
+  });
 }
 
+// Test-only / dev-only: wipe local cache. Does NOT touch the server.
+// Production code paths should use clearDeferralsForEmail per resolution.
 export function clearAllDeferrals(): void {
   cache = new Map();
-  emit();
+  hydrationStarted = false;
+  hydrationDone = false;
+  listeners.forEach((l) => l());
 }
 
 function subscribe(l: () => void): () => void {
   listeners.add(l);
+  // Trigger one-shot hydration on the first subscriber. Subsequent
+  // subscribers get the cached value immediately.
+  if (!hydrationStarted) {
+    void hydrate();
+  }
   return () => {
     listeners.delete(l);
   };
 }
 
-const getSnapshot = () => load();
-const getServerSnapshot = () => load();
+const getSnapshot = () => cache;
+const getServerSnapshot = () => cache;
 
 export function useDeferralHistory(): Map<number, DeferralRecord> {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+// Exposed for tests + diagnostics. True once the initial /api/deferrals
+// fetch has settled (success OR failure). Planner consumers don't need
+// this — they treat an empty Map as "no prior deferrals" which is safe.
+export function isHydrated(): boolean {
+  return hydrationDone;
 }
 
 // Convenience selector for the planner: a count of how many PRIOR
