@@ -27,6 +27,7 @@ import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import { useClassifyBootstrap } from '@/lib/useClassifyBootstrap';
 import TimelineTab from '../tabs/TimelineTab';
+import CalendarTab from '../tabs/CalendarTab';
 import ForecastTab from '../tabs/ForecastTab';
 import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
@@ -52,6 +53,7 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
   { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
   { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
+  { id: 'Calendar', icon: CalendarDays, label: 'Calendar' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
   { id: 'Archive', icon: Archive, label: 'Archive' },
   { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
@@ -295,6 +297,7 @@ export default function ClinAdmin() {
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
+      case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => setOpenEmailId(id)} onNavigate={setActiveTab} />;
       case 'Tasks': return (
         <TasksTab
           manualTasks={manualTaskList}

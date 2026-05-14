@@ -89,7 +89,8 @@ export type TabType =
   | 'Forecast'
   | 'Templates'
   | 'Settings'
-  | 'Weekly Plan';
+  | 'Weekly Plan'
+  | 'Calendar';
 
 // ---- AI classification (new in Step 2 of the email triage redesign) ----
 //
