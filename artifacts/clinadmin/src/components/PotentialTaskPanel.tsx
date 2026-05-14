@@ -77,6 +77,12 @@ interface FormDraft {
   patientName: string;
   dueDays: string;
   notes: string;
+  // Three-bucket rule: the notes textarea is pre-filled with a snippet
+  // of the email body purely as a recall aid for the clinician. If they
+  // don't edit it, we save an empty string instead of persisting the
+  // email body to our DB. `notesPrefill` holds the original snippet so
+  // we can detect "unedited" at save time.
+  notesPrefill: string;
 }
 
 function buildInitialForm(p: PotentialTask, cls: AiClassification | undefined, email: Email): FormDraft {
@@ -89,6 +95,7 @@ function buildInitialForm(p: PotentialTask, cls: AiClassification | undefined, e
     patientName: cls?.patientName ?? '',
     dueDays: p.dueDays !== null ? String(p.dueDays) : '',
     notes: noteSnippet,
+    notesPrefill: noteSnippet,
   };
 }
 
@@ -130,6 +137,11 @@ function buildPrescriptionForm(p: PrescriptionRequest, email: Email): FormDraft 
     patientName: p.patientName ?? '',
     dueDays: prescriptionDueDays(p) !== null ? String(prescriptionDueDays(p)) : '',
     notes: noteParts.join(' '),
+    // Prescription notes are computed from structured detector output
+    // (travel/deadline/medication), not from email body — they're safe
+    // to persist as-is. Empty prefill ensures the unedited-detection
+    // never matches and the clinician's notes always save verbatim.
+    notesPrefill: '',
   };
 }
 
@@ -224,6 +236,7 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
       medicationDose: prescription.medicationDose,
       travelMentioned: prescription.travelMentioned,
     });
+    void f.notesPrefill;
     setOpenForms((curr) => {
       const { prescription: _drop, ...rest } = curr;
       void _drop;
@@ -246,6 +259,11 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
   const handleSave = (p: PotentialTask) => {
     const f = openForms[p.kind];
     if (!f || !f.title.trim()) return;
+    // Three-bucket rule: only persist the clinician's own notes. If
+    // the textarea still matches the email-body snippet we pre-filled
+    // it with, save an empty string — that snippet was for on-screen
+    // recall only and email body content must not enter our DB.
+    const notesToSave = f.notes === f.notesPrefill ? '' : f.notes.trim();
     addPromptedTask({
       emailId: email.id,
       kind: p.kind,
@@ -255,7 +273,7 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
       priority: f.priority,
       patientName: f.patientName.trim() || null,
       dueDays: f.dueDays.trim() === '' ? null : Math.max(0, parseInt(f.dueDays, 10) || 0),
-      notes: f.notes.trim(),
+      notes: notesToSave,
     });
     setOpenForms((curr) => {
       const { [p.kind]: _drop, ...rest } = curr;

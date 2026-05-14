@@ -416,17 +416,54 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   };
 
   // ---- CPD: add as task (uses extracted event date / registration deadline) ----
+  //
+  // Three-bucket rule: the email subject lives in Outlook only and must
+  // not be persisted to our DB. We pre-fill the title field with the
+  // subject as a convenience, but Save stays disabled until the
+  // clinician interacts with the field (focus or edit), so any saved
+  // title is an explicit clinician choice, not a silent copy of the
+  // email subject.
   const userTasks = useUserTasks();
-  const handleAddCpdTask = () => {
+  const [cpdEditing, setCpdEditing] = useState(false);
+  const [cpdTitleDraft, setCpdTitleDraft] = useState('');
+  const [cpdTouched, setCpdTouched] = useState(false);
+
+  // Reset the inline CPD form whenever the selected email changes — the
+  // draft belongs to whichever email was open when it was started.
+  useEffect(() => {
+    setCpdEditing(false);
+    setCpdTitleDraft('');
+    setCpdTouched(false);
+  }, [selectedEmail?.id]);
+
+  const openCpdEditor = () => {
     if (!selectedEmail) return;
+    setCpdTitleDraft(selectedEmail.subject);
+    setCpdTouched(false);
+    setCpdEditing(true);
+  };
+
+  const saveCpdTask = () => {
+    if (!selectedEmail) return;
+    const title = cpdTitleDraft.trim();
+    if (!title || !cpdTouched) return;
     const cls = classifications.get(selectedEmail.id);
     addUserTask({
-      title: selectedEmail.subject,
+      title,
       source: 'cpd',
       emailId: selectedEmail.id,
       eventDate: cls?.eventDate ?? null,
       registrationDeadline: cls?.registrationDeadline ?? null,
     });
+    setCpdEditing(false);
+    setCpdTitleDraft('');
+    setCpdTouched(false);
+  };
+
+  const cancelCpdEdit = () => {
+    setCpdEditing(false);
+    setCpdTitleDraft('');
+    setCpdTouched(false);
   };
 
   const handleCopy = async (id: number, slot: DraftSlot, text: string) => {
@@ -802,10 +839,17 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                         Draft acknowledgement
                       </button>
                     )}
-                    {/* CPD: add to tasks (uses extracted event date / registration deadline) */}
-                    {cls?.category === 'CPD' && (
+                    {/* CPD: add to tasks (uses extracted event date /
+                        registration deadline). Two-step: first click
+                        opens an inline editable title field pre-filled
+                        with the email subject; Save stays disabled
+                        until the clinician interacts with the field
+                        (focus or edit), so the saved title is always
+                        an explicit clinician choice — see three-bucket
+                        rationale next to handleAddCpdTask. */}
+                    {cls?.category === 'CPD' && !cpdEditing && (
                       <button
-                        onClick={handleAddCpdTask}
+                        onClick={openCpdEditor}
                         disabled={cpdHasTask}
                         className={cn(
                           "flex items-center gap-2 font-bold text-xs px-4 py-2.5 rounded-lg border transition-colors",
@@ -819,6 +863,53 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                         {cpdHasTask ? <CheckCircle2 size={14} /> : <Plus size={14} />}
                         {cpdHasTask ? 'Added to tasks' : 'Add CPD to tasks'}
                       </button>
+                    )}
+                    {cls?.category === 'CPD' && cpdEditing && (
+                      <div
+                        className="flex items-center gap-2 bg-teal-50 border border-teal-300 rounded-lg px-2 py-1.5"
+                        data-testid="cpd-add-task-editor"
+                      >
+                        <input
+                          type="text"
+                          value={cpdTitleDraft}
+                          onFocus={() => setCpdTouched(true)}
+                          onChange={(e) => {
+                            setCpdTitleDraft(e.target.value);
+                            setCpdTouched(true);
+                          }}
+                          autoFocus
+                          placeholder="Task title"
+                          className="bg-white border border-teal-200 rounded px-2 py-1 text-xs font-bold text-teal-900 min-w-[260px] focus:outline-none focus:ring-2 focus:ring-teal-300"
+                          data-testid="input-cpd-task-title"
+                        />
+                        <button
+                          onClick={saveCpdTask}
+                          disabled={!cpdTouched || !cpdTitleDraft.trim()}
+                          className={cn(
+                            "flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-lg border transition-colors",
+                            cpdTouched && cpdTitleDraft.trim()
+                              ? "bg-teal-600 text-white border-teal-700 hover:bg-teal-700"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed",
+                          )}
+                          data-testid="button-cpd-save-task"
+                          title={
+                            !cpdTouched
+                              ? 'Click into the title to confirm it before saving'
+                              : !cpdTitleDraft.trim()
+                                ? 'Title cannot be empty'
+                                : 'Save this CPD event as a task'
+                          }
+                        >
+                          <Plus size={12} /> Save
+                        </button>
+                        <button
+                          onClick={cancelCpdEdit}
+                          className="flex items-center gap-1.5 bg-white text-slate-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+                          data-testid="button-cpd-cancel-task"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
                     <button
                       onClick={handleAcknowledge}
