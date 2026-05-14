@@ -24,9 +24,8 @@ const NO_ARRIVALS: ArrivalConfig = {
   emailsPerWeek: 0,
   highPerWeek: 0,
   mediumPerWeek: 0,
-  highReserveMin: 0,
-  mediumReserveMin: 0,
-  lowReserveMin: 0,
+  urgentDailyReserveMin: 0,
+  mediumWeeklyReserveMin: 0,
 };
 
 function makeEmail(over: Partial<PlannerEmail> = {}): PlannerEmail {
@@ -401,14 +400,19 @@ describe('buildPlan — projected workload reservation', () => {
       baseInput({
         availability: buildAvailability(MONDAY, { Tue: 5 }),
         emails: [],
-        arrivals: DEFAULT_ARRIVAL_CONFIG, // 90+60+30 = 180 min reserved
+        // New tiered model: 10 min/admin-day urgent + single 30-min weekly medium.
+        // With only Tue available (1 future admin day): 10 + 30 = 40 min reserved.
+        arrivals: DEFAULT_ARRIVAL_CONFIG,
       }),
     );
-    assert.equal(out.reservation.totalReserveMin, 180);
+    assert.equal(out.reservation.totalReserveMin, 40);
+    assert.equal(out.reservation.adminDayCount, 1);
+    assert.equal(out.reservation.urgentDailyReserveMin, 10);
+    assert.equal(out.reservation.mediumWeeklyReserveMin, 30);
     assert.equal(out.reservation.highCount, 5);
     assert.equal(out.reservation.mediumCount, 10);
     // Weekly capacity is reported pre-reservation so the UI can show
-    // "of your 5h, 3h is reserved".
+    // "of your 5h, X is reserved".
     assert.equal(out.weeklyCapacityMin, 300);
   });
 

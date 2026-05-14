@@ -45,19 +45,28 @@ export default function ProjectedWorkload({ reservation, weeklyCapacityMin }: Pr
     medium: reservation.mediumCount,
     low: reservation.lowCount,
   };
+  // Per-band intended reserve under the tiered model:
+  //   urgent = 10 min × admin days this week
+  //   medium = single 30-min weekly block
+  //   low    = nothing extra (daily 15-min allocation handles it)
   const reserves: Record<'high' | 'medium' | 'low', number> = {
-    high: reservation.highReserveMin,
-    medium: reservation.mediumReserveMin,
-    low: reservation.lowReserveMin,
+    high: reservation.urgentDailyReserveMin * reservation.adminDayCount,
+    medium: reservation.mediumWeeklyReserveMin,
+    low: 0,
+  };
+  const reserveDetail: Record<'high' | 'medium' | 'low', string> = {
+    high: reservation.adminDayCount > 0
+      ? `${reservation.urgentDailyReserveMin}min × ${reservation.adminDayCount} admin ${reservation.adminDayCount === 1 ? 'day' : 'days'}`
+      : '',
+    medium: 'single weekly block',
+    low: 'cleared in daily 15-min admin slot',
   };
 
-  const totalReserve = reservation.totalReserveMin;
-  // Effective reservation can be capped by weekly capacity (planner does this
-  // when capacity is tight). Show the user the truth: if there isn't room for
-  // the full reservation, surface what was actually held back.
-  const effectiveReserve =
-    weeklyCapacityMin > 0 ? Math.min(totalReserve, weeklyCapacityMin) : 0;
-  const capped = effectiveReserve < totalReserve;
+  // `totalReserveMin` is what the planner actually held back (per-day cap can
+  // shrink the intended reserve on tight days). Show that truth.
+  const intendedReserve = reserves.high + reserves.medium;
+  const effectiveReserve = reservation.totalReserveMin;
+  const capped = effectiveReserve < intendedReserve;
   const pctOfCapacity =
     weeklyCapacityMin > 0 ? Math.round((effectiveReserve / weeklyCapacityMin) * 100) : 0;
 
@@ -96,7 +105,7 @@ export default function ProjectedWorkload({ reservation, weeklyCapacityMin }: Pr
                 className="text-xs text-amber-700 mt-1"
                 data-testid="projected-workload-capped"
               >
-                Your weekly capacity is below the full {fmtMin(totalReserve)} reserve — only {fmtMin(effectiveReserve)} could be set aside.
+                Your weekly capacity is below the full {fmtMin(intendedReserve)} reserve — only {fmtMin(effectiveReserve)} could be set aside.
               </p>
             )}
           </div>
@@ -107,7 +116,7 @@ export default function ProjectedWorkload({ reservation, weeklyCapacityMin }: Pr
         {BANDS.map((band) => {
           const count = counts[band.key];
           const reserve = reserves[band.key];
-          const perItem = count > 0 ? Math.round(reserve / count) : 0;
+          const detail = reserveDetail[band.key];
           return (
             <li
               key={band.key}
@@ -134,11 +143,11 @@ export default function ProjectedWorkload({ reservation, weeklyCapacityMin }: Pr
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-sm font-bold text-foreground tabular-nums">
-                  {fmtMin(reserve)}
+                  {reserve > 0 ? fmtMin(reserve) : '—'}
                 </div>
-                {count > 0 && (
-                  <div className="text-[10px] text-muted-foreground tabular-nums">
-                    ~{perItem}min each
+                {detail && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {detail}
                   </div>
                 )}
               </div>

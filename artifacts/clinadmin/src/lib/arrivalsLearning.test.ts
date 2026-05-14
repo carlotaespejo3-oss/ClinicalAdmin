@@ -198,6 +198,10 @@ describe('recommendArrivals', () => {
     emails.push(makeEmail({ id: 9999, date: '40 days ago' }));
     const r = recommendArrivals(emails, TODAY, DEFAULT_ARRIVAL_CONFIG);
     assert.ok(r.recommendation);
-    assert.equal(r.recommendation!.highReserveMin, r.recommendation!.highPerWeek * 25);
+    // Urgent daily reserve scales with observed avg urgent email length
+    // (with a 10-min floor). Observed is 25 min, so reserve = 25.
+    assert.equal(r.recommendation!.urgentDailyReserveMin, 25);
+    // No medium emails observed, so weekly medium reserve stays at the 30-min floor.
+    assert.equal(r.recommendation!.mediumWeeklyReserveMin, 30);
   });
 });

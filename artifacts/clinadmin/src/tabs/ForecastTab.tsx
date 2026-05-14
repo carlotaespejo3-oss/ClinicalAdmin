@@ -228,9 +228,8 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
     arrivalsConfig.emailsPerWeek !== DEFAULT_ARRIVAL_CONFIG.emailsPerWeek ||
     arrivalsConfig.highPerWeek !== DEFAULT_ARRIVAL_CONFIG.highPerWeek ||
     arrivalsConfig.mediumPerWeek !== DEFAULT_ARRIVAL_CONFIG.mediumPerWeek ||
-    arrivalsConfig.highReserveMin !== DEFAULT_ARRIVAL_CONFIG.highReserveMin ||
-    arrivalsConfig.mediumReserveMin !== DEFAULT_ARRIVAL_CONFIG.mediumReserveMin ||
-    arrivalsConfig.lowReserveMin !== DEFAULT_ARRIVAL_CONFIG.lowReserveMin;
+    arrivalsConfig.urgentDailyReserveMin !== DEFAULT_ARRIVAL_CONFIG.urgentDailyReserveMin ||
+    arrivalsConfig.mediumWeeklyReserveMin !== DEFAULT_ARRIVAL_CONFIG.mediumWeeklyReserveMin;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -255,24 +254,23 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
                 <p className="text-sm text-muted-foreground mb-3">{arrivalsSuggestion.reason}</p>
                 <div className="grid grid-cols-3 gap-3 mb-3 text-xs">
                   <div className="rounded border border-border/60 bg-background p-2">
-                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">High</p>
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Urgent</p>
                     <p className="font-bold tabular-nums">
                       {arrivalsConfig.highPerWeek}/wk → <span className="text-blue-700">{arrivalsSuggestion.recommendation.highPerWeek}/wk</span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground">reserve {arrivalsConfig.highReserveMin}m → {arrivalsSuggestion.recommendation.highReserveMin}m</p>
+                    <p className="text-[10px] text-muted-foreground">daily reserve {arrivalsConfig.urgentDailyReserveMin}m → {arrivalsSuggestion.recommendation.urgentDailyReserveMin}m</p>
                   </div>
                   <div className="rounded border border-border/60 bg-background p-2">
                     <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Medium</p>
                     <p className="font-bold tabular-nums">
                       {arrivalsConfig.mediumPerWeek}/wk → <span className="text-blue-700">{arrivalsSuggestion.recommendation.mediumPerWeek}/wk</span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground">reserve {arrivalsConfig.mediumReserveMin}m → {arrivalsSuggestion.recommendation.mediumReserveMin}m</p>
+                    <p className="text-[10px] text-muted-foreground">weekly reserve {arrivalsConfig.mediumWeeklyReserveMin}m → {arrivalsSuggestion.recommendation.mediumWeeklyReserveMin}m</p>
                   </div>
                   <div className="rounded border border-border/60 bg-background p-2">
                     <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Low</p>
-                    <p className="font-bold tabular-nums">
-                      reserve {arrivalsConfig.lowReserveMin}m → <span className="text-blue-700">{arrivalsSuggestion.recommendation.lowReserveMin}m</span>
-                    </p>
+                    <p className="font-bold">no extra reserve</p>
+                    <p className="text-[10px] text-muted-foreground">handled by daily 15-min admin slot</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 items-center">

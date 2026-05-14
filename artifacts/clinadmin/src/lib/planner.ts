@@ -57,19 +57,24 @@ export const SLA_DAYS_BY_CATEGORY: Record<AiCategory, number> = {
 export const DAILY_LOW_PRIORITY_RESERVATION_MIN = 15;
 
 // Default projected weekly arrivals — clinician receives ~60 emails/week.
-// NOTE: the spec contradicts itself between two reservation budgets:
-//   (a) 0.5h high + 0.5h medium + 0.2h buffer = 1.2h
-//   (b) the display example: 1h30 high + 1h medium + 30min low = 3h
-// (b) is more realistic for 5 high (~18min ea) + 10 medium (~6min ea)
-// emails landing each week, so we default to it. Configurable per-call
-// — pass a different ArrivalConfig to override.
+// Tiered buffer model (replaces the old flat 45-min/day reserve which
+// felt punitive and created false anxiety):
+//   - URGENT: 10 min reserved on each future admin day. Rationale —
+//     ~5 high-priority emails/wk ÷ 5 working days ≈ 1 urgent email/day,
+//     at ~10 min each. This is the only same-day reserve.
+//   - MEDIUM: a single 30-min block somewhere in the week, placed on
+//     whichever future admin day has the most spare capacity. Medium
+//     emails have a 5-7 day SLA, so they don't need same-day time.
+//   - LOW: NO extra reserve. Already covered by the existing daily
+//     15-min low-priority allocation (see DAILY_LOW_PRIORITY_RESERVATION_MIN).
+//     14-day SLA means arrivals this week can clear next week.
+// Configurable per-call — pass a different ArrivalConfig to override.
 export const DEFAULT_ARRIVAL_CONFIG: ArrivalConfig = {
   emailsPerWeek: 60,
   highPerWeek: 5,
   mediumPerWeek: 10,
-  highReserveMin: 90,
-  mediumReserveMin: 60,
-  lowReserveMin: 30,
+  urgentDailyReserveMin: 10,
+  mediumWeeklyReserveMin: 30,
 };
 
 // Number of days the planner looks ahead. Spec calls for a 14-day
@@ -84,9 +89,10 @@ export interface ArrivalConfig {
   emailsPerWeek: number;
   highPerWeek: number;
   mediumPerWeek: number;
-  highReserveMin: number;
-  mediumReserveMin: number;
-  lowReserveMin: number;
+  /** Minutes reserved on EACH future admin day for one urgent arrival. */
+  urgentDailyReserveMin: number;
+  /** Minutes reserved ONCE per week (single block, busiest admin day) for medium arrivals. */
+  mediumWeeklyReserveMin: number;
 }
 
 export interface PlannerEmail {
@@ -184,9 +190,13 @@ export interface ProjectedReservation {
   highCount: number;
   mediumCount: number;
   lowCount: number;
-  highReserveMin: number;
-  mediumReserveMin: number;
-  lowReserveMin: number;
+  /** Per-day urgent reserve setting (minutes). */
+  urgentDailyReserveMin: number;
+  /** Single weekly medium-arrival reserve (minutes). */
+  mediumWeeklyReserveMin: number;
+  /** Number of future admin days the urgent reserve was applied to. */
+  adminDayCount: number;
+  /** Actual total minutes held back across the week (sum of all reserves applied). */
   totalReserveMin: number;
 }
 
@@ -459,49 +469,70 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     });
   }
 
-  // 3 — Compute weekly capacity (week 1 = first 7 days) and projected
-  //    incoming reservation. Reservation is held back from each day in
-  //    proportion to that day's share of weekly capacity, so a busy day
-  //    bears more of the buffer than a light day.
+  // 3 — Compute weekly capacity (week 1 = first 7 days) and apply the
+  //    tiered arrivals reservation:
+  //      (a) URGENT — 10 min on each future admin day (one urgent ~per day)
+  //      (b) MEDIUM — a single 30-min block on the busiest future admin day
+  //      (c) LOW    — nothing extra; the daily 15-min low allocation handles it
+  //
+  //    Today (day 0) is intentionally EXCLUDED. Holding capacity back today
+  //    for hypothetical arrivals just means real work that's already in the
+  //    inbox sits on tomorrow instead of clearing now. Even URGENT has a 48h
+  //    SLA — anything arriving late today can be triaged first thing tomorrow.
+  //
+  //    Each day's carve-out is capped at half that day's bookable capacity
+  //    so a sparse week (e.g. clinician only works Tue/Wed/Thu) doesn't have
+  //    its single active day fully drained by hypothetical arrivals.
   const week1Days = runway.slice(0, 7);
   const weeklyCapacityMin = week1Days.reduce((a, d) => a + d.minutesAvailable, 0);
+  const futureWeek1Days = week1Days.slice(1);
+
+  let urgentReservedMin = 0;
+  let mediumReservedMin = 0;
+  let adminDayCount = 0;
+
+  // (a) Per-day urgent reserve.
+  if (arrivals.urgentDailyReserveMin > 0) {
+    for (const d of futureWeek1Days) {
+      if (d.bookableMin === 0) continue;
+      adminDayCount++;
+      const cap = Math.floor(d.bookableMin / 2);
+      const actual = Math.min(arrivals.urgentDailyReserveMin, cap);
+      d.bookableMin -= actual;
+      urgentReservedMin += actual;
+    }
+  } else {
+    for (const d of futureWeek1Days) {
+      if (d.bookableMin > 0) adminDayCount++;
+    }
+  }
+
+  // (b) Single weekly medium block — placed on the future admin day with
+  //     the most remaining bookable capacity AFTER the urgent reserve. A
+  //     light day shouldn't carry the medium block.
+  if (arrivals.mediumWeeklyReserveMin > 0) {
+    let bestDay: DailyPlanInternal | null = null;
+    for (const d of futureWeek1Days) {
+      if (d.bookableMin === 0) continue;
+      if (!bestDay || d.bookableMin > bestDay.bookableMin) bestDay = d;
+    }
+    if (bestDay) {
+      const cap = Math.floor(bestDay.bookableMin / 2);
+      const actual = Math.min(arrivals.mediumWeeklyReserveMin, cap);
+      bestDay.bookableMin -= actual;
+      mediumReservedMin += actual;
+    }
+  }
+
   const reservation: ProjectedReservation = {
     highCount: arrivals.highPerWeek,
     mediumCount: arrivals.mediumPerWeek,
     lowCount: Math.max(0, arrivals.emailsPerWeek - arrivals.highPerWeek - arrivals.mediumPerWeek),
-    highReserveMin: arrivals.highReserveMin,
-    mediumReserveMin: arrivals.mediumReserveMin,
-    lowReserveMin: arrivals.lowReserveMin,
-    totalReserveMin: arrivals.highReserveMin + arrivals.mediumReserveMin + arrivals.lowReserveMin,
+    urgentDailyReserveMin: arrivals.urgentDailyReserveMin,
+    mediumWeeklyReserveMin: arrivals.mediumWeeklyReserveMin,
+    adminDayCount,
+    totalReserveMin: urgentReservedMin + mediumReservedMin,
   };
-  // Today (day 0) is intentionally EXCLUDED from the projected-arrivals
-  // reservation. Holding capacity back today for hypothetical future
-  // arrivals just means real work that's already in the inbox sits on
-  // tomorrow instead of getting cleared now. Even URGENT has a 48h SLA
-  // — anything arriving late today can be triaged first thing tomorrow.
-  // We still reserve across days 1-6 so the week as a whole has the
-  // intended slack for arrivals.
-  const futureWeek1Days = week1Days.slice(1);
-  const futureWeek1CapacityMin = futureWeek1Days.reduce((a, d) => a + d.minutesAvailable, 0);
-  // Cap each day's arrivals carve-out at half its bookable capacity.
-  // Otherwise on a sparse week (e.g. clinician only works Tue/Wed/Thu)
-  // the reservation can swallow an entire day, so real work that's
-  // already in the inbox skips that day and lands further out — making
-  // it look like the day is "absorbed" when really it was emptied by
-  // a hypothetical-arrivals buffer. Real existing work always wins.
-  if (futureWeek1CapacityMin > 0 && reservation.totalReserveMin > 0) {
-    let remaining = Math.min(reservation.totalReserveMin, futureWeek1CapacityMin);
-    for (const d of futureWeek1Days) {
-      if (d.minutesAvailable === 0) continue;
-      const share = Math.round(
-        reservation.totalReserveMin * (d.minutesAvailable / futureWeek1CapacityMin),
-      );
-      const cap = Math.floor(d.bookableMin / 2);
-      const actual = Math.min(share, remaining, cap);
-      d.bookableMin -= actual;
-      remaining -= actual;
-    }
-  }
 
   // 4 — Reserve daily low-priority allocation BEFORE any packing so it
   //    can never be cannibalised by medium work. Today (day 0) is

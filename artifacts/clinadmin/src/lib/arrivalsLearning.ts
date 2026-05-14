@@ -159,13 +159,18 @@ export function recommendArrivals(
     };
   }
 
+  // Reserves under the new tiered model:
+  //   urgent — held per admin day, sized to one urgent email's typical
+  //   length (floor 10 min so the buffer is meaningful even when a
+  //   clinician's urgent emails happen to be very short).
+  //   medium — a single weekly block, sized to roughly two medium
+  //   emails' typical length (floor 30 min for the same reason).
   const recommendation: ArrivalConfig = {
     emailsPerWeek: observed.emailsPerWeek,
     highPerWeek: observed.highPerWeek,
     mediumPerWeek: observed.mediumPerWeek,
-    highReserveMin: observed.highPerWeek * observed.avgEstMinHigh,
-    mediumReserveMin: observed.mediumPerWeek * observed.avgEstMinMedium,
-    lowReserveMin: observed.lowPerWeek * observed.avgEstMinLow,
+    urgentDailyReserveMin: Math.max(10, observed.avgEstMinHigh || 10),
+    mediumWeeklyReserveMin: Math.max(30, Math.round((observed.avgEstMinMedium || 0) * 2)),
   };
 
   const delta = observed.emailsPerWeek - current.emailsPerWeek;

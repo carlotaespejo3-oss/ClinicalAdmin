@@ -1,0 +1,92 @@
+The new arrivals buffer logic needs to be corrected. The current flat daily reserve of 45 minutes is too aggressive and makes the plan feel tighter than it actually is. Replace it with the following tiered buffer logic.
+
+THE CORE INSIGHT
+Not all incoming emails need same-day attention. The buffer should only protect time for emails that genuinely cannot wait. Everything else joins the existing queue and gets handled in normal admin sessions.
+
+NEW BUFFER LOGIC
+Daily buffer — protect time for urgent arrivals only:
+Reserve 10 minutes per admin day for potential urgent or safeguarding emails arriving that day.
+This is the only same-day reserve needed.
+Rationale: based on a 60 email per week inbox with 5 high priority emails per week, approximately 1 urgent email arrives per working day. At 10 minutes per urgent email, 10 minutes is the correct daily reserve.
+Do not reserve daily time for medium or low priority arrivals.
+Medium emails have a 5–7 day window. They do not need same-day time reserved.
+Low emails have a 14-day window. They absolutely do not need same-day time reserved.
+Weekly buffer — account for medium arrivals across the week:
+When building the weekly plan, reserve one additional admin slot of 30 minutes somewhere in the week for medium priority emails that arrive during the week.
+This is a single weekly block, not a daily reserve.
+It can sit on whichever admin day has the most available capacity.
+Low priority arrivals:
+No buffer needed. They join the existing low priority queue and get cleared during the daily low priority allocation (15 minutes per admin day as already specified).
+The 14-day window is generous enough that arrivals this week can be cleared next week if needed without breaching.
+
+HOW THE CALENDAR SHOULD SHOW THIS
+Each admin day shows:
+Tuesday — 1h 30min available
+
+Existing emails scheduled:    1h 10min
+Daily urgent buffer:            10min
+Available margin:               10min
+
+✅ Comfortable
+Not this:
+Tuesday — 1h 30min available
+
+Existing emails scheduled:    1h 10min
+New arrivals buffer:            45min
+⚠️ Over capacity
+The second version was creating false anxiety. The first version is honest.
+
+WHAT HAPPENS WHEN A NEW EMAIL ARRIVES
+When a real email arrives and is classified:
+If it is URGENT or SAFEGUARDING:
+
+Slot it into today's plan immediately
+It comes out of the 10 minute daily buffer
+If it exceeds the buffer, flag it: "An urgent email has arrived that exceeds today's buffer. It has been added to today's plan — your day is now slightly full."
+
+If it is CLINICAL or PROFESSIONAL (medium):
+
+Add it to the weekly queue
+Slot it into the next available admin session within 5 days
+No same-day flag needed unless it is already day 4 or 5 of its window
+
+If it is LOW, ADMIN, NONE, or CPD:
+
+Add it to the low priority queue
+It will be picked up in the daily 15-minute low priority allocation
+No flag, no urgency, no disruption to today's plan
+
+
+THE HONEST WEEKLY PICTURE AFTER THIS CHANGE
+For a normal week of 60 emails with standard mix:
+Existing inbox work:          ~2h 30min
+Daily urgent buffers (3 days): 30min
+Weekly medium buffer:          30min
+
+Total:                         ~3h 30min
+
+Clinician available:           3h
+Gap:                           30min — manageable
+That is a completely different picture from the previous 5–6 hour estimate. It reflects how an experienced clinician actually works.
+
+SUMMARY OF THE CHANGE
+Old logic: reserve 45 minutes every day for all new arrivals regardless of priority.
+New logic:
+
+Reserve 10 minutes per day for urgent arrivals only
+Reserve 30 minutes once per week for medium arrivals
+Reserve nothing extra for low priority arrivals — the existing daily 15-minute low allocation handles them
+
+Please update the buffer logic, recalculate the weekly plan, and confirm the total estimated weekly time lands in the 3 to 3.5 hour range for a normal week.
+
+
+The key shift here is that the buffer stops being a daily tax on your time and becomes a small daily insurance policy against the one urgent email that might arrive. Everything else is orderly and can wait its turn. That is how your inbox actually works.
+        .cc-install-nudge { container-type: inline-size; }
+        @keyframes ccInstallNudgeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @container (max-width: 450px) {
+          .cc-install-nudge-icon { display: none; }
+        }
+      Continúa en Claude CodeCambia a Claude Code y deja que Claude trabaje directamente en tu repo, ejecutando y probando sobre la marcha.
