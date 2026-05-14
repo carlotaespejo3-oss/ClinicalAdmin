@@ -417,36 +417,38 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   // ---- CPD: add as task (uses extracted event date / registration deadline) ----
   //
-  // Three-bucket rule: the email subject lives in Outlook only and must
-  // not be persisted to our DB. We pre-fill the title field with the
-  // subject as a convenience, but Save stays disabled until the
-  // clinician interacts with the field (focus or edit), so any saved
-  // title is an explicit clinician choice, not a silent copy of the
-  // email subject.
+  // Three-bucket rule: the email subject lives in Outlook only and is
+  // never copied into our DB. The title field opens with a structural
+  // prefix ("CPD — ") only — no email content. The clinician types the
+  // rest themselves, and Save stays disabled until they've added
+  // content beyond the prefix.
+  const CPD_TITLE_PREFIX = 'CPD — ';
   const userTasks = useUserTasks();
   const [cpdEditing, setCpdEditing] = useState(false);
   const [cpdTitleDraft, setCpdTitleDraft] = useState('');
-  const [cpdTouched, setCpdTouched] = useState(false);
 
   // Reset the inline CPD form whenever the selected email changes — the
   // draft belongs to whichever email was open when it was started.
   useEffect(() => {
     setCpdEditing(false);
     setCpdTitleDraft('');
-    setCpdTouched(false);
   }, [selectedEmail?.id]);
 
   const openCpdEditor = () => {
     if (!selectedEmail) return;
-    setCpdTitleDraft(selectedEmail.subject);
-    setCpdTouched(false);
+    setCpdTitleDraft(CPD_TITLE_PREFIX);
     setCpdEditing(true);
   };
+
+  // Save is enabled only once the clinician has typed something
+  // beyond the structural prefix — guarantees the persisted title is
+  // their own words.
+  const cpdTitleHasContent = cpdTitleDraft.trim().length > CPD_TITLE_PREFIX.trim().length;
 
   const saveCpdTask = () => {
     if (!selectedEmail) return;
     const title = cpdTitleDraft.trim();
-    if (!title || !cpdTouched) return;
+    if (!cpdTitleHasContent) return;
     const cls = classifications.get(selectedEmail.id);
     addUserTask({
       title,
@@ -457,13 +459,11 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     });
     setCpdEditing(false);
     setCpdTitleDraft('');
-    setCpdTouched(false);
   };
 
   const cancelCpdEdit = () => {
     setCpdEditing(false);
     setCpdTitleDraft('');
-    setCpdTouched(false);
   };
 
   const handleCopy = async (id: number, slot: DraftSlot, text: string) => {
@@ -872,32 +872,26 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                         <input
                           type="text"
                           value={cpdTitleDraft}
-                          onFocus={() => setCpdTouched(true)}
-                          onChange={(e) => {
-                            setCpdTitleDraft(e.target.value);
-                            setCpdTouched(true);
-                          }}
+                          onChange={(e) => setCpdTitleDraft(e.target.value)}
                           autoFocus
-                          placeholder="Task title"
+                          placeholder="CPD — type your task title"
                           className="bg-white border border-teal-200 rounded px-2 py-1 text-xs font-bold text-teal-900 min-w-[260px] focus:outline-none focus:ring-2 focus:ring-teal-300"
                           data-testid="input-cpd-task-title"
                         />
                         <button
                           onClick={saveCpdTask}
-                          disabled={!cpdTouched || !cpdTitleDraft.trim()}
+                          disabled={!cpdTitleHasContent}
                           className={cn(
                             "flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-lg border transition-colors",
-                            cpdTouched && cpdTitleDraft.trim()
+                            cpdTitleHasContent
                               ? "bg-teal-600 text-white border-teal-700 hover:bg-teal-700"
                               : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed",
                           )}
                           data-testid="button-cpd-save-task"
                           title={
-                            !cpdTouched
-                              ? 'Click into the title to confirm it before saving'
-                              : !cpdTitleDraft.trim()
-                                ? 'Title cannot be empty'
-                                : 'Save this CPD event as a task'
+                            !cpdTitleHasContent
+                              ? 'Type a title after the "CPD — " prefix'
+                              : 'Save this CPD event as a task'
                           }
                         >
                           <Plus size={12} /> Save

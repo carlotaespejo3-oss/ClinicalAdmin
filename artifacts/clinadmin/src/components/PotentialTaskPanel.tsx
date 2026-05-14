@@ -77,25 +77,22 @@ interface FormDraft {
   patientName: string;
   dueDays: string;
   notes: string;
-  // Three-bucket rule: the notes textarea is pre-filled with a snippet
-  // of the email body purely as a recall aid for the clinician. If they
-  // don't edit it, we save an empty string instead of persisting the
-  // email body to our DB. `notesPrefill` holds the original snippet so
-  // we can detect "unedited" at save time.
-  notesPrefill: string;
 }
 
-function buildInitialForm(p: PotentialTask, cls: AiClassification | undefined, email: Email): FormDraft {
-  const noteSnippet = email.body.length > 200 ? `${email.body.slice(0, 200)}…` : email.body;
+// Three-bucket rule: the notes field starts BLANK. We never copy email
+// body content into the form — anything the patient/family/colleague
+// wrote lives in Outlook only. The clinician types their own words;
+// only what they deliberately enter inside the app reaches our DB.
+function buildInitialForm(_p: PotentialTask, cls: AiClassification | undefined, _email: Email): FormDraft {
+  void _email;
   return {
-    title: p.suggestedTitle,
-    type: p.type,
-    estMin: String(p.defaultMin),
+    title: _p.suggestedTitle,
+    type: _p.type,
+    estMin: String(_p.defaultMin),
     priority: priorityFromAi(cls?.priority),
     patientName: cls?.patientName ?? '',
-    dueDays: p.dueDays !== null ? String(p.dueDays) : '',
-    notes: noteSnippet,
-    notesPrefill: noteSnippet,
+    dueDays: _p.dueDays !== null ? String(_p.dueDays) : '',
+    notes: '',
   };
 }
 
@@ -136,12 +133,11 @@ function buildPrescriptionForm(p: PrescriptionRequest, email: Email): FormDraft 
     priority,
     patientName: p.patientName ?? '',
     dueDays: prescriptionDueDays(p) !== null ? String(prescriptionDueDays(p)) : '',
-    notes: noteParts.join(' '),
     // Prescription notes are computed from structured detector output
-    // (travel/deadline/medication), not from email body — they're safe
-    // to persist as-is. Empty prefill ensures the unedited-detection
-    // never matches and the clinician's notes always save verbatim.
-    notesPrefill: '',
+    // (travel/deadline/medication), not from email body — they're a
+    // clinician-facing summary the app generates, so they're safe to
+    // persist as-is.
+    notes: noteParts.join(' '),
   };
 }
 
@@ -236,7 +232,6 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
       medicationDose: prescription.medicationDose,
       travelMentioned: prescription.travelMentioned,
     });
-    void f.notesPrefill;
     setOpenForms((curr) => {
       const { prescription: _drop, ...rest } = curr;
       void _drop;
@@ -259,11 +254,6 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
   const handleSave = (p: PotentialTask) => {
     const f = openForms[p.kind];
     if (!f || !f.title.trim()) return;
-    // Three-bucket rule: only persist the clinician's own notes. If
-    // the textarea still matches the email-body snippet we pre-filled
-    // it with, save an empty string — that snippet was for on-screen
-    // recall only and email body content must not enter our DB.
-    const notesToSave = f.notes === f.notesPrefill ? '' : f.notes.trim();
     addPromptedTask({
       emailId: email.id,
       kind: p.kind,
@@ -273,7 +263,7 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
       priority: f.priority,
       patientName: f.patientName.trim() || null,
       dueDays: f.dueDays.trim() === '' ? null : Math.max(0, parseInt(f.dueDays, 10) || 0),
-      notes: notesToSave,
+      notes: f.notes.trim(),
     });
     setOpenForms((curr) => {
       const { [p.kind]: _drop, ...rest } = curr;
@@ -430,12 +420,13 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
                     className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </Field>
-                <Field label="Notes (context from this email)">
+                <Field label="Notes (your own words — optional)">
                   <textarea
                     value={form.notes}
                     onChange={(e) => updateForm(p.kind, { notes: e.target.value })}
                     rows={2}
-                    className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-y"
+                    placeholder="Add any context that will help you remember what this task is for."
+                    className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-y placeholder:text-slate-400 placeholder:italic"
                   />
                 </Field>
                 <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
