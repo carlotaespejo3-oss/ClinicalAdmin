@@ -8,7 +8,7 @@
 
 export interface RecordDeferralsInput {
   /** @minItems 1 */
-  emailIds: number[];
+  outlookEmailIds: string[];
   /** ISO 'YYYY-MM-DD' Monday string for the planning window */
   weekMonday: string;
 }

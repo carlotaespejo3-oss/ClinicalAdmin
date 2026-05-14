@@ -51,15 +51,32 @@ async function hydrate(): Promise<void> {
   hydrationStarted = true;
   try {
     const rows = await listDeferrals();
-    // Merge server rows into the local cache. Local entries that the
-    // user just recorded but haven't been confirmed by the server yet
-    // win on key collision — server rows simply backfill missing keys.
+    // Merge server rows into the local cache. UNION isoWeeks per key —
+    // do NOT skip server rows on collision. Otherwise a deferral
+    // recorded locally before hydration completes would shadow ALL
+    // prior weeks the server already knows about, and the planner
+    // would silently lose the "deferred 2×" warning for the rest of
+    // the session.
+    //
+    // The server uses string outlookEmailId (Microsoft Graph IDs are
+    // opaque strings); the in-app planner currently uses numeric seed
+    // IDs. Coerce here at the API boundary so downstream code keeps
+    // working with numbers. When real Outlook IDs replace the seed
+    // data, swap the cache key type to string and drop this Number()
+    // (see follow-up #N).
     for (const r of rows) {
-      if (!cache.has(r.emailId)) {
-        cache.set(r.emailId, {
-          emailId: r.emailId,
-          weeksDeferred: r.weeksDeferred,
-        });
+      const id = Number(r.outlookEmailId);
+      if (!Number.isFinite(id)) continue;
+      const existing = cache.get(id);
+      if (!existing) {
+        cache.set(id, { emailId: id, weeksDeferred: [...r.isoWeeks] });
+      } else {
+        // Union: append any server weeks not already in the local list.
+        for (const w of r.isoWeeks) {
+          if (!existing.weeksDeferred.includes(w)) {
+            existing.weeksDeferred.push(w);
+          }
+        }
       }
     }
     hydrationDone = true;
@@ -112,12 +129,15 @@ export function recordDeferralsForWeek(
   }
   if (changed) emit();
   if (idsToPersist.length > 0) {
-    recordDeferrals({ emailIds: idsToPersist, weekMonday: weekMondayISO }).catch(
-      (err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.warn('[deferralStore] failed to persist deferrals', err);
-      },
-    );
+    recordDeferrals({
+      // String() coerces seed numeric IDs to the Outlook-compatible
+      // string form the server expects. See hydrate() for context.
+      outlookEmailIds: idsToPersist.map(String),
+      weekMonday: weekMondayISO,
+    }).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[deferralStore] failed to persist deferrals', err);
+    });
   }
 }
 
@@ -134,7 +154,11 @@ export function clearDeferralsForEmail(id: number): void {
   // Always attempt the DELETE — the local cache may be empty simply
   // because hydration hasn't finished yet, but a server-side row could
   // still exist that needs removing.
-  deleteDeferral(id).catch((err: unknown) => {
+  // encodeURIComponent because the generated client interpolates path
+  // params verbatim (orval default). Numeric seed IDs are safe today
+  // but real Microsoft Graph IDs contain '/', '+', '=' which would
+  // otherwise break routing.
+  deleteDeferral(encodeURIComponent(String(id))).catch((err: unknown) => {
     // eslint-disable-next-line no-console
     console.warn('[deferralStore] failed to delete deferral history', err);
   });

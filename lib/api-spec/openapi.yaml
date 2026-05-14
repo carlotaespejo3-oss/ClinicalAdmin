@@ -173,10 +173,14 @@ paths:
     get:
       operationId: listDeferrals
       tags: [deferrals]
-      summary: List every email's deferral history
+      summary: List every email's deferral history for the current clinician
+      description: >-
+        Returns metadata only — no email content. Subject, body, and
+        sender are fetched live from Microsoft Graph at display time
+        using outlookEmailId.
       responses:
         "200":
-          description: All deferral records
+          description: All deferral records for the current clinician
           content:
             application/json:
               schema:
@@ -189,9 +193,9 @@ paths:
       tags: [deferrals]
       summary: Record that one or more emails were deferred in a given ISO week
       description: >-
-        Idempotent: recording the same (emailId, weekMonday) pair more than
-        once adds only one entry. Counts only ever increase across distinct
-        weeks.
+        Idempotent: recording the same (outlookEmailId, weekMonday) pair more
+        than once adds only one entry. deferralCount is recomputed server-side
+        as isoWeeks.length on every write.
       requestBody:
         required: true
         content:
@@ -201,7 +205,7 @@ paths:
       responses:
         "204":
           description: Recorded
-  /deferrals/{emailId}:
+  /deferrals/{outlookEmailId}:
     delete:
       operationId: deleteDeferral
       tags: [deferrals]
@@ -211,11 +215,11 @@ paths:
         The deferral warning is meaningful only on active unresolved emails,
         so resolution clears the record completely.
       parameters:
-        - name: emailId
+        - name: outlookEmailId
           in: path
           required: true
           schema:
-            type: integer
+            type: string
       responses:
         "204":
           description: Deleted (idempotent — 204 even if no record existed)
@@ -329,28 +333,37 @@ components:
         - error
     DeferralRecord:
       type: object
+      description: >-
+        Behavioural metadata only. Contains a reference to the Outlook
+        message and which weeks the planner could not place it. NEVER
+        contains subject, body, sender, or any email content.
       properties:
-        emailId:
-          type: integer
-        weeksDeferred:
+        outlookEmailId:
+          type: string
+          description: Microsoft Graph message ID — reference only, not content
+        isoWeeks:
           type: array
           items:
             type: string
             description: ISO 'YYYY-MM-DD' Monday string
+        deferralCount:
+          type: integer
+          description: Denormalised isoWeeks.length, kept in sync server-side
       required:
-        - emailId
-        - weeksDeferred
+        - outlookEmailId
+        - isoWeeks
+        - deferralCount
     RecordDeferralsInput:
       type: object
       properties:
-        emailIds:
+        outlookEmailIds:
           type: array
           items:
-            type: integer
+            type: string
           minItems: 1
         weekMonday:
           type: string
           description: ISO 'YYYY-MM-DD' Monday string for the planning window
       required:
-        - emailIds
+        - outlookEmailIds
         - weekMonday

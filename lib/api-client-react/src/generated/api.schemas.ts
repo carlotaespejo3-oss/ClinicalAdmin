@@ -56,14 +56,20 @@ export interface AnthropicError {
   error: string;
 }
 
+/**
+ * Behavioural metadata only. Contains a reference to the Outlook message and which weeks the planner could not place it. NEVER contains subject, body, sender, or any email content.
+ */
 export interface DeferralRecord {
-  emailId: number;
-  weeksDeferred: string[];
+  /** Microsoft Graph message ID — reference only, not content */
+  outlookEmailId: string;
+  isoWeeks: string[];
+  /** Denormalised isoWeeks.length, kept in sync server-side */
+  deferralCount: number;
 }
 
 export interface RecordDeferralsInput {
   /** @minItems 1 */
-  emailIds: number[];
+  outlookEmailIds: string[];
   /** ISO 'YYYY-MM-DD' Monday string for the planning window */
   weekMonday: string;
 }

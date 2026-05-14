@@ -106,23 +106,33 @@ export const SendAnthropicMessageBody = zod.object({
 });
 
 /**
- * @summary List every email's deferral history
+ * Returns metadata only — no email content. Subject, body, and sender are fetched live from Microsoft Graph at display time using outlookEmailId.
+ * @summary List every email's deferral history for the current clinician
  */
-export const ListDeferralsResponseItem = zod.object({
-  emailId: zod.number(),
-  weeksDeferred: zod.array(
-    zod.string().describe("ISO 'YYYY-MM-DD' Monday string"),
-  ),
-});
+export const ListDeferralsResponseItem = zod
+  .object({
+    outlookEmailId: zod
+      .string()
+      .describe("Microsoft Graph message ID — reference only, not content"),
+    isoWeeks: zod.array(
+      zod.string().describe("ISO 'YYYY-MM-DD' Monday string"),
+    ),
+    deferralCount: zod
+      .number()
+      .describe("Denormalised isoWeeks.length, kept in sync server-side"),
+  })
+  .describe(
+    "Behavioural metadata only. Contains a reference to the Outlook message and which weeks the planner could not place it. NEVER contains subject, body, sender, or any email content.",
+  );
 export const ListDeferralsResponse = zod.array(ListDeferralsResponseItem);
 
 /**
- * Idempotent: recording the same (emailId, weekMonday) pair more than once adds only one entry. Counts only ever increase across distinct weeks.
+ * Idempotent: recording the same (outlookEmailId, weekMonday) pair more than once adds only one entry. deferralCount is recomputed server-side as isoWeeks.length on every write.
  * @summary Record that one or more emails were deferred in a given ISO week
  */
 
 export const RecordDeferralsBody = zod.object({
-  emailIds: zod.array(zod.number()).min(1),
+  outlookEmailIds: zod.array(zod.string()).min(1),
   weekMonday: zod
     .string()
     .describe("ISO 'YYYY-MM-DD' Monday string for the planning window"),
@@ -133,5 +143,5 @@ export const RecordDeferralsBody = zod.object({
  * @summary Remove an email's entire deferral history
  */
 export const DeleteDeferralParams = zod.object({
-  emailId: zod.coerce.number(),
+  outlookEmailId: zod.coerce.string(),
 });

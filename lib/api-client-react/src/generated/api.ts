@@ -724,7 +724,8 @@ export const useSendAnthropicMessage = <
 };
 
 /**
- * @summary List every email's deferral history
+ * Returns metadata only — no email content. Subject, body, and sender are fetched live from Microsoft Graph at display time using outlookEmailId.
+ * @summary List every email's deferral history for the current clinician
  */
 export const getListDeferralsUrl = () => {
   return `/api/deferrals`;
@@ -775,7 +776,7 @@ export type ListDeferralsQueryResult = NonNullable<
 export type ListDeferralsQueryError = ErrorType<unknown>;
 
 /**
- * @summary List every email's deferral history
+ * @summary List every email's deferral history for the current clinician
  */
 
 export function useListDeferrals<
@@ -799,7 +800,7 @@ export function useListDeferrals<
 }
 
 /**
- * Idempotent: recording the same (emailId, weekMonday) pair more than once adds only one entry. Counts only ever increase across distinct weeks.
+ * Idempotent: recording the same (outlookEmailId, weekMonday) pair more than once adds only one entry. deferralCount is recomputed server-side as isoWeeks.length on every write.
  * @summary Record that one or more emails were deferred in a given ISO week
  */
 export const getRecordDeferralsUrl = () => {
@@ -889,15 +890,15 @@ export const useRecordDeferrals = <
  * Called when the email is archived, acknowledged, or marked done. The deferral warning is meaningful only on active unresolved emails, so resolution clears the record completely.
  * @summary Remove an email's entire deferral history
  */
-export const getDeleteDeferralUrl = (emailId: number) => {
-  return `/api/deferrals/${emailId}`;
+export const getDeleteDeferralUrl = (outlookEmailId: string) => {
+  return `/api/deferrals/${outlookEmailId}`;
 };
 
 export const deleteDeferral = async (
-  emailId: number,
+  outlookEmailId: string,
   options?: RequestInit,
 ): Promise<void> => {
-  return customFetch<void>(getDeleteDeferralUrl(emailId), {
+  return customFetch<void>(getDeleteDeferralUrl(outlookEmailId), {
     ...options,
     method: "DELETE",
   });
@@ -910,14 +911,14 @@ export const getDeleteDeferralMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof deleteDeferral>>,
     TError,
-    { emailId: number },
+    { outlookEmailId: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof deleteDeferral>>,
   TError,
-  { emailId: number },
+  { outlookEmailId: string },
   TContext
 > => {
   const mutationKey = ["deleteDeferral"];
@@ -931,11 +932,11 @@ export const getDeleteDeferralMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof deleteDeferral>>,
-    { emailId: number }
+    { outlookEmailId: string }
   > = (props) => {
-    const { emailId } = props ?? {};
+    const { outlookEmailId } = props ?? {};
 
-    return deleteDeferral(emailId, requestOptions);
+    return deleteDeferral(outlookEmailId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -957,14 +958,14 @@ export const useDeleteDeferral = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof deleteDeferral>>,
     TError,
-    { emailId: number },
+    { outlookEmailId: string },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof deleteDeferral>>,
   TError,
-  { emailId: number },
+  { outlookEmailId: string },
   TContext
 > => {
   return useMutation(getDeleteDeferralMutationOptions(options));
