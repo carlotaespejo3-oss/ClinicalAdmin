@@ -1,10 +1,11 @@
-# [Project name]
+# ClinAdmin
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A clinical admin dashboard for an NHS CAMHS consultant — triages incoming Outlook mail, plans the consultant's week, and tracks behavioural signals across emails (deferrals, acknowledgements, archive state).
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/clinadmin run dev` — run the web app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -22,23 +23,43 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/api-spec/openapi.yaml` — single source of truth for the API contract; codegen produces hooks and Zod schemas from this
+- `lib/db/src/schema/` — Drizzle table definitions (one file per table); `index.ts` re-exports them
+- `artifacts/api-server/src/routes/` — Express route handlers, one file per resource
+- `artifacts/clinadmin/src/lib/*Store.ts` — client-side stores (`useSyncExternalStore`-backed) that wrap the generated API client
+- `artifacts/clinadmin/src/tabs/` — top-level UI per workflow (Inbox, Today, Calendar, Archive, etc.)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Three-bucket storage rule** (foundational, never violated):
+  - **Lives in Outlook** — all correspondence: emails received from patients/families/colleagues, emails the clinician writes and sends in reply. Anything that is correspondence, sent or received.
+  - **Lives in our database** — the clinician's own organisational layer over their inbox: notes, task titles, document names, reminders; scheduling metadata (deferrals, priorities, deadlines); clinical decision metadata (category, risk flags, sources cited, warnings acknowledged); action records (archived, acknowledged, done — and when); behavioural signals (deferral counts, time estimates, patterns).
+  - **Lives nowhere in our system** — email body text of any kind, incoming or outgoing. That content has one home and it is Outlook. Subject, body, sender are fetched live from Microsoft Graph at display time and never duplicated locally.
+- **Per-email DB tables use composite PK `(clinician_id, outlook_email_id)`** — multi-clinician ready from day one; single-tenant for now via `DEFAULT_CLINICIAN_ID = "default"` in each route.
+- **Client stores follow a hydrate-once + fire-and-forget pattern** — first hook subscriber triggers a one-shot GET to populate an in-memory cache, mutations update the cache synchronously and POST/DELETE asynchronously. Failures are logged, not surfaced as toasts (these are advisory features, not safety-critical).
+- **Idempotency is enforced server-side** — POST endpoints are safe to call repeatedly with the same key; DELETE returns 204 even on missing rows.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Inbox triage** with AI category and risk hints over the consultant's Outlook mail.
+- **Weekly planner** that fits the inbox into the consultant's available time and surfaces what slips.
+- **Deferral tracking** — when an email can't fit in this week's runway, the planner records it; emails deferred multiple weeks get a stronger visual warning.
+- **Archive / acknowledge** to clear handled or no-action items from the active view while preserving the audit trail.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- **British spelling, plain language** in all UI copy. Audience is a clinician, not an engineer — no jargon.
+- **Storage rule is non-negotiable** — see the three-bucket rule above. If a feature seems to need email content in the database, it doesn't; fetch from Graph at display time. Anything the patient or family wrote stays in Outlook.
+- **Confirm before destructive actions** in the UI (delete, bulk archive, etc.).
+- **Decisions made about safety/UX should be flagged** — e.g. an "undo" window before sending email — rather than silently chosen.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- After editing `openapi.yaml`, run `pnpm --filter @workspace/api-spec run codegen` before typechecking — generated client and Zod schemas drive both the server validation and the client hooks.
+- After editing `lib/db/src/schema/*`, run `pnpm --filter @workspace/db run push`. `drizzle-kit push` is interactive on column renames; in dev, dropping and recreating via `psql` is often cleanest.
+- Generated API client does NOT URL-encode path params (orval default). Always wrap path-param values in `encodeURIComponent` at the call site — Microsoft Graph IDs contain `/`, `+`, `=`.
+- Client stores currently key by numeric seed IDs (`Number(outlookEmailId)`). When real Graph IDs replace the seed data, the cache key type must become `string` end-to-end and the `Number()`/`String()` coercion shims removed.
+- Restart the `artifacts/api-server: API Server` workflow after adding new routes — esbuild rebuilds, but the running process needs a restart to pick them up.
 
 ## Pointers
 
