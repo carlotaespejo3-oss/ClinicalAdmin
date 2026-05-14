@@ -825,13 +825,23 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   }
 
   // 9 — Finalise day status, totals, and flags.
+  //
+  // Thresholds (recalibrated alongside the tiered arrivals buffer — the old
+  // 95%/100% bands were too sensitive once the inflated weekly reserve was
+  // removed and weeks legitimately run lighter):
+  //   safe   — planned work ≤ 90% of available
+  //   tight  — planned work between 90% and 110% of available
+  //   breach — planned work > 110% of available
+  // The 10% slack on either side stops the indicator flickering on small
+  // estimation errors (a 5-min email can't be the difference between
+  // green and amber on a 60-min day).
   for (const d of runway) {
     d.bufferMin = Math.max(0, d.minutesAvailable - d.totalPlannedMin);
     if (d.minutesAvailable === 0) {
       d.status = 'idle';
-    } else if (d.totalPlannedMin > d.minutesAvailable) {
+    } else if (d.totalPlannedMin > d.minutesAvailable * 1.10) {
       d.status = 'breach';
-    } else if (d.totalPlannedMin >= d.minutesAvailable * 0.95) {
+    } else if (d.totalPlannedMin >= d.minutesAvailable * 0.90) {
       d.status = 'tight';
     } else {
       d.status = 'safe';
@@ -884,7 +894,23 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
         : "Some work won't fit before its deadline.";
     recommendation =
       'Add capacity, defer low-priority emails, or delegate admin items to reception.';
-  } else if (week1Days.some((d) => d.status === 'tight')) {
+  } else if (
+    // Weekly slack-based amber/red, using the same 90% / 110% bands as
+    // per-day status so the headline and the day chips stay consistent.
+    // SLA breaches above already short-circuit to red; this branch only
+    // fires when nothing actually breaches a deadline but the week is
+    // genuinely full.
+    weeklyCapacityMin > 0 && weeklyDemandMin > weeklyCapacityMin * 1.10
+  ) {
+    overallStatus = 'red';
+    statusHeadline = 'Your week is over capacity';
+    statusDetail = `You have ${fmtH(weeklyDemandMin)} of work and ${fmtH(weeklyCapacityMin)} available.`;
+    recommendation =
+      'Add capacity, defer low-priority emails, or delegate admin items to reception.';
+  } else if (
+    week1Days.some((d) => d.status === 'tight') ||
+    (weeklyCapacityMin > 0 && weeklyDemandMin >= weeklyCapacityMin * 0.90)
+  ) {
     overallStatus = 'amber';
     statusHeadline = 'Your week is tight';
     statusDetail =
