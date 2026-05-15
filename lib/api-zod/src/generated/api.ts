@@ -542,3 +542,31 @@ export const UpsertAiClassificationBody = zod
   .describe(
     "AI classification for a single email. All fields are organisational metadata. Nullable fields use null (not omission) so the upsert always replaces the row cleanly.",
   );
+
+/**
+ * Returns the three configuration blobs as one envelope. Any unset section is `null`; readers fall back to client-side defaults. Three-bucket rule: every field is the clinician's own organisational layer (planner inputs, prompt-tuning text, sign-offs they author). No correspondence is stored.
+ * @summary Get all clinician-wide settings (arrivals, style profile, signatures)
+ */
+export const GetClinicianSettingsResponse = zod
+  .object({
+    arrivalsConfig: zod.record(zod.string(), zod.unknown()).nullable(),
+    styleProfile: zod.record(zod.string(), zod.unknown()).nullable(),
+    signaturesSettings: zod.record(zod.string(), zod.unknown()).nullable(),
+  })
+  .describe(
+    "Envelope of all clinician-wide settings. Each section is a free-form object so the client owns the inner shape; null means the section has never been customised.",
+  );
+
+/**
+ * Partial upsert. Each section is independently optional — omitted means "leave alone", explicit `null` means "clear". Idempotent on clinicianId; the server merges the patch over the existing row.
+ * @summary Patch one or more sections of the clinician's settings
+ */
+export const UpsertClinicianSettingsBody = zod
+  .object({
+    arrivalsConfig: zod.record(zod.string(), zod.unknown()).nullish(),
+    styleProfile: zod.record(zod.string(), zod.unknown()).nullish(),
+    signaturesSettings: zod.record(zod.string(), zod.unknown()).nullish(),
+  })
+  .describe(
+    "Partial patch. Each section is independently optional; omitted leaves the existing value alone, explicit null clears it. The server merges the patch over the row.",
+  );

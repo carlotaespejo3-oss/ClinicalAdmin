@@ -30,6 +30,8 @@ tags:
     description: Audit trail of mailto handoffs (metadata only — no subject or body)
   - name: aiClassifications
     description: AI category / priority / detector output per inbox email (organisational metadata, not email content)
+  - name: clinicianSettings
+    description: Clinician-wide configuration (arrivals planner inputs, writing-style profile, AI-reply signatures)
 paths:
   /healthz:
     get:
@@ -576,6 +578,42 @@ paths:
       responses:
         "204":
           description: Saved
+  /clinician-settings:
+    get:
+      operationId: getClinicianSettings
+      tags: [clinicianSettings]
+      summary: Get all clinician-wide settings (arrivals, style profile, signatures)
+      description: >-
+        Returns the three configuration blobs as one envelope. Any
+        unset section is `null`; readers fall back to client-side
+        defaults. Three-bucket rule: every field is the clinician's
+        own organisational layer (planner inputs, prompt-tuning
+        text, sign-offs they author). No correspondence is stored.
+      responses:
+        "200":
+          description: Current clinician settings (sections may be null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicianSettings"
+    post:
+      operationId: upsertClinicianSettings
+      tags: [clinicianSettings]
+      summary: Patch one or more sections of the clinician's settings
+      description: >-
+        Partial upsert. Each section is independently optional —
+        omitted means "leave alone", explicit `null` means "clear".
+        Idempotent on clinicianId; the server merges the patch over
+        the existing row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertClinicianSettingsInput"
+      responses:
+        "204":
+          description: Saved
 components:
   schemas:
     HealthStatus:
@@ -1055,3 +1093,45 @@ components:
         - outlookEmailId
         - variant
         - sentAt
+    ClinicianSettings:
+      type: object
+      description: >-
+        Envelope of all clinician-wide settings. Each section is a
+        free-form object so the client owns the inner shape; null
+        means the section has never been customised.
+      properties:
+        arrivalsConfig:
+          type: object
+          nullable: true
+          additionalProperties: true
+        styleProfile:
+          type: object
+          nullable: true
+          additionalProperties: true
+        signaturesSettings:
+          type: object
+          nullable: true
+          additionalProperties: true
+      required:
+        - arrivalsConfig
+        - styleProfile
+        - signaturesSettings
+    UpsertClinicianSettingsInput:
+      type: object
+      description: >-
+        Partial patch. Each section is independently optional;
+        omitted leaves the existing value alone, explicit null
+        clears it. The server merges the patch over the row.
+      properties:
+        arrivalsConfig:
+          type: object
+          nullable: true
+          additionalProperties: true
+        styleProfile:
+          type: object
+          nullable: true
+          additionalProperties: true
+        signaturesSettings:
+          type: object
+          nullable: true
+          additionalProperties: true

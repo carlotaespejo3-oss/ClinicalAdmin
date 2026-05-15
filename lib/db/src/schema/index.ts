@@ -27,3 +27,4 @@ export * from "./linkedDocTasks";
 export * from "./promptedTasks";
 export * from "./sentLog";
 export * from "./aiClassifications";
+export * from "./clinicianSettings";

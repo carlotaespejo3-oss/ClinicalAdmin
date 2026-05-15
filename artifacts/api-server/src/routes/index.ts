@@ -10,6 +10,7 @@ import linkedDocTasksRouter from "./linkedDocTasks";
 import promptedTasksRouter from "./promptedTasks";
 import sentLogRouter from "./sentLog";
 import aiClassificationsRouter from "./aiClassifications";
+import clinicianSettingsRouter from "./clinicianSettings";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(linkedDocTasksRouter);
 router.use(promptedTasksRouter);
 router.use(sentLogRouter);
 router.use(aiClassificationsRouter);
+router.use(clinicianSettingsRouter);
 
 export default router;

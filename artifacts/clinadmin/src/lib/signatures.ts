@@ -1,15 +1,18 @@
 import type { Email } from './types';
+import { RECIPIENT_TYPES, type RecipientType } from './recipientTypes';
+import {
+  getSignaturesSettings,
+  setSignaturesSettingsInternal,
+  useSignaturesSettingsCache,
+  type SignaturesSettings,
+} from './clinicianSettingsStore';
 
-export const RECIPIENT_TYPES = [
-  'Admin Team',
-  'Families',
-  'Other Professionals',
-  'Recurrent Families / Patients',
-] as const;
+// Recipient-type detection (pure) + signature accessors. The
+// signatures themselves now live in the shared clinicianSettings
+// store; this file just exposes the existing helper API.
 
-export type RecipientType = typeof RECIPIENT_TYPES[number];
-
-const SETTINGS_KEY = 'clinadmin-settings';
+export { RECIPIENT_TYPES };
+export type { RecipientType, SignaturesSettings };
 
 export function detectRecipientType(email: Pick<Email, 'from' | 'cat'>): RecipientType {
   const from = email.from || '';
@@ -30,16 +33,33 @@ export function detectRecipientType(email: Pick<Email, 'from' | 'cat'>): Recipie
   return 'Other Professionals';
 }
 
+// Synchronous read — used by draftPrompts.ts inside prompt builders.
+// Falls back to the default signature when no per-recipient value
+// is set, matching the previous localStorage behaviour.
 export function getSignatureForRecipient(recipientType: RecipientType): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return '';
-    const parsed = JSON.parse(raw);
-    const perType = parsed?.signatures?.[recipientType];
-    if (typeof perType === 'string' && perType.trim()) return perType;
-    return typeof parsed?.signature === 'string' ? parsed.signature : '';
-  } catch {
-    return '';
-  }
+  const settings = getSignaturesSettings();
+  const perType = settings.perRecipient[recipientType];
+  if (typeof perType === 'string' && perType.trim()) return perType;
+  return settings.default ?? '';
+}
+
+// Writers used by SettingsTab. Each delegates to the central store
+// (in-memory write + fire-and-forget POST).
+export function setDefaultSignature(value: string): void {
+  const current = getSignaturesSettings();
+  setSignaturesSettingsInternal({ ...current, default: value });
+}
+
+export function setRecipientSignature(recipient: RecipientType, value: string): void {
+  const current = getSignaturesSettings();
+  setSignaturesSettingsInternal({
+    ...current,
+    perRecipient: { ...current.perRecipient, [recipient]: value },
+  });
+}
+
+// React hook for SettingsTab — re-renders when any signature
+// changes (including hydration completing).
+export function useSignatures(): SignaturesSettings {
+  return useSignaturesSettingsCache();
 }

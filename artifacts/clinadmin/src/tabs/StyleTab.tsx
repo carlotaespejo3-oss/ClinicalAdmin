@@ -8,11 +8,11 @@ import type { RecipientType } from '@/lib/signatures';
 import {
   parseStyleProfile,
   saveStyleProfile,
-  loadStyleProfile,
   DEFAULT_TONE_PROFILES,
   type StyleProfile,
   type StyleProfileSection,
 } from '@/lib/styleProfile';
+import { useStyleProfileCache } from '@/lib/clinicianSettingsStore';
 
 const SECTION_META: Array<{ type: RecipientType; icon: typeof Users; color: string; bg: string }> = [
   { type: 'Admin Team', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
@@ -29,12 +29,17 @@ const FIELD_LABELS: Array<{ key: keyof StyleProfileSection; label: string; multi
 ];
 
 export default function StyleTab() {
-  const [profile, setProfile] = useState<StyleProfile | null>(null);
+  // Subscribe to the shared clinicianSettings cache so the tab
+  // re-renders when hydration completes (or when another part of
+  // the app updates the profile). Local edits still flow through
+  // saveStyleProfile() → setStyleProfileInternal() → emit().
+  const liveProfile = useStyleProfileCache();
+  const [profile, setProfile] = useState<StyleProfile | null>(liveProfile);
   const aiComplete = useAiComplete();
 
   useEffect(() => {
-    setProfile(loadStyleProfile());
-  }, []);
+    setProfile(liveProfile);
+  }, [liveProfile]);
 
   const handleBuild = () => {
     const sample = sentEmails.map(e => `To: ${e.to}\nSubject: ${e.subject}\nBody: ${e.body}`).join('\n\n---\n\n');

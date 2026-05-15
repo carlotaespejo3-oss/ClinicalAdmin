@@ -26,6 +26,7 @@ import InboxTab from '../tabs/InboxTab';
 import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import { useClassifyBootstrap } from '@/lib/useClassifyBootstrap';
+import { useClinicianSettingsHydration } from '@/lib/clinicianSettingsStore';
 import TimelineTab from '../tabs/TimelineTab';
 import CalendarTab from '../tabs/CalendarTab';
 import ForecastTab from '../tabs/ForecastTab';
@@ -81,6 +82,11 @@ export default function ClinAdmin() {
   // matter which tab the user opens first. High-Risk and any future
   // classification-driven tab depend on this running early.
   useClassifyBootstrap();
+  // Hydrate clinician-wide settings (arrivals, style profile,
+  // signatures) once, at app root, so synchronous prompt builders
+  // see real values rather than defaults by the time the user
+  // clicks "Generate".
+  useClinicianSettingsHydration();
   const [activeTab, setActiveTab] = useState<TabType>('Home');
   const [sidebarTasks, setSidebarTasks] = useState<SidebarTask[]>(defaultSidebarTasks);
   const [manualTaskList, setManualTaskList] = useState<ManualTask[]>(initialManualTasks);

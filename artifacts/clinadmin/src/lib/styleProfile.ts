@@ -1,19 +1,29 @@
-import { RECIPIENT_TYPES, type RecipientType } from './signatures';
+import { RECIPIENT_TYPES, type RecipientType } from './recipientTypes';
+import {
+  DEFAULT_TONE_PROFILES,
+  DEFAULT_OVERALL,
+  type StyleProfile,
+  type StyleProfileSection,
+} from './styleProfileTypes';
+import {
+  getStyleProfile,
+  setStyleProfileInternal,
+  clearStyleProfileInternal,
+} from './clinicianSettingsStore';
 
-export interface StyleProfileSection {
-  greeting: string;
-  tone: string;
-  signOff: string;
-  keyPhrases: string;
+// Writing-style profile module. The pure parsing helper
+// (parseStyleProfile) and the type/default exports are unchanged.
+// Persistence (load/save/clear) used to live in localStorage and
+// now delegates to the shared clinicianSettings store.
+
+export type { StyleProfile, StyleProfileSection };
+export { DEFAULT_TONE_PROFILES, RECIPIENT_TYPES };
+
+function fieldValue(block: string, label: string): string {
+  const re = new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, 'im');
+  const m = block.match(re);
+  return m ? m[1].trim() : '';
 }
-
-export interface StyleProfile {
-  overall: string;
-  sections: Partial<Record<RecipientType, StyleProfileSection>>;
-  builtAt: number;
-}
-
-const STYLE_KEY = 'clinadmin-style-profile';
 
 const HEADER_TO_TYPE: Record<string, RecipientType> = {
   'ADMIN TEAM': 'Admin Team',
@@ -23,42 +33,6 @@ const HEADER_TO_TYPE: Record<string, RecipientType> = {
   'RECURRENT FAMILIES/PATIENTS': 'Recurrent Families / Patients',
   'RECURRENT FAMILIES': 'Recurrent Families / Patients',
 };
-
-export const DEFAULT_TONE_PROFILES: Record<RecipientType, StyleProfileSection> = {
-  'Admin Team': {
-    greeting: 'Hi team,',
-    tone: 'Casual, warm, and collegial — like talking to people you see every day.',
-    signOff: 'Thanks!',
-    keyPhrases: 'quick one, when you get a sec, no rush, ta, cheers',
-  },
-  'Families': {
-    greeting: 'Hi [first name],',
-    tone: 'Professional but warm and close, somewhat casual. Always address parents by their first name.',
-    signOff: 'Warm regards,',
-    keyPhrases: 'thanks so much, just wanted to check in, do let me know, happy to chat through this',
-  },
-  'Other Professionals': {
-    greeting: 'Hi [first name],',
-    tone: 'Casual and warm but professional — collegial peer-to-peer tone with allied health and other doctors.',
-    signOff: 'Best wishes,',
-    keyPhrases: 'thanks for the referral, happy to discuss, keen to hear your thoughts, will keep you posted',
-  },
-  'Recurrent Families / Patients': {
-    greeting: 'Hi [first name],',
-    tone: 'Even more casual than Families — familiar, friendly, and personal, as you already have an established relationship.',
-    signOff: 'Take care,',
-    keyPhrases: 'lovely to hear from you again, hope you\'ve all been well, just give me a shout, as always',
-  },
-};
-
-const DEFAULT_OVERALL =
-  'Warm, attentive, and clearly clinical — adapts naturally from collegial casualness with the team to a closer, friendlier tone with families you know well.';
-
-function fieldValue(block: string, label: string): string {
-  const re = new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, 'im');
-  const m = block.match(re);
-  return m ? m[1].trim() : '';
-}
 
 export function parseStyleProfile(text: string): StyleProfile {
   const overallMatch = text.match(/OVERALL\s*:\s*(.+?)(?:\n\s*\n|$)/is);
@@ -86,60 +60,37 @@ export function parseStyleProfile(text: string): StyleProfile {
 }
 
 export function saveStyleProfile(profile: StyleProfile): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STYLE_KEY, JSON.stringify(profile));
-  } catch {
-    // ignore
-  }
-}
-
-function buildDefaultProfile(): StyleProfile {
-  const sections: Partial<Record<RecipientType, StyleProfileSection>> = {};
-  for (const type of RECIPIENT_TYPES) {
-    sections[type] = { ...DEFAULT_TONE_PROFILES[type] };
-  }
-  return { overall: DEFAULT_OVERALL, sections, builtAt: 0 };
+  setStyleProfileInternal(profile);
 }
 
 export function loadStyleProfile(): StyleProfile | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(STYLE_KEY);
-    if (!raw) return buildDefaultProfile();
-    const parsed = JSON.parse(raw) as StyleProfile;
-    if (!parsed || typeof parsed !== 'object' || !parsed.sections) return buildDefaultProfile();
-    const sections: Partial<Record<RecipientType, StyleProfileSection>> = { ...parsed.sections };
-    for (const type of RECIPIENT_TYPES) {
-      if (!sections[type]) sections[type] = { ...DEFAULT_TONE_PROFILES[type] };
-    }
-    return { ...parsed, sections };
-  } catch {
-    return buildDefaultProfile();
-  }
+  // Returns the in-memory cached profile (or built-in defaults if
+  // hydration hasn't completed). The function still returns
+  // `StyleProfile | null` to match the existing call sites; in
+  // practice the central store always supplies defaults so it's
+  // never null.
+  return getStyleProfile();
 }
 
 export function clearStyleProfile(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(STYLE_KEY);
-  } catch {
-    // ignore
-  }
+  clearStyleProfileInternal();
 }
 
 /**
- * Returns prompt-ready style guidance for a recipient, or null if no profile
- * has been built (or the section is empty).
+ * Returns prompt-ready style guidance for a recipient, or null if
+ * the section is empty. Reads from the in-memory cache — no I/O.
+ *
+ * `DEFAULT_OVERALL` is re-exported indirectly via the cached
+ * profile's `overall` field when nothing has been built yet.
  */
 export function getStyleGuidanceForRecipient(recipientType: RecipientType): string | null {
-  const profile = loadStyleProfile();
-  if (!profile) return null;
+  const profile = getStyleProfile();
   const section = profile.sections[recipientType];
   if (!section) return null;
 
   const parts: string[] = [];
-  if (profile.overall) parts.push(`Overall voice: ${profile.overall}`);
+  const overall = profile.overall || DEFAULT_OVERALL;
+  if (overall) parts.push(`Overall voice: ${overall}`);
   if (section.greeting) parts.push(`Greeting style: ${section.greeting}`);
   if (section.tone) parts.push(`Tone for ${recipientType}: ${section.tone}`);
   if (section.keyPhrases) parts.push(`Prefer phrases like: ${section.keyPhrases}`);
@@ -147,5 +98,3 @@ export function getStyleGuidanceForRecipient(recipientType: RecipientType): stri
   if (parts.length === 0) return null;
   return parts.join('\n');
 }
-
-export { RECIPIENT_TYPES };

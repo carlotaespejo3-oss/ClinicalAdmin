@@ -30,6 +30,7 @@ import type {
   AnthropicMessageInput,
   ArchiveEmailInput,
   ArchivedRecord,
+  ClinicianSettings,
   DeferralRecord,
   DismissPromptedTaskInput,
   HealthStatus,
@@ -39,6 +40,7 @@ import type {
   RecordDeferralsInput,
   SentLogRecord,
   SetPromptedTaskDoneInput,
+  UpsertClinicianSettingsInput,
   UserTaskRecord,
 } from "./api.schemas";
 
@@ -2633,4 +2635,168 @@ export const useUpsertAiClassification = <
   TContext
 > => {
   return useMutation(getUpsertAiClassificationMutationOptions(options));
+};
+
+/**
+ * Returns the three configuration blobs as one envelope. Any unset section is `null`; readers fall back to client-side defaults. Three-bucket rule: every field is the clinician's own organisational layer (planner inputs, prompt-tuning text, sign-offs they author). No correspondence is stored.
+ * @summary Get all clinician-wide settings (arrivals, style profile, signatures)
+ */
+export const getGetClinicianSettingsUrl = () => {
+  return `/api/clinician-settings`;
+};
+
+export const getClinicianSettings = async (
+  options?: RequestInit,
+): Promise<ClinicianSettings> => {
+  return customFetch<ClinicianSettings>(getGetClinicianSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClinicianSettingsQueryKey = () => {
+  return [`/api/clinician-settings`] as const;
+};
+
+export const getGetClinicianSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClinicianSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getClinicianSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClinicianSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClinicianSettings>>
+  > = ({ signal }) => getClinicianSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClinicianSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClinicianSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClinicianSettings>>
+>;
+export type GetClinicianSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all clinician-wide settings (arrivals, style profile, signatures)
+ */
+
+export function useGetClinicianSettings<
+  TData = Awaited<ReturnType<typeof getClinicianSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getClinicianSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClinicianSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Partial upsert. Each section is independently optional — omitted means "leave alone", explicit `null` means "clear". Idempotent on clinicianId; the server merges the patch over the existing row.
+ * @summary Patch one or more sections of the clinician's settings
+ */
+export const getUpsertClinicianSettingsUrl = () => {
+  return `/api/clinician-settings`;
+};
+
+export const upsertClinicianSettings = async (
+  upsertClinicianSettingsInput: UpsertClinicianSettingsInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertClinicianSettingsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(upsertClinicianSettingsInput),
+  });
+};
+
+export const getUpsertClinicianSettingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertClinicianSettings>>,
+    TError,
+    { data: BodyType<UpsertClinicianSettingsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertClinicianSettings>>,
+  TError,
+  { data: BodyType<UpsertClinicianSettingsInput> },
+  TContext
+> => {
+  const mutationKey = ["upsertClinicianSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertClinicianSettings>>,
+    { data: BodyType<UpsertClinicianSettingsInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return upsertClinicianSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertClinicianSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertClinicianSettings>>
+>;
+export type UpsertClinicianSettingsMutationBody =
+  BodyType<UpsertClinicianSettingsInput>;
+export type UpsertClinicianSettingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Patch one or more sections of the clinician's settings
+ */
+export const useUpsertClinicianSettings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertClinicianSettings>>,
+    TError,
+    { data: BodyType<UpsertClinicianSettingsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertClinicianSettings>>,
+  TError,
+  { data: BodyType<UpsertClinicianSettingsInput> },
+  TContext
+> => {
+  return useMutation(getUpsertClinicianSettingsMutationOptions(options));
 };

@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { RECIPIENT_TYPES, type RecipientType } from '@/lib/signatures';
+import {
+  RECIPIENT_TYPES,
+  type RecipientType,
+  useSignatures,
+  setDefaultSignature,
+  setRecipientSignature,
+} from '@/lib/signatures';
 
+// Profile, weekly defaults, and notifications still live in
+// localStorage — this tab is the only consumer for now. Signatures
+// were lifted out into the shared clinicianSettings store so that
+// draftPrompts.ts can read them across devices.
 const STORAGE_KEY = 'clinadmin-settings';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
@@ -27,8 +37,6 @@ export interface ClinAdminSettings {
     draftReady: boolean;
     desktopSound: boolean;
   };
-  signature: string;
-  signatures: Partial<Record<RecipientType, string>>;
 }
 
 const DEFAULT_SETTINGS: ClinAdminSettings = {
@@ -50,9 +58,6 @@ const DEFAULT_SETTINGS: ClinAdminSettings = {
     draftReady: true,
     desktopSound: false,
   },
-  signature:
-    'Kind regards,\nDr. Sam Patel\nConsultant Clinical Psychologist\nNorth CAMHS Team',
-  signatures: {},
 };
 
 function loadSettings(): ClinAdminSettings {
@@ -65,13 +70,6 @@ function loadSettings(): ClinAdminSettings {
       profile: { ...DEFAULT_SETTINGS.profile, ...(parsed.profile ?? {}) },
       weeklyDefaults: { ...DEFAULT_SETTINGS.weeklyDefaults, ...(parsed.weeklyDefaults ?? {}) },
       notifications: { ...DEFAULT_SETTINGS.notifications, ...(parsed.notifications ?? {}) },
-      signature: typeof parsed.signature === 'string' ? parsed.signature : DEFAULT_SETTINGS.signature,
-      signatures:
-        parsed.signatures && typeof parsed.signatures === 'object'
-          ? Object.fromEntries(
-              RECIPIENT_TYPES.map(t => [t, typeof parsed.signatures[t] === 'string' ? parsed.signatures[t] : '']),
-            )
-          : {},
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -81,6 +79,10 @@ function loadSettings(): ClinAdminSettings {
 export default function SettingsTab() {
   const [settings, setSettings] = useState<ClinAdminSettings>(DEFAULT_SETTINGS);
   const [showSaved, setShowSaved] = useState(false);
+  // Signatures live in the shared clinician-settings store so
+  // draftPrompts.ts (and any other consumer) can read them
+  // synchronously from the same in-memory cache.
+  const signatureStore = useSignatures();
 
   useEffect(() => {
     setSettings(loadSettings());
@@ -101,6 +103,8 @@ export default function SettingsTab() {
       // ignore
     }
   };
+
+  const flashSaved = () => setShowSaved(true);
 
   const updateProfile = <K extends keyof ClinAdminSettings['profile']>(key: K, value: ClinAdminSettings['profile'][K]) => {
     persist({ ...settings, profile: { ...settings.profile, [key]: value } });
@@ -128,14 +132,13 @@ export default function SettingsTab() {
   };
 
   const updateSignature = (value: string) => {
-    persist({ ...settings, signature: value });
+    setDefaultSignature(value);
+    flashSaved();
   };
 
   const updateRecipientSignature = (recipient: RecipientType, value: string) => {
-    persist({
-      ...settings,
-      signatures: { ...settings.signatures, [recipient]: value },
-    });
+    setRecipientSignature(recipient, value);
+    flashSaved();
   };
 
   const resetDefaults = () => {
@@ -338,7 +341,7 @@ export default function SettingsTab() {
               </p>
             </div>
             <textarea
-              value={settings.signature}
+              value={signatureStore.default}
               onChange={e => updateSignature(e.target.value)}
               rows={6}
               className="w-full text-sm bg-white border border-border rounded-lg px-3 py-2 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
@@ -349,7 +352,7 @@ export default function SettingsTab() {
                 Preview
               </p>
               <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed">
-                {settings.signature || '(no signature set)'}
+                {signatureStore.default || '(no signature set)'}
               </pre>
             </div>
           </div>
@@ -363,7 +366,7 @@ export default function SettingsTab() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {RECIPIENT_TYPES.map(recipient => {
-                const value = settings.signatures[recipient] ?? '';
+                const value = signatureStore.perRecipient[recipient] ?? '';
                 const usingDefault = !value.trim();
                 return (
                   <div key={recipient} className="space-y-2">
