@@ -28,6 +28,8 @@ tags:
     description: Clinician's response to "Possible task detected" inbox prompts
   - name: sentLog
     description: Audit trail of mailto handoffs (metadata only — no subject or body)
+  - name: aiClassifications
+    description: AI category / priority / detector output per inbox email (organisational metadata, not email content)
 paths:
   /healthz:
     get:
@@ -535,6 +537,45 @@ paths:
       responses:
         "204":
           description: Recorded
+  /ai-classifications:
+    get:
+      operationId: listAiClassifications
+      tags: [aiClassifications]
+      summary: List every AI classification for the current clinician
+      description: >-
+        Per-email AI decisions: category, priority, confidence,
+        detector outputs and reasoning text. Three-bucket rule —
+        this is the clinician's organisational metadata, not email
+        content. Subject and body remain fetched live from Microsoft
+        Graph at display time.
+      responses:
+        "200":
+          description: All AI classifications for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiClassificationRecord"
+    post:
+      operationId: upsertAiClassification
+      tags: [aiClassifications]
+      summary: Insert or update an AI classification
+      description: >-
+        Idempotent on (clinicianId, outlookEmailId). The server
+        replaces the row wholesale — used both for the initial
+        bootstrap classification and for clinician-driven mutations
+        (manual override, document direction confirmation,
+        re-classify).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiClassificationRecord"
+      responses:
+        "204":
+          description: Saved
 components:
   schemas:
     HealthStatus:
@@ -904,6 +945,89 @@ components:
         - outlookEmailId
         - kind
         - done
+    AiClassificationRecord:
+      type: object
+      description: >-
+        AI classification for a single email. All fields are
+        organisational metadata. Nullable fields use null (not
+        omission) so the upsert always replaces the row cleanly.
+      properties:
+        outlookEmailId:
+          type: string
+        category:
+          type: string
+          enum: [SAFEGUARDING, URGENT_CLINICAL, CLINICAL, PROFESSIONAL, ADMIN, LEGAL, NONE, CPD, UNCLEAR]
+        priority:
+          type: string
+          enum: [URGENT, MEDIUM, LOW, UNCLEAR]
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+        classifiedAt:
+          type: string
+          format: date-time
+        professionalSubType:
+          type: string
+          enum: [clinical_input, document_request, meeting]
+          nullable: true
+        patientName:
+          type: string
+          nullable: true
+        documentRequested:
+          type: string
+          nullable: true
+        eventDate:
+          type: string
+          nullable: true
+        registrationDeadline:
+          type: string
+          nullable: true
+        documentDirection:
+          type: string
+          enum: [incoming, outgoing, unclear]
+          nullable: true
+        requiresDocument:
+          type: boolean
+        documentType:
+          type: string
+          nullable: true
+        documentDueDays:
+          type: integer
+          nullable: true
+        prescriptionRequest:
+          description: PrescriptionRequest object or null. JSON passthrough.
+          nullable: true
+        complexity:
+          type: string
+          enum: [simple, complex]
+          nullable: true
+        complexityReasons:
+          type: array
+          items:
+            type: string
+      required:
+        - outlookEmailId
+        - category
+        - priority
+        - confidence
+        - reasoning
+        - classifiedAt
+        - professionalSubType
+        - patientName
+        - documentRequested
+        - eventDate
+        - registrationDeadline
+        - documentDirection
+        - requiresDocument
+        - documentType
+        - documentDueDays
+        - prescriptionRequest
+        - complexity
+        - complexityReasons
     SentLogVariant:
       type: string
       enum: [single, family, admin, chat, unknown]

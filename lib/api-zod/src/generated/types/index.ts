@@ -7,6 +7,12 @@
  */
 
 export * from "./acknowledgeEmailInput";
+export * from "./aiClassificationRecord";
+export * from "./aiClassificationRecordCategory";
+export * from "./aiClassificationRecordComplexity";
+export * from "./aiClassificationRecordDocumentDirection";
+export * from "./aiClassificationRecordPriority";
+export * from "./aiClassificationRecordProfessionalSubType";
 export * from "./aiCompleteInput";
 export * from "./aiCompleteResult";
 export * from "./aiError";

@@ -439,3 +439,106 @@ export const RecordSentLogBody = zod
   .describe(
     "Mailto handoff audit row. Metadata only — outgoing email content (subject, body) lives in Outlook Sent Items and is never persisted here.",
   );
+
+/**
+ * Per-email AI decisions: category, priority, confidence, detector outputs and reasoning text. Three-bucket rule — this is the clinician's organisational metadata, not email content. Subject and body remain fetched live from Microsoft Graph at display time.
+ * @summary List every AI classification for the current clinician
+ */
+export const listAiClassificationsResponseConfidenceMin = 0;
+export const listAiClassificationsResponseConfidenceMax = 1;
+
+export const ListAiClassificationsResponseItem = zod
+  .object({
+    outlookEmailId: zod.string(),
+    category: zod.enum([
+      "SAFEGUARDING",
+      "URGENT_CLINICAL",
+      "CLINICAL",
+      "PROFESSIONAL",
+      "ADMIN",
+      "LEGAL",
+      "NONE",
+      "CPD",
+      "UNCLEAR",
+    ]),
+    priority: zod.enum(["URGENT", "MEDIUM", "LOW", "UNCLEAR"]),
+    confidence: zod
+      .number()
+      .min(listAiClassificationsResponseConfidenceMin)
+      .max(listAiClassificationsResponseConfidenceMax),
+    reasoning: zod.string(),
+    classifiedAt: zod.coerce.date(),
+    professionalSubType: zod
+      .enum(["clinical_input", "document_request", "meeting"])
+      .nullable(),
+    patientName: zod.string().nullable(),
+    documentRequested: zod.string().nullable(),
+    eventDate: zod.string().nullable(),
+    registrationDeadline: zod.string().nullable(),
+    documentDirection: zod.enum(["incoming", "outgoing", "unclear"]).nullable(),
+    requiresDocument: zod.boolean(),
+    documentType: zod.string().nullable(),
+    documentDueDays: zod.number().nullable(),
+    prescriptionRequest: zod
+      .unknown()
+      .nullable()
+      .describe("PrescriptionRequest object or null. JSON passthrough."),
+    complexity: zod.enum(["simple", "complex"]).nullable(),
+    complexityReasons: zod.array(zod.string()),
+  })
+  .describe(
+    "AI classification for a single email. All fields are organisational metadata. Nullable fields use null (not omission) so the upsert always replaces the row cleanly.",
+  );
+export const ListAiClassificationsResponse = zod.array(
+  ListAiClassificationsResponseItem,
+);
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). The server replaces the row wholesale — used both for the initial bootstrap classification and for clinician-driven mutations (manual override, document direction confirmation, re-classify).
+ * @summary Insert or update an AI classification
+ */
+export const upsertAiClassificationBodyConfidenceMin = 0;
+export const upsertAiClassificationBodyConfidenceMax = 1;
+
+export const UpsertAiClassificationBody = zod
+  .object({
+    outlookEmailId: zod.string(),
+    category: zod.enum([
+      "SAFEGUARDING",
+      "URGENT_CLINICAL",
+      "CLINICAL",
+      "PROFESSIONAL",
+      "ADMIN",
+      "LEGAL",
+      "NONE",
+      "CPD",
+      "UNCLEAR",
+    ]),
+    priority: zod.enum(["URGENT", "MEDIUM", "LOW", "UNCLEAR"]),
+    confidence: zod
+      .number()
+      .min(upsertAiClassificationBodyConfidenceMin)
+      .max(upsertAiClassificationBodyConfidenceMax),
+    reasoning: zod.string(),
+    classifiedAt: zod.coerce.date(),
+    professionalSubType: zod
+      .enum(["clinical_input", "document_request", "meeting"])
+      .nullable(),
+    patientName: zod.string().nullable(),
+    documentRequested: zod.string().nullable(),
+    eventDate: zod.string().nullable(),
+    registrationDeadline: zod.string().nullable(),
+    documentDirection: zod.enum(["incoming", "outgoing", "unclear"]).nullable(),
+    requiresDocument: zod.boolean(),
+    documentType: zod.string().nullable(),
+    documentDueDays: zod.number().nullable(),
+    prescriptionRequest: zod
+      .unknown()
+      .nullable()
+      .describe("PrescriptionRequest object or null. JSON passthrough."),
+    complexity: zod.enum(["simple", "complex"]).nullable(),
+    complexityReasons: zod.array(zod.string()),
+  })
+  .describe(
+    "AI classification for a single email. All fields are organisational metadata. Nullable fields use null (not omission) so the upsert always replaces the row cleanly.",
+  );

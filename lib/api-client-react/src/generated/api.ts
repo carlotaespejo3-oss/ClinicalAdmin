@@ -18,6 +18,7 @@ import type {
 
 import type {
   AcknowledgeEmailInput,
+  AiClassificationRecord,
   AiCompleteInput,
   AiCompleteResult,
   AiError,
@@ -2468,4 +2469,168 @@ export const useRecordSentLog = <
   TContext
 > => {
   return useMutation(getRecordSentLogMutationOptions(options));
+};
+
+/**
+ * Per-email AI decisions: category, priority, confidence, detector outputs and reasoning text. Three-bucket rule — this is the clinician's organisational metadata, not email content. Subject and body remain fetched live from Microsoft Graph at display time.
+ * @summary List every AI classification for the current clinician
+ */
+export const getListAiClassificationsUrl = () => {
+  return `/api/ai-classifications`;
+};
+
+export const listAiClassifications = async (
+  options?: RequestInit,
+): Promise<AiClassificationRecord[]> => {
+  return customFetch<AiClassificationRecord[]>(getListAiClassificationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAiClassificationsQueryKey = () => {
+  return [`/api/ai-classifications`] as const;
+};
+
+export const getListAiClassificationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAiClassifications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAiClassifications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAiClassificationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAiClassifications>>
+  > = ({ signal }) => listAiClassifications({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAiClassifications>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAiClassificationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAiClassifications>>
+>;
+export type ListAiClassificationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every AI classification for the current clinician
+ */
+
+export function useListAiClassifications<
+  TData = Awaited<ReturnType<typeof listAiClassifications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAiClassifications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAiClassificationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). The server replaces the row wholesale — used both for the initial bootstrap classification and for clinician-driven mutations (manual override, document direction confirmation, re-classify).
+ * @summary Insert or update an AI classification
+ */
+export const getUpsertAiClassificationUrl = () => {
+  return `/api/ai-classifications`;
+};
+
+export const upsertAiClassification = async (
+  aiClassificationRecord: AiClassificationRecord,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertAiClassificationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiClassificationRecord),
+  });
+};
+
+export const getUpsertAiClassificationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertAiClassification>>,
+    TError,
+    { data: BodyType<AiClassificationRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertAiClassification>>,
+  TError,
+  { data: BodyType<AiClassificationRecord> },
+  TContext
+> => {
+  const mutationKey = ["upsertAiClassification"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertAiClassification>>,
+    { data: BodyType<AiClassificationRecord> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return upsertAiClassification(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertAiClassificationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertAiClassification>>
+>;
+export type UpsertAiClassificationMutationBody =
+  BodyType<AiClassificationRecord>;
+export type UpsertAiClassificationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Insert or update an AI classification
+ */
+export const useUpsertAiClassification = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertAiClassification>>,
+    TError,
+    { data: BodyType<AiClassificationRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertAiClassification>>,
+  TError,
+  { data: BodyType<AiClassificationRecord> },
+  TContext
+> => {
+  return useMutation(getUpsertAiClassificationMutationOptions(options));
 };

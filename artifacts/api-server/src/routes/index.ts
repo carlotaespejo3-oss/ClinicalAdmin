@@ -9,6 +9,7 @@ import userTasksRouter from "./userTasks";
 import linkedDocTasksRouter from "./linkedDocTasks";
 import promptedTasksRouter from "./promptedTasks";
 import sentLogRouter from "./sentLog";
+import aiClassificationsRouter from "./aiClassifications";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(userTasksRouter);
 router.use(linkedDocTasksRouter);
 router.use(promptedTasksRouter);
 router.use(sentLogRouter);
+router.use(aiClassificationsRouter);
 
 export default router;

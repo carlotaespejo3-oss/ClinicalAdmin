@@ -194,6 +194,89 @@ export interface SetPromptedTaskDoneInput {
   done: boolean;
 }
 
+export type AiClassificationRecordCategory =
+  (typeof AiClassificationRecordCategory)[keyof typeof AiClassificationRecordCategory];
+
+export const AiClassificationRecordCategory = {
+  SAFEGUARDING: "SAFEGUARDING",
+  URGENT_CLINICAL: "URGENT_CLINICAL",
+  CLINICAL: "CLINICAL",
+  PROFESSIONAL: "PROFESSIONAL",
+  ADMIN: "ADMIN",
+  LEGAL: "LEGAL",
+  NONE: "NONE",
+  CPD: "CPD",
+  UNCLEAR: "UNCLEAR",
+} as const;
+
+export type AiClassificationRecordPriority =
+  (typeof AiClassificationRecordPriority)[keyof typeof AiClassificationRecordPriority];
+
+export const AiClassificationRecordPriority = {
+  URGENT: "URGENT",
+  MEDIUM: "MEDIUM",
+  LOW: "LOW",
+  UNCLEAR: "UNCLEAR",
+} as const;
+
+export type AiClassificationRecordProfessionalSubType =
+  | (typeof AiClassificationRecordProfessionalSubType)[keyof typeof AiClassificationRecordProfessionalSubType]
+  | null;
+
+export const AiClassificationRecordProfessionalSubType = {
+  clinical_input: "clinical_input",
+  document_request: "document_request",
+  meeting: "meeting",
+} as const;
+
+export type AiClassificationRecordDocumentDirection =
+  | (typeof AiClassificationRecordDocumentDirection)[keyof typeof AiClassificationRecordDocumentDirection]
+  | null;
+
+export const AiClassificationRecordDocumentDirection = {
+  incoming: "incoming",
+  outgoing: "outgoing",
+  unclear: "unclear",
+} as const;
+
+export type AiClassificationRecordComplexity =
+  | (typeof AiClassificationRecordComplexity)[keyof typeof AiClassificationRecordComplexity]
+  | null;
+
+export const AiClassificationRecordComplexity = {
+  simple: "simple",
+  complex: "complex",
+} as const;
+
+/**
+ * AI classification for a single email. All fields are organisational metadata. Nullable fields use null (not omission) so the upsert always replaces the row cleanly.
+ */
+export interface AiClassificationRecord {
+  outlookEmailId: string;
+  category: AiClassificationRecordCategory;
+  priority: AiClassificationRecordPriority;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  confidence: number;
+  reasoning: string;
+  classifiedAt: string;
+  professionalSubType: AiClassificationRecordProfessionalSubType;
+  patientName: string | null;
+  documentRequested: string | null;
+  eventDate: string | null;
+  registrationDeadline: string | null;
+  documentDirection: AiClassificationRecordDocumentDirection;
+  requiresDocument: boolean;
+  documentType: string | null;
+  documentDueDays: number | null;
+  /** PrescriptionRequest object or null. JSON passthrough. */
+  prescriptionRequest: unknown | null;
+  complexity: AiClassificationRecordComplexity;
+  complexityReasons: string[];
+}
+
 export type SentLogVariant =
   (typeof SentLogVariant)[keyof typeof SentLogVariant];
 

@@ -26,3 +26,4 @@ export * from "./userTasks";
 export * from "./linkedDocTasks";
 export * from "./promptedTasks";
 export * from "./sentLog";
+export * from "./aiClassifications";
