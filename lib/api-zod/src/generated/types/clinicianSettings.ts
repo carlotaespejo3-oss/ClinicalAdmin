@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClinicianSettingsAppSettings } from "./clinicianSettingsAppSettings";
 import type { ClinicianSettingsArrivalsConfig } from "./clinicianSettingsArrivalsConfig";
 import type { ClinicianSettingsSignaturesSettings } from "./clinicianSettingsSignaturesSettings";
 import type { ClinicianSettingsStyleProfile } from "./clinicianSettingsStyleProfile";
@@ -16,4 +17,5 @@ export interface ClinicianSettings {
   arrivalsConfig: ClinicianSettingsArrivalsConfig;
   styleProfile: ClinicianSettingsStyleProfile;
   signaturesSettings: ClinicianSettingsSignaturesSettings;
+  appSettings: ClinicianSettingsAppSettings;
 }

@@ -8,76 +8,28 @@ import {
   setDefaultSignature,
   setRecipientSignature,
 } from '@/lib/signatures';
+import {
+  type AppSettings,
+  type WeeklyDay,
+  WEEKLY_DAYS,
+  DEFAULT_APP_SETTINGS,
+  useAppSettingsCache,
+  setAppSettingsInternal,
+  resetAppSettingsInternal,
+} from '@/lib/clinicianSettingsStore';
 
-// Profile, weekly defaults, and notifications still live in
-// localStorage — this tab is the only consumer for now. Signatures
-// were lifted out into the shared clinicianSettings store so that
-// draftPrompts.ts can read them across devices.
-const STORAGE_KEY = 'clinadmin-settings';
-
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
-type Day = typeof DAYS[number];
-
-export interface ClinAdminSettings {
-  profile: {
-    fullName: string;
-    role: string;
-    email: string;
-    serviceName: string;
-  };
-  weeklyDefaults: {
-    hoursPerWeek: number;
-    days: Day[];
-    sessionLengthMin: number;
-  };
-  notifications: {
-    highRiskAlerts: boolean;
-    dailyDigest: boolean;
-    weeklySummary: boolean;
-    draftReady: boolean;
-    desktopSound: boolean;
-  };
-}
-
-const DEFAULT_SETTINGS: ClinAdminSettings = {
-  profile: {
-    fullName: 'Dr. Sam Patel',
-    role: 'Consultant Clinical Psychologist',
-    email: 'sam.patel@nhs.example',
-    serviceName: 'North CAMHS Team',
-  },
-  weeklyDefaults: {
-    hoursPerWeek: 6,
-    days: ['Tue', 'Thu'],
-    sessionLengthMin: 90,
-  },
-  notifications: {
-    highRiskAlerts: true,
-    dailyDigest: true,
-    weeklySummary: false,
-    draftReady: true,
-    desktopSound: false,
-  },
-};
-
-function loadSettings(): ClinAdminSettings {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw);
-    return {
-      profile: { ...DEFAULT_SETTINGS.profile, ...(parsed.profile ?? {}) },
-      weeklyDefaults: { ...DEFAULT_SETTINGS.weeklyDefaults, ...(parsed.weeklyDefaults ?? {}) },
-      notifications: { ...DEFAULT_SETTINGS.notifications, ...(parsed.notifications ?? {}) },
-    };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
+// Profile, weekly defaults, and notifications now live in the
+// shared clinician-settings store (Postgres-backed, hydrate-once
+// + fire-and-forget). This tab is the editor; WeeklySetupModal is
+// the other reader. Signatures use the same store via
+// useSignatures().
+const DAYS = WEEKLY_DAYS;
 
 export default function SettingsTab() {
-  const [settings, setSettings] = useState<ClinAdminSettings>(DEFAULT_SETTINGS);
+  // Subscribe to the live cache. Local state mirrors it so edits
+  // feel instant even before the persist round-trip resolves.
+  const liveSettings = useAppSettingsCache();
+  const [settings, setSettings] = useState<AppSettings>(liveSettings);
   const [showSaved, setShowSaved] = useState(false);
   // Signatures live in the shared clinician-settings store so
   // draftPrompts.ts (and any other consumer) can read them
@@ -85,8 +37,8 @@ export default function SettingsTab() {
   const signatureStore = useSignatures();
 
   useEffect(() => {
-    setSettings(loadSettings());
-  }, []);
+    setSettings(liveSettings);
+  }, [liveSettings]);
 
   useEffect(() => {
     if (!showSaved) return;
@@ -94,27 +46,25 @@ export default function SettingsTab() {
     return () => clearTimeout(t);
   }, [showSaved]);
 
-  const persist = (next: ClinAdminSettings) => {
+  const persist = (next: AppSettings) => {
+    // Optimistic local update; setAppSettingsInternal updates the
+    // shared cache and POSTs in the background.
     setSettings(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      setShowSaved(true);
-    } catch {
-      // ignore
-    }
+    setAppSettingsInternal(next);
+    setShowSaved(true);
   };
 
   const flashSaved = () => setShowSaved(true);
 
-  const updateProfile = <K extends keyof ClinAdminSettings['profile']>(key: K, value: ClinAdminSettings['profile'][K]) => {
+  const updateProfile = <K extends keyof AppSettings['profile']>(key: K, value: AppSettings['profile'][K]) => {
     persist({ ...settings, profile: { ...settings.profile, [key]: value } });
   };
 
-  const updateWeekly = <K extends keyof ClinAdminSettings['weeklyDefaults']>(key: K, value: ClinAdminSettings['weeklyDefaults'][K]) => {
+  const updateWeekly = <K extends keyof AppSettings['weeklyDefaults']>(key: K, value: AppSettings['weeklyDefaults'][K]) => {
     persist({ ...settings, weeklyDefaults: { ...settings.weeklyDefaults, [key]: value } });
   };
 
-  const toggleDay = (day: Day) => {
+  const toggleDay = (day: WeeklyDay) => {
     const has = settings.weeklyDefaults.days.includes(day);
     const next = has
       ? settings.weeklyDefaults.days.filter(d => d !== day)
@@ -124,7 +74,7 @@ export default function SettingsTab() {
     updateWeekly('days', next);
   };
 
-  const toggleNotification = (key: keyof ClinAdminSettings['notifications']) => {
+  const toggleNotification = (key: keyof AppSettings['notifications']) => {
     persist({
       ...settings,
       notifications: { ...settings.notifications, [key]: !settings.notifications[key] },
@@ -142,7 +92,9 @@ export default function SettingsTab() {
   };
 
   const resetDefaults = () => {
-    persist(DEFAULT_SETTINGS);
+    setSettings(DEFAULT_APP_SETTINGS);
+    resetAppSettingsInternal();
+    setShowSaved(true);
   };
 
   return (

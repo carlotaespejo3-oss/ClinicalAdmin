@@ -3,6 +3,7 @@ import { Sparkles, X, ChevronRight, TrendingUp, Mail, ClipboardList, AlertTriang
 import { emails, weekHistory, manualTasks, histEmails } from '@/lib/data';
 import { GeneratedPlan } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 
 interface Props {
   onComplete: (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => void;
@@ -10,39 +11,6 @@ interface Props {
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-
-const SETTINGS_STORAGE_KEY = 'clinadmin-settings';
-
-interface SavedWeeklyDefaults {
-  hoursPerWeek?: number;
-  days?: string[];
-  sessionLengthMin?: number;
-}
-
-function loadWeeklyDefaults(): SavedWeeklyDefaults | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const wd = parsed?.weeklyDefaults;
-    if (!wd || typeof wd !== 'object') return null;
-    const result: SavedWeeklyDefaults = {};
-    if (typeof wd.hoursPerWeek === 'number' && wd.hoursPerWeek > 0) {
-      result.hoursPerWeek = wd.hoursPerWeek;
-    }
-    if (Array.isArray(wd.days)) {
-      const validDays = wd.days.filter((d: unknown): d is string => typeof d === 'string' && DAYS.includes(d));
-      if (validDays.length > 0) result.days = validDays;
-    }
-    if (typeof wd.sessionLengthMin === 'number' && wd.sessionLengthMin > 0) {
-      result.sessionLengthMin = wd.sessionLengthMin;
-    }
-    return result;
-  } catch {
-    return null;
-  }
-}
 
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
@@ -110,20 +78,42 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
   const recommendedMins = computeRecommendedMins();
   const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
   const taskMins = manualTasks.reduce((a, t) => a + t.estMin, 0);
-  const [{ initialHours, initialDays, initialSessionLength }] = useState(() => {
-    const saved = loadWeeklyDefaults();
+  // Subscribe to the central settings cache so the modal picks up
+  // hydrated values that arrived after it opened. Without this, a
+  // user who hits the planner during the brief window before
+  // hydration completes would see defaults locked in for the whole
+  // modal session.
+  const liveSettings = useAppSettingsCache();
+  const deriveDefaults = (wd: typeof liveSettings.weeklyDefaults) => {
+    const validDays = wd.days.filter(d => DAYS.includes(d));
     return {
-      initialHours: saved?.hoursPerWeek != null
-        ? String(saved.hoursPerWeek)
+      hours: wd.hoursPerWeek > 0
+        ? String(wd.hoursPerWeek)
         : String(Math.ceil(recommendedMins / 60)),
-      initialDays: saved?.days && saved.days.length > 0 ? saved.days : ['Tue', 'Wed', 'Thu'],
-      initialSessionLength: saved?.sessionLengthMin ?? 90,
+      days: validDays.length > 0 ? (validDays as string[]) : ['Tue', 'Wed', 'Thu'],
+      sessionLengthMin: wd.sessionLengthMin > 0 ? wd.sessionLengthMin : 90,
     };
-  });
-  const [hours, setHours] = useState(initialHours);
-  const [selectedDays, setSelectedDays] = useState<string[]>(initialDays);
-  const [sessionLengthMin, setSessionLengthMin] = useState<number>(initialSessionLength);
+  };
+  const [initialDefaults] = useState(() => deriveDefaults(liveSettings.weeklyDefaults));
+  const [hours, setHours] = useState(initialDefaults.hours);
+  const [selectedDays, setSelectedDays] = useState<string[]>(initialDefaults.days);
+  const [sessionLengthMin, setSessionLengthMin] = useState<number>(initialDefaults.sessionLengthMin);
   const [errorMsg, setErrorMsg] = useState('');
+  // Track whether the user has touched the form. While untouched,
+  // we mirror late-arriving hydrated values into the inputs;
+  // once they edit anything, we stop overwriting their input.
+  const [userTouched, setUserTouched] = useState(false);
+  useEffect(() => {
+    if (userTouched) return;
+    const next = deriveDefaults(liveSettings.weeklyDefaults);
+    setHours(next.hours);
+    setSelectedDays(next.days);
+    setSessionLengthMin(next.sessionLengthMin);
+    // deriveDefaults closes over recommendedMins which is recomputed
+    // each render, but the only user-visible coupling is to the
+    // hydrated weekly defaults object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSettings, userTouched]);
 
   useEffect(() => {
     if (phase !== 'scan') return;
@@ -152,6 +142,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
   }, [phase]);
 
   const toggleDay = (day: string) => {
+    setUserTouched(true);
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     );
@@ -416,7 +407,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                         max="20"
                         step="0.5"
                         value={hours}
-                        onChange={e => setHours(e.target.value)}
+                        onChange={e => { setUserTouched(true); setHours(e.target.value); }}
                         className="w-full border border-border rounded-xl px-4 py-2.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 text-center"
                       />
                     </div>
@@ -467,7 +458,7 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
                   <div className="flex items-center gap-3">
                     <select
                       value={sessionLengthMin}
-                      onChange={e => setSessionLengthMin(parseInt(e.target.value))}
+                      onChange={e => { setUserTouched(true); setSessionLengthMin(parseInt(e.target.value)); }}
                       className="text-sm bg-white border border-border rounded-xl px-3 py-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
                       data-testid="select-modal-session-length"
                     >

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UpsertClinicianSettingsInputAppSettings } from "./upsertClinicianSettingsInputAppSettings";
 import type { UpsertClinicianSettingsInputArrivalsConfig } from "./upsertClinicianSettingsInputArrivalsConfig";
 import type { UpsertClinicianSettingsInputSignaturesSettings } from "./upsertClinicianSettingsInputSignaturesSettings";
 import type { UpsertClinicianSettingsInputStyleProfile } from "./upsertClinicianSettingsInputStyleProfile";
@@ -16,4 +17,5 @@ export interface UpsertClinicianSettingsInput {
   arrivalsConfig?: UpsertClinicianSettingsInputArrivalsConfig;
   styleProfile?: UpsertClinicianSettingsInputStyleProfile;
   signaturesSettings?: UpsertClinicianSettingsInputSignaturesSettings;
+  appSettings?: UpsertClinicianSettingsInputAppSettings;
 }

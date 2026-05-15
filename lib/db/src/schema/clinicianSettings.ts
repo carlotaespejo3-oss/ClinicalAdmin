@@ -26,6 +26,13 @@ export const clinicianSettingsTable = pgTable("clinician_settings", {
   // replies. It is metadata about how the clinician signs mail,
   // not the content of any specific message.
   signaturesSettings: jsonb("signatures_settings").$type<unknown | null>(),
+  // AppSettings — { profile, weeklyDefaults, notifications }.
+  // Personal/identity (name, role, work email, service), planner
+  // defaults (admin hours/week, admin days, session length), and
+  // notification preferences. All cross-device by nature; bundled
+  // because they're written together from a single Settings page
+  // and previously lived under one localStorage key.
+  appSettings: jsonb("app_settings").$type<unknown | null>(),
 });
 
 export type ClinicianSettingsRow = typeof clinicianSettingsTable.$inferSelect;
@@ -67,6 +74,18 @@ const SignaturesSettingsSchema = z
   })
   .passthrough();
 
+// AppSettings — kept loose like the others; the client owns the
+// inner shape (profile / weeklyDefaults / notifications). Each
+// inner field passthrough'd so additive changes don't require a
+// schema rev.
+const AppSettingsSchema = z
+  .object({
+    profile: z.record(z.string(), z.unknown()).optional(),
+    weeklyDefaults: z.record(z.string(), z.unknown()).optional(),
+    notifications: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
+
 // Patch envelope: every section is independently optional. `null`
 // explicitly clears a section; `undefined` (omitted) leaves it
 // alone. Keeping the two distinct lets the UI "reset" arrivals
@@ -75,6 +94,7 @@ export const upsertClinicianSettingsSchema = z.object({
   arrivalsConfig: ArrivalsConfigSchema.nullable().optional(),
   styleProfile: StyleProfileSchema.nullable().optional(),
   signaturesSettings: SignaturesSettingsSchema.nullable().optional(),
+  appSettings: AppSettingsSchema.nullable().optional(),
 });
 
 export type UpsertClinicianSettings = z.infer<

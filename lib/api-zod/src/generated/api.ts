@@ -552,6 +552,7 @@ export const GetClinicianSettingsResponse = zod
     arrivalsConfig: zod.record(zod.string(), zod.unknown()).nullable(),
     styleProfile: zod.record(zod.string(), zod.unknown()).nullable(),
     signaturesSettings: zod.record(zod.string(), zod.unknown()).nullable(),
+    appSettings: zod.record(zod.string(), zod.unknown()).nullable(),
   })
   .describe(
     "Envelope of all clinician-wide settings. Each section is a free-form object so the client owns the inner shape; null means the section has never been customised.",
@@ -566,6 +567,7 @@ export const UpsertClinicianSettingsBody = zod
     arrivalsConfig: zod.record(zod.string(), zod.unknown()).nullish(),
     styleProfile: zod.record(zod.string(), zod.unknown()).nullish(),
     signaturesSettings: zod.record(zod.string(), zod.unknown()).nullish(),
+    appSettings: zod.record(zod.string(), zod.unknown()).nullish(),
   })
   .describe(
     "Partial patch. Each section is independently optional; omitted leaves the existing value alone, explicit null clears it. The server merges the patch over the row.",

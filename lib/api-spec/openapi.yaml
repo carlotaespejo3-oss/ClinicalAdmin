@@ -1112,10 +1112,15 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+        appSettings:
+          type: object
+          nullable: true
+          additionalProperties: true
       required:
         - arrivalsConfig
         - styleProfile
         - signaturesSettings
+        - appSettings
     UpsertClinicianSettingsInput:
       type: object
       description: >-
@@ -1132,6 +1137,10 @@ components:
           nullable: true
           additionalProperties: true
         signaturesSettings:
+          type: object
+          nullable: true
+          additionalProperties: true
+        appSettings:
           type: object
           nullable: true
           additionalProperties: true
