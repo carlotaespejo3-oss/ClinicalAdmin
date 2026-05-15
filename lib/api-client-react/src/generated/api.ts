@@ -35,11 +35,15 @@ import type {
   DismissPromptedTaskInput,
   HealthStatus,
   LinkedDocTaskRecord,
+  ManualTaskOverride,
+  ManualTaskOverridePatch,
   PromptedTaskRecord,
   PromptedTasksState,
   RecordDeferralsInput,
   SentLogRecord,
   SetPromptedTaskDoneInput,
+  SidebarTask,
+  SidebarTaskInput,
   UpsertClinicianSettingsInput,
   UserTaskRecord,
   WeekSetup,
@@ -3062,4 +3066,503 @@ export const useDeleteWeeklyPlan = <
   TContext
 > => {
   return useMutation(getDeleteWeeklyPlanMutationOptions(options));
+};
+
+/**
+ * Returns one row per (taskId) for which the clinician has ticked done or attached a kept-open note. Unmodified seed tasks have no row and use seed defaults at render time.
+ * @summary List every override on the seed ManualTask records
+ */
+export const getListManualTaskOverridesUrl = () => {
+  return `/api/manual-task-overrides`;
+};
+
+export const listManualTaskOverrides = async (
+  options?: RequestInit,
+): Promise<ManualTaskOverride[]> => {
+  return customFetch<ManualTaskOverride[]>(getListManualTaskOverridesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListManualTaskOverridesQueryKey = () => {
+  return [`/api/manual-task-overrides`] as const;
+};
+
+export const getListManualTaskOverridesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listManualTaskOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listManualTaskOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListManualTaskOverridesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listManualTaskOverrides>>
+  > = ({ signal }) => listManualTaskOverrides({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listManualTaskOverrides>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListManualTaskOverridesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listManualTaskOverrides>>
+>;
+export type ListManualTaskOverridesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every override on the seed ManualTask records
+ */
+
+export function useListManualTaskOverrides<
+  TData = Awaited<ReturnType<typeof listManualTaskOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listManualTaskOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListManualTaskOverridesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent upsert keyed on (clinicianId, taskId). Body is a partial — omitted fields stay as they are; explicit `null` on `note` clears it. `done` defaults to false on first insert if not provided.
+ * @summary Patch a single ManualTask's override
+ */
+export const getUpsertManualTaskOverrideUrl = (taskId: string) => {
+  return `/api/manual-task-overrides/${taskId}`;
+};
+
+export const upsertManualTaskOverride = async (
+  taskId: string,
+  manualTaskOverridePatch: ManualTaskOverridePatch,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertManualTaskOverrideUrl(taskId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(manualTaskOverridePatch),
+  });
+};
+
+export const getUpsertManualTaskOverrideMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertManualTaskOverride>>,
+    TError,
+    { taskId: string; data: BodyType<ManualTaskOverridePatch> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertManualTaskOverride>>,
+  TError,
+  { taskId: string; data: BodyType<ManualTaskOverridePatch> },
+  TContext
+> => {
+  const mutationKey = ["upsertManualTaskOverride"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertManualTaskOverride>>,
+    { taskId: string; data: BodyType<ManualTaskOverridePatch> }
+  > = (props) => {
+    const { taskId, data } = props ?? {};
+
+    return upsertManualTaskOverride(taskId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertManualTaskOverrideMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertManualTaskOverride>>
+>;
+export type UpsertManualTaskOverrideMutationBody =
+  BodyType<ManualTaskOverridePatch>;
+export type UpsertManualTaskOverrideMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Patch a single ManualTask's override
+ */
+export const useUpsertManualTaskOverride = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertManualTaskOverride>>,
+    TError,
+    { taskId: string; data: BodyType<ManualTaskOverridePatch> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertManualTaskOverride>>,
+  TError,
+  { taskId: string; data: BodyType<ManualTaskOverridePatch> },
+  TContext
+> => {
+  return useMutation(getUpsertManualTaskOverrideMutationOptions(options));
+};
+
+/**
+ * Idempotent — returns 204 even when no override existed.
+ * @summary Clear a ManualTask's override (back to seed defaults)
+ */
+export const getDeleteManualTaskOverrideUrl = (taskId: string) => {
+  return `/api/manual-task-overrides/${taskId}`;
+};
+
+export const deleteManualTaskOverride = async (
+  taskId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteManualTaskOverrideUrl(taskId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteManualTaskOverrideMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteManualTaskOverride>>,
+    TError,
+    { taskId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteManualTaskOverride>>,
+  TError,
+  { taskId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteManualTaskOverride"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteManualTaskOverride>>,
+    { taskId: string }
+  > = (props) => {
+    const { taskId } = props ?? {};
+
+    return deleteManualTaskOverride(taskId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteManualTaskOverrideMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteManualTaskOverride>>
+>;
+
+export type DeleteManualTaskOverrideMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Clear a ManualTask's override (back to seed defaults)
+ */
+export const useDeleteManualTaskOverride = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteManualTaskOverride>>,
+    TError,
+    { taskId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteManualTaskOverride>>,
+  TError,
+  { taskId: string },
+  TContext
+> => {
+  return useMutation(getDeleteManualTaskOverrideMutationOptions(options));
+};
+
+/**
+ * @summary List sidebar quick-checklist items
+ */
+export const getListSidebarTasksUrl = () => {
+  return `/api/sidebar-tasks`;
+};
+
+export const listSidebarTasks = async (
+  options?: RequestInit,
+): Promise<SidebarTask[]> => {
+  return customFetch<SidebarTask[]>(getListSidebarTasksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSidebarTasksQueryKey = () => {
+  return [`/api/sidebar-tasks`] as const;
+};
+
+export const getListSidebarTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSidebarTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSidebarTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSidebarTasksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSidebarTasks>>
+  > = ({ signal }) => listSidebarTasks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSidebarTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSidebarTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSidebarTasks>>
+>;
+export type ListSidebarTasksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List sidebar quick-checklist items
+ */
+
+export function useListSidebarTasks<
+  TData = Awaited<ReturnType<typeof listSidebarTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSidebarTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSidebarTasksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent upsert keyed on (clinicianId, id). Body is the full row; toggling done is just a re-post with the flag flipped. Mirrors the weekly_plans upsert pattern.
+ * @summary Create or replace a sidebar task
+ */
+export const getUpsertSidebarTaskUrl = (id: string) => {
+  return `/api/sidebar-tasks/${id}`;
+};
+
+export const upsertSidebarTask = async (
+  id: string,
+  sidebarTaskInput: SidebarTaskInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertSidebarTaskUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sidebarTaskInput),
+  });
+};
+
+export const getUpsertSidebarTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertSidebarTask>>,
+    TError,
+    { id: string; data: BodyType<SidebarTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertSidebarTask>>,
+  TError,
+  { id: string; data: BodyType<SidebarTaskInput> },
+  TContext
+> => {
+  const mutationKey = ["upsertSidebarTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertSidebarTask>>,
+    { id: string; data: BodyType<SidebarTaskInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return upsertSidebarTask(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertSidebarTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertSidebarTask>>
+>;
+export type UpsertSidebarTaskMutationBody = BodyType<SidebarTaskInput>;
+export type UpsertSidebarTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or replace a sidebar task
+ */
+export const useUpsertSidebarTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertSidebarTask>>,
+    TError,
+    { id: string; data: BodyType<SidebarTaskInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertSidebarTask>>,
+  TError,
+  { id: string; data: BodyType<SidebarTaskInput> },
+  TContext
+> => {
+  return useMutation(getUpsertSidebarTaskMutationOptions(options));
+};
+
+/**
+ * Idempotent — returns 204 even when no row existed.
+ * @summary Remove a sidebar task
+ */
+export const getDeleteSidebarTaskUrl = (id: string) => {
+  return `/api/sidebar-tasks/${id}`;
+};
+
+export const deleteSidebarTask = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSidebarTaskUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSidebarTaskMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSidebarTask>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSidebarTask>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteSidebarTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSidebarTask>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSidebarTask(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSidebarTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSidebarTask>>
+>;
+
+export type DeleteSidebarTaskMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a sidebar task
+ */
+export const useDeleteSidebarTask = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSidebarTask>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSidebarTask>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteSidebarTaskMutationOptions(options));
 };

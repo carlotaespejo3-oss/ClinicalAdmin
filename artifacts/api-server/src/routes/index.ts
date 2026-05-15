@@ -12,6 +12,8 @@ import sentLogRouter from "./sentLog";
 import aiClassificationsRouter from "./aiClassifications";
 import clinicianSettingsRouter from "./clinicianSettings";
 import weeklyPlansRouter from "./weeklyPlans";
+import manualTaskOverridesRouter from "./manualTaskOverrides";
+import sidebarTasksRouter from "./sidebarTasks";
 
 const router: IRouter = Router();
 
@@ -28,5 +30,7 @@ router.use(sentLogRouter);
 router.use(aiClassificationsRouter);
 router.use(clinicianSettingsRouter);
 router.use(weeklyPlansRouter);
+router.use(manualTaskOverridesRouter);
+router.use(sidebarTasksRouter);
 
 export default router;

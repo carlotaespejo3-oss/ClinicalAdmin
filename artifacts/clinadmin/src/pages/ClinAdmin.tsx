@@ -42,8 +42,18 @@ import CatchUpTab from '../tabs/CatchUpTab';
 import TasksTab from '../tabs/TasksTab';
 import SettingsTab from '../tabs/SettingsTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
-import { TabType, SidebarTask, ManualTask, GeneratedPlan } from '@/lib/types';
-import { manualTasks as initialManualTasks } from '@/lib/data';
+import { TabType, GeneratedPlan } from '@/lib/types';
+import {
+  useManualTasksWithOverrides,
+  setManualTaskDone,
+  setManualTaskNote,
+} from '@/lib/manualTaskOverridesStore';
+import {
+  useSidebarTasks,
+  addSidebarTaskInternal,
+  removeSidebarTaskInternal,
+  toggleSidebarTaskInternal,
+} from '@/lib/sidebarTasksStore';
 
 export interface WeekSetup {
   hours: number;
@@ -71,11 +81,6 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Settings', icon: Settings, label: 'Settings' },
 ];
 
-const defaultSidebarTasks: SidebarTask[] = [
-  { id: 's2', title: 'Phone callback Dr. Osei re case formulation', estMin: 10, priority: 'high', done: false },
-  { id: 's3', title: 'Sign off discharge letter — Thomas Wright', estMin: 10, priority: 'normal', done: false },
-];
-
 // ISO-style identifier for the current week. The legacy localStorage
 // key was `clinadmin-week-${weekKey}`; the new server-backed store
 // strips the prefix and persists just the YYYY-NN portion. The
@@ -99,8 +104,13 @@ export default function ClinAdmin() {
   // clicks "Generate".
   useClinicianSettingsHydration();
   const [activeTab, setActiveTab] = useState<TabType>('Home');
-  const [sidebarTasks, setSidebarTasks] = useState<SidebarTask[]>(defaultSidebarTasks);
-  const [manualTaskList, setManualTaskList] = useState<ManualTask[]>(initialManualTasks);
+  // Both lists now persist server-side. Sidebar is full CRUD;
+  // manual tasks are seed records (lib/data.ts) overlaid with the
+  // clinician's per-task overrides (done flag + optional kept-open
+  // note). See manualTaskOverridesStore for why we don't persist
+  // the seed records themselves.
+  const sidebarTasks = useSidebarTasks();
+  const manualTaskList = useManualTasksWithOverrides();
   const [openEmailId, setOpenEmailId] = useState<number | null>(null);
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -198,9 +208,10 @@ export default function ClinAdmin() {
     } else if (source === 'prompt') {
       setPromptedTaskDone(taskId, true);
     } else {
-      setManualTaskList((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, done: true, noteAfterEmailDone: undefined } : t)),
-      );
+      // Mark the manual override done and clear any kept-open note
+      // that might have been attached on a previous round.
+      setManualTaskDone(taskId, true);
+      setManualTaskNote(taskId, null);
     }
   };
 
@@ -218,9 +229,7 @@ export default function ClinAdmin() {
       // ignored — we just need the task to remain visible in Tasks tab.
       void note;
     } else {
-      setManualTaskList((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, noteAfterEmailDone: note } : t)),
-      );
+      setManualTaskNote(taskId, note);
     }
   };
 
@@ -274,14 +283,7 @@ export default function ClinAdmin() {
   const addTask = () => {
     const title = newTaskTitle.trim();
     if (!title) return;
-    const task: SidebarTask = {
-      id: `s${Date.now()}`,
-      title,
-      estMin: parseInt(newTaskMins) || 15,
-      priority: newTaskPriority,
-      done: false,
-    };
-    setSidebarTasks(prev => [...prev, task]);
+    addSidebarTaskInternal(title, parseInt(newTaskMins) || 15, newTaskPriority);
     setNewTaskTitle('');
     setNewTaskMins('15');
     setNewTaskPriority('normal');
@@ -289,20 +291,25 @@ export default function ClinAdmin() {
   };
 
   const removeTask = (id: string) => {
-    setSidebarTasks(prev => prev.filter(t => t.id !== id));
+    removeSidebarTaskInternal(id);
   };
 
   const toggleTask = (id: string) => {
-    setSidebarTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    toggleSidebarTaskInternal(id);
   };
 
+  // Toggle a manual task's done flag via the override store. We read
+  // the current merged value (seed + override) to decide which way to
+  // flip — relying on the store's internal map alone would treat any
+  // task without an override as "done=false" even if the seed record
+  // ships as already done.
   const toggleManualTask = (id: string) => {
-    setManualTaskList(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    const current = manualTaskList.find((t) => t.id === id);
+    setManualTaskDone(id, !(current?.done ?? false));
   };
 
   const addSidebarTask = (title: string, mins: number, priority: 'high' | 'normal') => {
-    const task: SidebarTask = { id: `s${Date.now()}`, title, estMin: mins, priority, done: false };
-    setSidebarTasks(prev => [...prev, task]);
+    addSidebarTaskInternal(title, mins, priority);
   };
 
   const renderTab = () => {

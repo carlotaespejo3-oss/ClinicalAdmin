@@ -29,3 +29,5 @@ export * from "./sentLog";
 export * from "./aiClassifications";
 export * from "./clinicianSettings";
 export * from "./weeklyPlans";
+export * from "./manualTaskOverrides";
+export * from "./sidebarTasks";

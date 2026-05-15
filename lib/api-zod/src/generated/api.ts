@@ -668,3 +668,90 @@ export const UpsertWeeklyPlanBody = zod
 export const DeleteWeeklyPlanParams = zod.object({
   weekKey: zod.coerce.string(),
 });
+
+/**
+ * Returns one row per (taskId) for which the clinician has ticked done or attached a kept-open note. Unmodified seed tasks have no row and use seed defaults at render time.
+ * @summary List every override on the seed ManualTask records
+ */
+export const ListManualTaskOverridesResponseItem = zod
+  .object({
+    taskId: zod.string().describe('Seed ManualTask id (e.g. \"m2\")'),
+    done: zod.boolean(),
+    note: zod
+      .string()
+      .nullable()
+      .describe(
+        "Optional clinician-authored note attached when keeping a task open after the linked email is done.",
+      ),
+  })
+  .describe("One row of manual_task_overrides.");
+export const ListManualTaskOverridesResponse = zod.array(
+  ListManualTaskOverridesResponseItem,
+);
+
+/**
+ * Idempotent upsert keyed on (clinicianId, taskId). Body is a partial — omitted fields stay as they are; explicit `null` on `note` clears it. `done` defaults to false on first insert if not provided.
+ * @summary Patch a single ManualTask's override
+ */
+export const UpsertManualTaskOverrideParams = zod.object({
+  taskId: zod.coerce.string().describe('Seed ManualTask id (e.g. \"m2\")'),
+});
+
+export const UpsertManualTaskOverrideBody = zod
+  .object({
+    done: zod.boolean().optional(),
+    note: zod.string().nullish(),
+  })
+  .describe(
+    "Partial patch — omit a field to leave it alone, send note=null to clear.",
+  );
+
+/**
+ * Idempotent — returns 204 even when no override existed.
+ * @summary Clear a ManualTask's override (back to seed defaults)
+ */
+export const DeleteManualTaskOverrideParams = zod.object({
+  taskId: zod.coerce.string(),
+});
+
+/**
+ * @summary List sidebar quick-checklist items
+ */
+export const ListSidebarTasksResponseItem = zod
+  .object({
+    id: zod.string(),
+    title: zod.string(),
+    estMin: zod.number(),
+    priority: zod.enum(["high", "normal"]),
+    done: zod.boolean(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe("GET response — sidebar task with its server-assigned createdAt.");
+export const ListSidebarTasksResponse = zod.array(ListSidebarTasksResponseItem);
+
+/**
+ * Idempotent upsert keyed on (clinicianId, id). Body is the full row; toggling done is just a re-post with the flag flipped. Mirrors the weekly_plans upsert pattern.
+ * @summary Create or replace a sidebar task
+ */
+export const UpsertSidebarTaskParams = zod.object({
+  id: zod.coerce.string().describe('Client-generated id (\"s<timestamp>\")'),
+});
+
+export const upsertSidebarTaskBodyEstMinMin = 0;
+
+export const UpsertSidebarTaskBody = zod
+  .object({
+    title: zod.string().min(1),
+    estMin: zod.number().min(upsertSidebarTaskBodyEstMinMin),
+    priority: zod.enum(["high", "normal"]),
+    done: zod.boolean(),
+  })
+  .describe("Full sidebar task body for upsert.");
+
+/**
+ * Idempotent — returns 204 even when no row existed.
+ * @summary Remove a sidebar task
+ */
+export const DeleteSidebarTaskParams = zod.object({
+  id: zod.coerce.string(),
+});

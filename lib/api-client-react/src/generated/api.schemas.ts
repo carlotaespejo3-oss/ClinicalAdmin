@@ -382,3 +382,62 @@ export interface WeeklyPlanRecord {
   weekKey: string;
   setup: WeekSetup | null;
 }
+
+/**
+ * One row of manual_task_overrides.
+ */
+export interface ManualTaskOverride {
+  /** Seed ManualTask id (e.g. "m2") */
+  taskId: string;
+  done: boolean;
+  /** Optional clinician-authored note attached when keeping a task open after the linked email is done. */
+  note: string | null;
+}
+
+/**
+ * Partial patch — omit a field to leave it alone, send note=null to clear.
+ */
+export interface ManualTaskOverridePatch {
+  done?: boolean;
+  note?: string | null;
+}
+
+export type SidebarTaskInputPriority =
+  (typeof SidebarTaskInputPriority)[keyof typeof SidebarTaskInputPriority];
+
+export const SidebarTaskInputPriority = {
+  high: "high",
+  normal: "normal",
+} as const;
+
+/**
+ * Full sidebar task body for upsert.
+ */
+export interface SidebarTaskInput {
+  /** @minLength 1 */
+  title: string;
+  /** @minimum 0 */
+  estMin: number;
+  priority: SidebarTaskInputPriority;
+  done: boolean;
+}
+
+export type SidebarTaskPriority =
+  (typeof SidebarTaskPriority)[keyof typeof SidebarTaskPriority];
+
+export const SidebarTaskPriority = {
+  high: "high",
+  normal: "normal",
+} as const;
+
+/**
+ * GET response — sidebar task with its server-assigned createdAt.
+ */
+export interface SidebarTask {
+  id: string;
+  title: string;
+  estMin: number;
+  priority: SidebarTaskPriority;
+  done: boolean;
+  createdAt: string;
+}

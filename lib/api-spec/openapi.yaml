@@ -34,6 +34,10 @@ tags:
     description: Clinician-wide configuration (arrivals planner inputs, writing-style profile, AI-reply signatures)
   - name: weeklyPlans
     description: Per-week planner snapshot (chosen hours/days/session length plus the generated plan for that ISO week)
+  - name: manualTaskOverrides
+    description: Per-clinician overrides on the static seed ManualTask records (done flag, optional kept-open note)
+  - name: sidebarTasks
+    description: Quick-checklist items the clinician adds in the sidebar (full CRUD)
 paths:
   /healthz:
     get:
@@ -680,6 +684,117 @@ paths:
       responses:
         "204":
           description: Deleted
+  /manual-task-overrides:
+    get:
+      operationId: listManualTaskOverrides
+      tags: [manualTaskOverrides]
+      summary: List every override on the seed ManualTask records
+      description: >-
+        Returns one row per (taskId) for which the clinician has
+        ticked done or attached a kept-open note. Unmodified seed
+        tasks have no row and use seed defaults at render time.
+      responses:
+        "200":
+          description: Override list (may be empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManualTaskOverride"
+  /manual-task-overrides/{taskId}:
+    post:
+      operationId: upsertManualTaskOverride
+      tags: [manualTaskOverrides]
+      summary: Patch a single ManualTask's override
+      description: >-
+        Idempotent upsert keyed on (clinicianId, taskId). Body is a
+        partial — omitted fields stay as they are; explicit `null`
+        on `note` clears it. `done` defaults to false on first
+        insert if not provided.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Seed ManualTask id (e.g. "m2")
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManualTaskOverridePatch"
+      responses:
+        "204":
+          description: Saved
+    delete:
+      operationId: deleteManualTaskOverride
+      tags: [manualTaskOverrides]
+      summary: Clear a ManualTask's override (back to seed defaults)
+      description: Idempotent — returns 204 even when no override existed.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+  /sidebar-tasks:
+    get:
+      operationId: listSidebarTasks
+      tags: [sidebarTasks]
+      summary: List sidebar quick-checklist items
+      responses:
+        "200":
+          description: Sidebar tasks ordered by createdAt ascending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SidebarTask"
+  /sidebar-tasks/{id}:
+    post:
+      operationId: upsertSidebarTask
+      tags: [sidebarTasks]
+      summary: Create or replace a sidebar task
+      description: >-
+        Idempotent upsert keyed on (clinicianId, id). Body is the
+        full row; toggling done is just a re-post with the flag
+        flipped. Mirrors the weekly_plans upsert pattern.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Client-generated id ("s<timestamp>")
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SidebarTaskInput"
+      responses:
+        "204":
+          description: Saved
+    delete:
+      operationId: deleteSidebarTask
+      tags: [sidebarTasks]
+      summary: Remove a sidebar task
+      description: Idempotent — returns 204 even when no row existed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
 components:
   schemas:
     HealthStatus:
@@ -1258,3 +1373,76 @@ components:
       required:
         - weekKey
         - setup
+    ManualTaskOverride:
+      type: object
+      description: One row of manual_task_overrides.
+      properties:
+        taskId:
+          type: string
+          description: Seed ManualTask id (e.g. "m2")
+        done:
+          type: boolean
+        note:
+          type: string
+          nullable: true
+          description: Optional clinician-authored note attached when keeping a task open after the linked email is done.
+      required:
+        - taskId
+        - done
+        - note
+    ManualTaskOverridePatch:
+      type: object
+      description: "Partial patch — omit a field to leave it alone, send note=null to clear."
+      properties:
+        done:
+          type: boolean
+        note:
+          type: string
+          nullable: true
+      additionalProperties: false
+    SidebarTaskInput:
+      type: object
+      description: Full sidebar task body for upsert.
+      properties:
+        title:
+          type: string
+          minLength: 1
+        estMin:
+          type: integer
+          minimum: 0
+        priority:
+          type: string
+          enum: [high, normal]
+        done:
+          type: boolean
+      required:
+        - title
+        - estMin
+        - priority
+        - done
+      additionalProperties: false
+    SidebarTask:
+      type: object
+      description: GET response — sidebar task with its server-assigned createdAt.
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        estMin:
+          type: integer
+        priority:
+          type: string
+          enum: [high, normal]
+        done:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - estMin
+        - priority
+        - done
+        - createdAt
