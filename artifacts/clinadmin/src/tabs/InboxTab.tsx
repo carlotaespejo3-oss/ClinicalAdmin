@@ -488,14 +488,12 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     const subject = buildReplySubject(email.subject);
     const to = extractAddress(email.from);
     const variant: DraftVariant = slot;
-    recordSent({
-      emailId: email.id,
-      to,
-      toLabel: email.from,
-      subject,
-      body: text,
-      variant,
-    });
+    // Three-bucket rule: only metadata is persisted (id, emailId,
+    // variant, sentAt). The subject and body computed here go into
+    // the mailto: handoff URL only — they are not passed to the
+    // store. They live in Outlook Sent Items the moment the user
+    // confirms send.
+    recordSent({ emailId: email.id, variant });
     // Best-effort clipboard backup in case the mailto body gets
     // truncated or the user's client refuses long URLs.
     try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
@@ -966,8 +964,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       <Send size={12} />
                       <span>
                         You opened a reply in your mail app earlier (
-                        <strong>{alreadySent.variant}</strong> draft
-                        {alreadySent.to ? `, to ${alreadySent.to}` : ''}).
+                        <strong>{alreadySent.variant}</strong> draft).
                         Send again only if you intend a follow-up.
                       </span>
                     </div>

@@ -36,6 +36,7 @@ import type {
   PromptedTaskRecord,
   PromptedTasksState,
   RecordDeferralsInput,
+  SentLogRecord,
   SetPromptedTaskDoneInput,
   UserTaskRecord,
 } from "./api.schemas";
@@ -2304,4 +2305,167 @@ export const useSetPromptedTaskDoneApi = <
   TContext
 > => {
   return useMutation(getSetPromptedTaskDoneApiMutationOptions(options));
+};
+
+/**
+ * Audit trail of replies handed off to the user's mail client. Three-bucket rule: outgoing email content lives in Outlook Sent Items, not here. The persisted record contains only organisational metadata (id, source email reference, draft variant, timestamp). No subject line and no body — not even a snippet.
+ * @summary List every mailto handoff for the current clinician
+ */
+export const getListSentLogUrl = () => {
+  return `/api/sent-log`;
+};
+
+export const listSentLog = async (
+  options?: RequestInit,
+): Promise<SentLogRecord[]> => {
+  return customFetch<SentLogRecord[]>(getListSentLogUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSentLogQueryKey = () => {
+  return [`/api/sent-log`] as const;
+};
+
+export const getListSentLogQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSentLog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSentLog>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSentLogQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSentLog>>> = ({
+    signal,
+  }) => listSentLog({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSentLog>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSentLogQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSentLog>>
+>;
+export type ListSentLogQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every mailto handoff for the current clinician
+ */
+
+export function useListSentLog<
+  TData = Awaited<ReturnType<typeof listSentLog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSentLog>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSentLogQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on `id` — re-posting the same payload is a no-op, which makes the client's fire-and-forget POST safe to retry on transient network failure. Note: each click generates a fresh `id`, so two genuine clicks on Send are two rows (correctly — that's two handoffs).
+ * @summary Record a new mailto handoff
+ */
+export const getRecordSentLogUrl = () => {
+  return `/api/sent-log`;
+};
+
+export const recordSentLog = async (
+  sentLogRecord: SentLogRecord,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRecordSentLogUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sentLogRecord),
+  });
+};
+
+export const getRecordSentLogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordSentLog>>,
+    TError,
+    { data: BodyType<SentLogRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordSentLog>>,
+  TError,
+  { data: BodyType<SentLogRecord> },
+  TContext
+> => {
+  const mutationKey = ["recordSentLog"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordSentLog>>,
+    { data: BodyType<SentLogRecord> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return recordSentLog(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordSentLogMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordSentLog>>
+>;
+export type RecordSentLogMutationBody = BodyType<SentLogRecord>;
+export type RecordSentLogMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record a new mailto handoff
+ */
+export const useRecordSentLog = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordSentLog>>,
+    TError,
+    { data: BodyType<SentLogRecord> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordSentLog>>,
+  TError,
+  { data: BodyType<SentLogRecord> },
+  TContext
+> => {
+  return useMutation(getRecordSentLogMutationOptions(options));
 };

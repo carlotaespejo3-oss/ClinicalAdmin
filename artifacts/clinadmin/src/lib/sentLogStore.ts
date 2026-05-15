@@ -1,4 +1,8 @@
 import { useSyncExternalStore } from 'react';
+import {
+  listSentLog,
+  recordSentLog as apiRecordSentLog,
+} from '@workspace/api-client-react';
 
 // Local audit trail of every reply the clinician HANDS OFF to their
 // mail client via the mailto: link. We can't see what the mail client
@@ -6,110 +10,122 @@ import { useSyncExternalStore } from 'react';
 // URL could exceed the client's length limit, etc — so this is a
 // "handoff log", not a true sent log. The UI surfaces it that way.
 //
-// Privacy: this store lives in browser localStorage, which is readable
-// by any script on the origin. For a clinical app the draft bodies
-// almost certainly contain patient PII, so we deliberately persist
-// only a short SNIPPET for audit purposes, not the full body.
+// PERSISTENCE: was localStorage, now Postgres via /api/sent-log. Same
+// hydrate-once + fire-and-forget model as deferralStore — see that
+// file for the full rationale on cache semantics, error policy, and
+// the numeric-vs-string ID coercion at the API boundary.
 //
-// Deliberately separate from `archivedStore` because (a) handing off
-// a reply does not auto-archive — the clinician may still want to
-// send follow-ups — and (b) one email can have multiple handoff
-// entries (single + admin, retried draft, etc).
+// Storage rule (three-bucket): outgoing email content lives in Outlook
+// Sent Items, never here. Persisted fields are organisational
+// metadata only — id, source email reference, draft variant,
+// timestamp. We do NOT store subject, body, or even a body snippet:
+// any of those would be email content. The UI tooltip used to show
+// "to <recipient>"; that's been dropped — the recipient is visible
+// in the email row itself, and persisting it would just be another
+// piece of envelope content that lives upstream in Outlook.
 
 export type DraftVariant = 'single' | 'family' | 'admin' | 'chat' | 'unknown';
-
-const SNIPPET_MAX = 120;
 
 export interface SentLogEntry {
   id: string;             // generated, unique per handoff
   emailId: number;        // original email being replied to
-  to: string;             // recipient address (best-effort extracted from From)
-  toLabel: string;        // human-readable sender label as shown in the inbox
-  subject: string;        // final subject line we put in the mailto link
-  bodySnippet: string;    // first ~120 chars of the draft, for audit only
-  bodyChars: number;      // full draft length, so we can show "of N chars"
   variant: DraftVariant;  // which draft slot this came from
   sentAt: number;         // epoch ms when we opened the mailto handoff
 }
 
-const KEY = 'clinadmin-sent-log-v1';
 const listeners = new Set<() => void>();
-let cache: SentLogEntry[] | null = null;
-
-function load(): SentLogEntry[] {
-  if (cache) return cache;
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(KEY) : null;
-    cache = raw ? (JSON.parse(raw) as SentLogEntry[]) : [];
-  } catch {
-    cache = [];
-  }
-  return cache;
-}
-
-function persist() {
-  if (!cache || typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(cache));
-  } catch {
-    // ignore quota errors
-  }
-}
+let cache: SentLogEntry[] = [];
+let hydrationStarted = false;
+let hydrationDone = false;
 
 function emit() {
-  cache = cache ? [...cache] : [];
-  persist();
+  cache = [...cache];
   listeners.forEach((l) => l());
+}
+
+async function hydrate(): Promise<void> {
+  if (hydrationStarted) return;
+  hydrationStarted = true;
+  try {
+    const rows = await listSentLog();
+    // Merge: keep any local entries (added before hydration finished)
+    // and append server entries not already present, deduped by id.
+    const existing = new Set(cache.map((e) => e.id));
+    for (const r of rows) {
+      if (existing.has(r.id)) continue;
+      const emailId = Number(r.outlookEmailId);
+      if (!Number.isFinite(emailId)) continue;
+      cache.push({
+        id: r.id,
+        emailId,
+        variant: r.variant,
+        sentAt: new Date(r.sentAt).getTime(),
+      });
+    }
+    cache.sort((a, b) => a.sentAt - b.sentAt);
+    hydrationDone = true;
+    emit();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[sentLogStore] failed to hydrate from server', err);
+    hydrationDone = true;
+  }
 }
 
 export interface RecordSentInput {
   emailId: number;
-  to: string;
-  toLabel: string;
-  subject: string;
-  body: string;            // full draft — we snip and discard the rest
   variant: DraftVariant;
 }
 
 export function recordSent(input: RecordSentInput): SentLogEntry {
-  const snippet =
-    input.body.length > SNIPPET_MAX
-      ? `${input.body.slice(0, SNIPPET_MAX).trimEnd()}…`
-      : input.body;
-  const full: SentLogEntry = {
+  const entry: SentLogEntry = {
     id: `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     emailId: input.emailId,
-    to: input.to,
-    toLabel: input.toLabel,
-    subject: input.subject,
-    bodySnippet: snippet,
-    bodyChars: input.body.length,
     variant: input.variant,
     sentAt: Date.now(),
   };
-  const next = [...load(), full];
-  cache = next;
+  cache = [...cache, entry];
   emit();
-  return full;
+  // Fire-and-forget POST. Server is idempotent on `id`.
+  apiRecordSentLog({
+    id: entry.id,
+    outlookEmailId: String(entry.emailId),
+    variant: entry.variant,
+    sentAt: new Date(entry.sentAt).toISOString(),
+  }).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn('[sentLogStore] failed to persist handoff', err);
+  });
+  return entry;
 }
 
+// Test-only / dev-only: wipe local cache. Does NOT touch the server.
 export function clearSentLog() {
   cache = [];
-  emit();
+  hydrationStarted = false;
+  hydrationDone = false;
+  listeners.forEach((l) => l());
 }
 
 function subscribe(l: () => void): () => void {
   listeners.add(l);
+  if (!hydrationStarted) {
+    void hydrate();
+  }
   return () => {
     listeners.delete(l);
   };
 }
 
-const getSnapshot = () => load();
-const getServerSnapshot = () => load();
+const getSnapshot = () => cache;
+const getServerSnapshot = () => cache;
 
 export function useSentLog(): SentLogEntry[] {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+export function isHydrated(): boolean {
+  return hydrationDone;
 }
 
 // Convenience selector: most recent sent entry per emailId, or null.

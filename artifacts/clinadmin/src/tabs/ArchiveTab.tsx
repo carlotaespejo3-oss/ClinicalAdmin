@@ -139,7 +139,7 @@ export default function ArchiveTab() {
                           return (
                             <span
                               className="inline-flex items-center gap-1 text-[10px] font-bold border border-primary/30 bg-primary/5 text-primary px-2 py-0.5 rounded-full"
-                              title={`Reply opened in your mail app ${fmtAgo(sent.sentAt)} via ${sent.variant} draft${sent.to ? ` to ${sent.to}` : ''}`}
+                              title={`Reply opened in your mail app ${fmtAgo(sent.sentAt)} via ${sent.variant} draft`}
                               data-testid={`archive-sent-${email.id}`}
                             >
                               <Send size={10} /> Reply drafted {fmtAgo(sent.sentAt)}

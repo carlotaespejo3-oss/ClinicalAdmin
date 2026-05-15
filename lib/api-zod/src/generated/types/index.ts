@@ -27,6 +27,8 @@ export * from "./promptedTaskDismissalKey";
 export * from "./promptedTaskRecord";
 export * from "./promptedTasksState";
 export * from "./recordDeferralsInput";
+export * from "./sentLogRecord";
+export * from "./sentLogVariant";
 export * from "./setPromptedTaskDoneInput";
 export * from "./taskRisk";
 export * from "./userTaskRecord";

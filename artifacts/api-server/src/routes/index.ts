@@ -8,6 +8,7 @@ import acknowledgedRouter from "./acknowledged";
 import userTasksRouter from "./userTasks";
 import linkedDocTasksRouter from "./linkedDocTasks";
 import promptedTasksRouter from "./promptedTasks";
+import sentLogRouter from "./sentLog";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(acknowledgedRouter);
 router.use(userTasksRouter);
 router.use(linkedDocTasksRouter);
 router.use(promptedTasksRouter);
+router.use(sentLogRouter);
 
 export default router;

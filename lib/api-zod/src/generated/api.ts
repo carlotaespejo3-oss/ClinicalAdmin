@@ -404,3 +404,38 @@ export const SetPromptedTaskDoneApiBody = zod.object({
   kind: zod.string(),
   done: zod.boolean(),
 });
+
+/**
+ * Audit trail of replies handed off to the user's mail client. Three-bucket rule: outgoing email content lives in Outlook Sent Items, not here. The persisted record contains only organisational metadata (id, source email reference, draft variant, timestamp). No subject line and no body — not even a snippet.
+ * @summary List every mailto handoff for the current clinician
+ */
+export const ListSentLogResponseItem = zod
+  .object({
+    id: zod
+      .string()
+      .describe("Client-generated 's_<base36>_<rand>' (globally unique)"),
+    outlookEmailId: zod.string().describe("Source email being replied to"),
+    variant: zod.enum(["single", "family", "admin", "chat", "unknown"]),
+    sentAt: zod.coerce.date().describe("When the mailto handoff fired"),
+  })
+  .describe(
+    "Mailto handoff audit row. Metadata only — outgoing email content (subject, body) lives in Outlook Sent Items and is never persisted here.",
+  );
+export const ListSentLogResponse = zod.array(ListSentLogResponseItem);
+
+/**
+ * Idempotent on `id` — re-posting the same payload is a no-op, which makes the client's fire-and-forget POST safe to retry on transient network failure. Note: each click generates a fresh `id`, so two genuine clicks on Send are two rows (correctly — that's two handoffs).
+ * @summary Record a new mailto handoff
+ */
+export const RecordSentLogBody = zod
+  .object({
+    id: zod
+      .string()
+      .describe("Client-generated 's_<base36>_<rand>' (globally unique)"),
+    outlookEmailId: zod.string().describe("Source email being replied to"),
+    variant: zod.enum(["single", "family", "admin", "chat", "unknown"]),
+    sentAt: zod.coerce.date().describe("When the mailto handoff fired"),
+  })
+  .describe(
+    "Mailto handoff audit row. Metadata only — outgoing email content (subject, body) lives in Outlook Sent Items and is never persisted here.",
+  );

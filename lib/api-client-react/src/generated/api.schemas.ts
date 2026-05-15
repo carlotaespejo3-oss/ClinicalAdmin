@@ -193,3 +193,27 @@ export interface SetPromptedTaskDoneInput {
   kind: string;
   done: boolean;
 }
+
+export type SentLogVariant =
+  (typeof SentLogVariant)[keyof typeof SentLogVariant];
+
+export const SentLogVariant = {
+  single: "single",
+  family: "family",
+  admin: "admin",
+  chat: "chat",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Mailto handoff audit row. Metadata only — outgoing email content (subject, body) lives in Outlook Sent Items and is never persisted here.
+ */
+export interface SentLogRecord {
+  /** Client-generated 's_<base36>_<rand>' (globally unique) */
+  id: string;
+  /** Source email being replied to */
+  outlookEmailId: string;
+  variant: SentLogVariant;
+  /** When the mailto handoff fired */
+  sentAt: string;
+}
