@@ -19,6 +19,12 @@ import {
   getPromptedTasksForEmail,
   setPromptedTaskDone,
 } from '@/lib/promptedTasksStore';
+import {
+  useWeekSetupCache,
+  useIsWeekHydrated,
+  setWeekSetupInternal,
+  updateWeekSetupInternal,
+} from '@/lib/weeklyPlanStore';
 import LinkedTaskPromptModal from '../components/LinkedTaskPromptModal';
 import HomeTab from '../tabs/HomeTab';
 import TodayTab from '../tabs/TodayTab';
@@ -70,11 +76,16 @@ const defaultSidebarTasks: SidebarTask[] = [
   { id: 's3', title: 'Sign off discharge letter — Thomas Wright', estMin: 10, priority: 'normal', done: false },
 ];
 
+// ISO-style identifier for the current week. The legacy localStorage
+// key was `clinadmin-week-${weekKey}`; the new server-backed store
+// strips the prefix and persists just the YYYY-NN portion. The
+// migration helper inside weeklyPlanStore knows how to find the old
+// localStorage entry from the bare weekKey.
 function getWeekKey() {
   const d = new Date();
   const jan1 = new Date(d.getFullYear(), 0, 1);
   const weekNum = Math.ceil((((d.getTime() - jan1.getTime()) / 86400000) + jan1.getDay() + 1) / 7);
-  return `clinadmin-week-${d.getFullYear()}-${weekNum}`;
+  return `${d.getFullYear()}-${weekNum}`;
 }
 
 export default function ClinAdmin() {
@@ -96,7 +107,13 @@ export default function ClinAdmin() {
   const [newTaskMins, setNewTaskMins] = useState('15');
   const [newTaskPriority, setNewTaskPriority] = useState<'high' | 'normal'>('normal');
   const [showWeeklySetup, setShowWeeklySetup] = useState(false);
-  const [weekSetup, setWeekSetup] = useState<WeekSetup | null>(null);
+  // Per-week planner snapshot now lives in Postgres via
+  // weeklyPlanStore (composite PK clinician_id + week_key). The
+  // store hydrates this week's row on first read and keeps the
+  // cache in sync across components.
+  const [weekKey] = useState(() => getWeekKey());
+  const weekSetup = useWeekSetupCache(weekKey);
+  const weekHydrated = useIsWeekHydrated(weekKey);
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const linkedDocTasks = useLinkedDocTasks();
@@ -212,46 +229,42 @@ export default function ClinAdmin() {
     archiveEmail(emailId, 'done');
   };
 
+  // Show the weekly setup modal only once hydration has finished
+  // and the server has nothing for this week. The 600ms grace
+  // matches the old behaviour: a brief delay so the page doesn't
+  // pop a modal the instant it mounts. weekHydrated comes from
+  // the reactive hook so the null→null transition (loading →
+  // hydrated-empty) still re-runs this effect.
   useEffect(() => {
-    const key = getWeekKey();
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      try { setWeekSetup(JSON.parse(stored)); } catch { setShowWeeklySetup(true); }
-      return;
-    }
+    if (weekSetup) return;
+    if (!weekHydrated) return;
     const t = setTimeout(() => setShowWeeklySetup(true), 600);
     return () => clearTimeout(t);
-  }, []);
+  }, [weekKey, weekSetup, weekHydrated]);
 
   const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => {
     const setup: WeekSetup = { hours, days, plan, sessionLengthMin };
-    setWeekSetup(setup);
+    setWeekSetupInternal(weekKey, setup);
     setShowWeeklySetup(false);
-    localStorage.setItem(getWeekKey(), JSON.stringify(setup));
     if (plan) setActiveTab('Weekly Plan');
   };
 
+  // Use functional updaters here so two rapid edits to the same
+  // week (e.g. regenerate plan + change availability fired in the
+  // same tick) merge against the latest cached snapshot rather
+  // than a stale captured closure.
   const handlePlanGenerated = (plan: GeneratedPlan) => {
-    setWeekSetup(prev => {
-      if (!prev) return prev;
-      const updated = { ...prev, plan };
-      localStorage.setItem(getWeekKey(), JSON.stringify(updated));
-      return updated;
-    });
+    updateWeekSetupInternal(weekKey, prev => (prev ? { ...prev, plan } : prev ?? { hours: 0, days: [], plan }));
   };
 
   const handleUpdateAvailability = (hours: number, days: string[], minutesByDay?: Record<string, number>) => {
-    setWeekSetup(prev => {
-      const updated: WeekSetup = {
-        hours,
-        days,
-        plan: prev?.plan ?? null,
-        sessionLengthMin: prev?.sessionLengthMin,
-        minutesByDay,
-      };
-      localStorage.setItem(getWeekKey(), JSON.stringify(updated));
-      return updated;
-    });
+    updateWeekSetupInternal(weekKey, prev => ({
+      hours,
+      days,
+      plan: prev?.plan ?? null,
+      sessionLengthMin: prev?.sessionLengthMin,
+      minutesByDay,
+    }));
   };
 
   const handleWeeklySetupDismiss = () => {

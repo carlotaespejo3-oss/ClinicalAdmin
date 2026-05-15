@@ -572,3 +572,99 @@ export const UpsertClinicianSettingsBody = zod
   .describe(
     "Partial patch. Each section is independently optional; omitted leaves the existing value alone, explicit null clears it. The server merges the patch over the row.",
   );
+
+/**
+ * Returns the WeekSetup the clinician saved for `weekKey` (chosen hours/days/session length plus the generated plan). Body's `setup` is `null` when the planner has not run for this week yet — the caller treats that as "show the weekly setup modal".
+ * @summary Get the planner snapshot for one ISO week
+ */
+export const GetWeeklyPlanParams = zod.object({
+  weekKey: zod.coerce
+    .string()
+    .describe('ISO-style identifier \"YYYY-NN\" (e.g. \"2026-21\")'),
+});
+
+export const GetWeeklyPlanResponse = zod
+  .object({
+    weekKey: zod
+      .string()
+      .describe('ISO-style identifier \"YYYY-NN\" (e.g. \"2026-21\")'),
+    setup: zod
+      .object({
+        hours: zod
+          .number()
+          .describe("Total admin hours allocated for this week"),
+        days: zod
+          .array(zod.string())
+          .describe(
+            'Day labels the clinician marked as admin time (e.g. [\"Tue\",\"Thu\"])',
+          ),
+        plan: zod
+          .record(zod.string(), zod.unknown())
+          .nullish()
+          .describe(
+            "GeneratedPlan blob (days\/blocks\/deferredItems\/safetyNote\/...). Null until the planner has run.",
+          ),
+        sessionLengthMin: zod
+          .number()
+          .optional()
+          .describe("Preferred admin session length in minutes (e.g. 90)"),
+        minutesByDay: zod
+          .record(zod.string(), zod.number())
+          .optional()
+          .describe(
+            "Optional per-day minute overrides; days not listed fall back to the even split.",
+          ),
+      })
+      .describe(
+        "Per-week planner snapshot. The clinician's chosen capacity for the week (hours, days, session length) plus the GeneratedPlan the planner produced from those inputs. Only clinician-authored summaries derived from email metadata appear in `plan` — never raw email body or sender content.",
+      )
+      .nullable(),
+  })
+  .describe(
+    "GET response — the requested weekKey plus its WeekSetup, or null when the planner has not run for that week yet.",
+  );
+
+/**
+ * Idempotent upsert keyed on (clinicianId, weekKey). Body is the full WeekSetup; replaces any existing snapshot for the same week. The plan field carries clinician-authored summaries derived from email metadata, never raw email body or sender content.
+ * @summary Save the planner snapshot for one ISO week
+ */
+export const UpsertWeeklyPlanParams = zod.object({
+  weekKey: zod.coerce.string(),
+});
+
+export const UpsertWeeklyPlanBody = zod
+  .object({
+    hours: zod.number().describe("Total admin hours allocated for this week"),
+    days: zod
+      .array(zod.string())
+      .describe(
+        'Day labels the clinician marked as admin time (e.g. [\"Tue\",\"Thu\"])',
+      ),
+    plan: zod
+      .record(zod.string(), zod.unknown())
+      .nullish()
+      .describe(
+        "GeneratedPlan blob (days\/blocks\/deferredItems\/safetyNote\/...). Null until the planner has run.",
+      ),
+    sessionLengthMin: zod
+      .number()
+      .optional()
+      .describe("Preferred admin session length in minutes (e.g. 90)"),
+    minutesByDay: zod
+      .record(zod.string(), zod.number())
+      .optional()
+      .describe(
+        "Optional per-day minute overrides; days not listed fall back to the even split.",
+      ),
+  })
+  .describe(
+    "Per-week planner snapshot. The clinician's chosen capacity for the week (hours, days, session length) plus the GeneratedPlan the planner produced from those inputs. Only clinician-authored summaries derived from email metadata appear in `plan` — never raw email body or sender content.",
+  );
+
+/**
+ * Idempotent — returns 204 even if no snapshot existed.
+ * @summary Remove the planner snapshot for one ISO week
+ */
+export const DeleteWeeklyPlanParams = zod.object({
+  weekKey: zod.coerce.string(),
+});

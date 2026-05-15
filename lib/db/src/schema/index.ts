@@ -28,3 +28,4 @@ export * from "./promptedTasks";
 export * from "./sentLog";
 export * from "./aiClassifications";
 export * from "./clinicianSettings";
+export * from "./weeklyPlans";

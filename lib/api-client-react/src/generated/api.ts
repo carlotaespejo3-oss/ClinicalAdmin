@@ -42,6 +42,8 @@ import type {
   SetPromptedTaskDoneInput,
   UpsertClinicianSettingsInput,
   UserTaskRecord,
+  WeekSetup,
+  WeeklyPlanRecord,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2799,4 +2801,265 @@ export const useUpsertClinicianSettings = <
   TContext
 > => {
   return useMutation(getUpsertClinicianSettingsMutationOptions(options));
+};
+
+/**
+ * Returns the WeekSetup the clinician saved for `weekKey` (chosen hours/days/session length plus the generated plan). Body's `setup` is `null` when the planner has not run for this week yet — the caller treats that as "show the weekly setup modal".
+ * @summary Get the planner snapshot for one ISO week
+ */
+export const getGetWeeklyPlanUrl = (weekKey: string) => {
+  return `/api/weekly-plans/${weekKey}`;
+};
+
+export const getWeeklyPlan = async (
+  weekKey: string,
+  options?: RequestInit,
+): Promise<WeeklyPlanRecord> => {
+  return customFetch<WeeklyPlanRecord>(getGetWeeklyPlanUrl(weekKey), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWeeklyPlanQueryKey = (weekKey: string) => {
+  return [`/api/weekly-plans/${weekKey}`] as const;
+};
+
+export const getGetWeeklyPlanQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWeeklyPlan>>,
+  TError = ErrorType<unknown>,
+>(
+  weekKey: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWeeklyPlan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWeeklyPlanQueryKey(weekKey);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getWeeklyPlan>>> = ({
+    signal,
+  }) => getWeeklyPlan(weekKey, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!weekKey,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWeeklyPlan>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWeeklyPlanQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWeeklyPlan>>
+>;
+export type GetWeeklyPlanQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the planner snapshot for one ISO week
+ */
+
+export function useGetWeeklyPlan<
+  TData = Awaited<ReturnType<typeof getWeeklyPlan>>,
+  TError = ErrorType<unknown>,
+>(
+  weekKey: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWeeklyPlan>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWeeklyPlanQueryOptions(weekKey, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent upsert keyed on (clinicianId, weekKey). Body is the full WeekSetup; replaces any existing snapshot for the same week. The plan field carries clinician-authored summaries derived from email metadata, never raw email body or sender content.
+ * @summary Save the planner snapshot for one ISO week
+ */
+export const getUpsertWeeklyPlanUrl = (weekKey: string) => {
+  return `/api/weekly-plans/${weekKey}`;
+};
+
+export const upsertWeeklyPlan = async (
+  weekKey: string,
+  weekSetup: WeekSetup,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertWeeklyPlanUrl(weekKey), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(weekSetup),
+  });
+};
+
+export const getUpsertWeeklyPlanMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertWeeklyPlan>>,
+    TError,
+    { weekKey: string; data: BodyType<WeekSetup> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertWeeklyPlan>>,
+  TError,
+  { weekKey: string; data: BodyType<WeekSetup> },
+  TContext
+> => {
+  const mutationKey = ["upsertWeeklyPlan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertWeeklyPlan>>,
+    { weekKey: string; data: BodyType<WeekSetup> }
+  > = (props) => {
+    const { weekKey, data } = props ?? {};
+
+    return upsertWeeklyPlan(weekKey, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertWeeklyPlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertWeeklyPlan>>
+>;
+export type UpsertWeeklyPlanMutationBody = BodyType<WeekSetup>;
+export type UpsertWeeklyPlanMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save the planner snapshot for one ISO week
+ */
+export const useUpsertWeeklyPlan = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertWeeklyPlan>>,
+    TError,
+    { weekKey: string; data: BodyType<WeekSetup> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertWeeklyPlan>>,
+  TError,
+  { weekKey: string; data: BodyType<WeekSetup> },
+  TContext
+> => {
+  return useMutation(getUpsertWeeklyPlanMutationOptions(options));
+};
+
+/**
+ * Idempotent — returns 204 even if no snapshot existed.
+ * @summary Remove the planner snapshot for one ISO week
+ */
+export const getDeleteWeeklyPlanUrl = (weekKey: string) => {
+  return `/api/weekly-plans/${weekKey}`;
+};
+
+export const deleteWeeklyPlan = async (
+  weekKey: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteWeeklyPlanUrl(weekKey), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteWeeklyPlanMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteWeeklyPlan>>,
+    TError,
+    { weekKey: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteWeeklyPlan>>,
+  TError,
+  { weekKey: string },
+  TContext
+> => {
+  const mutationKey = ["deleteWeeklyPlan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteWeeklyPlan>>,
+    { weekKey: string }
+  > = (props) => {
+    const { weekKey } = props ?? {};
+
+    return deleteWeeklyPlan(weekKey, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteWeeklyPlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteWeeklyPlan>>
+>;
+
+export type DeleteWeeklyPlanMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove the planner snapshot for one ISO week
+ */
+export const useDeleteWeeklyPlan = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteWeeklyPlan>>,
+    TError,
+    { weekKey: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteWeeklyPlan>>,
+  TError,
+  { weekKey: string },
+  TContext
+> => {
+  return useMutation(getDeleteWeeklyPlanMutationOptions(options));
 };

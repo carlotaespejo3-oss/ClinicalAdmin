@@ -346,3 +346,39 @@ export interface UpsertClinicianSettingsInput {
   signaturesSettings?: UpsertClinicianSettingsInputSignaturesSettings;
   appSettings?: UpsertClinicianSettingsInputAppSettings;
 }
+
+/**
+ * GeneratedPlan blob (days/blocks/deferredItems/safetyNote/...). Null until the planner has run.
+ */
+export type WeekSetupPlan = { [key: string]: unknown } | null;
+
+/**
+ * Optional per-day minute overrides; days not listed fall back to the even split.
+ */
+export type WeekSetupMinutesByDay = { [key: string]: number };
+
+/**
+ * Per-week planner snapshot. The clinician's chosen capacity for the week (hours, days, session length) plus the GeneratedPlan the planner produced from those inputs. Only clinician-authored summaries derived from email metadata appear in `plan` — never raw email body or sender content.
+ */
+export interface WeekSetup {
+  /** Total admin hours allocated for this week */
+  hours: number;
+  /** Day labels the clinician marked as admin time (e.g. ["Tue","Thu"]) */
+  days: string[];
+  /** GeneratedPlan blob (days/blocks/deferredItems/safetyNote/...). Null until the planner has run. */
+  plan?: WeekSetupPlan;
+  /** Preferred admin session length in minutes (e.g. 90) */
+  sessionLengthMin?: number;
+  /** Optional per-day minute overrides; days not listed fall back to the even split. */
+  minutesByDay?: WeekSetupMinutesByDay;
+  [key: string]: unknown;
+}
+
+/**
+ * GET response — the requested weekKey plus its WeekSetup, or null when the planner has not run for that week yet.
+ */
+export interface WeeklyPlanRecord {
+  /** ISO-style identifier "YYYY-NN" (e.g. "2026-21") */
+  weekKey: string;
+  setup: WeekSetup | null;
+}

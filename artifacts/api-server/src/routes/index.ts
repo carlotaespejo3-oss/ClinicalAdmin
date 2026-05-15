@@ -11,6 +11,7 @@ import promptedTasksRouter from "./promptedTasks";
 import sentLogRouter from "./sentLog";
 import aiClassificationsRouter from "./aiClassifications";
 import clinicianSettingsRouter from "./clinicianSettings";
+import weeklyPlansRouter from "./weeklyPlans";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(promptedTasksRouter);
 router.use(sentLogRouter);
 router.use(aiClassificationsRouter);
 router.use(clinicianSettingsRouter);
+router.use(weeklyPlansRouter);
 
 export default router;

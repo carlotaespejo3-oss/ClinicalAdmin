@@ -49,3 +49,7 @@ export * from "./upsertClinicianSettingsInputSignaturesSettings";
 export * from "./upsertClinicianSettingsInputStyleProfile";
 export * from "./userTaskRecord";
 export * from "./userTaskSource";
+export * from "./weeklyPlanRecord";
+export * from "./weekSetup";
+export * from "./weekSetupMinutesByDay";
+export * from "./weekSetupPlan";

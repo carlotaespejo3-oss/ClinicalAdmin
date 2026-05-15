@@ -32,6 +32,8 @@ tags:
     description: AI category / priority / detector output per inbox email (organisational metadata, not email content)
   - name: clinicianSettings
     description: Clinician-wide configuration (arrivals planner inputs, writing-style profile, AI-reply signatures)
+  - name: weeklyPlans
+    description: Per-week planner snapshot (chosen hours/days/session length plus the generated plan for that ISO week)
 paths:
   /healthz:
     get:
@@ -614,6 +616,70 @@ paths:
       responses:
         "204":
           description: Saved
+  /weekly-plans/{weekKey}:
+    get:
+      operationId: getWeeklyPlan
+      tags: [weeklyPlans]
+      summary: Get the planner snapshot for one ISO week
+      description: >-
+        Returns the WeekSetup the clinician saved for `weekKey`
+        (chosen hours/days/session length plus the generated plan).
+        Body's `setup` is `null` when the planner has not run for
+        this week yet — the caller treats that as "show the weekly
+        setup modal".
+      parameters:
+        - name: weekKey
+          in: path
+          required: true
+          description: ISO-style identifier "YYYY-NN" (e.g. "2026-21")
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Snapshot for the requested week (setup may be null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyPlanRecord"
+    post:
+      operationId: upsertWeeklyPlan
+      tags: [weeklyPlans]
+      summary: Save the planner snapshot for one ISO week
+      description: >-
+        Idempotent upsert keyed on (clinicianId, weekKey). Body is
+        the full WeekSetup; replaces any existing snapshot for the
+        same week. The plan field carries clinician-authored
+        summaries derived from email metadata, never raw email body
+        or sender content.
+      parameters:
+        - name: weekKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WeekSetup"
+      responses:
+        "204":
+          description: Saved
+    delete:
+      operationId: deleteWeeklyPlan
+      tags: [weeklyPlans]
+      summary: Remove the planner snapshot for one ISO week
+      description: Idempotent — returns 204 even if no snapshot existed.
+      parameters:
+        - name: weekKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
 components:
   schemas:
     HealthStatus:
@@ -1144,3 +1210,51 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+    WeekSetup:
+      type: object
+      description: >-
+        Per-week planner snapshot. The clinician's chosen capacity
+        for the week (hours, days, session length) plus the
+        GeneratedPlan the planner produced from those inputs. Only
+        clinician-authored summaries derived from email metadata
+        appear in `plan` — never raw email body or sender content.
+      properties:
+        hours:
+          type: number
+          description: Total admin hours allocated for this week
+        days:
+          type: array
+          items:
+            type: string
+          description: Day labels the clinician marked as admin time (e.g. ["Tue","Thu"])
+        plan:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: GeneratedPlan blob (days/blocks/deferredItems/safetyNote/...). Null until the planner has run.
+        sessionLengthMin:
+          type: number
+          description: Preferred admin session length in minutes (e.g. 90)
+        minutesByDay:
+          type: object
+          additionalProperties:
+            type: number
+          description: Optional per-day minute overrides; days not listed fall back to the even split.
+      required:
+        - hours
+        - days
+      additionalProperties: true
+    WeeklyPlanRecord:
+      type: object
+      description: GET response — the requested weekKey plus its WeekSetup, or null when the planner has not run for that week yet.
+      properties:
+        weekKey:
+          type: string
+          description: ISO-style identifier "YYYY-NN" (e.g. "2026-21")
+        setup:
+          allOf:
+            - $ref: "#/components/schemas/WeekSetup"
+          nullable: true
+      required:
+        - weekKey
+        - setup
