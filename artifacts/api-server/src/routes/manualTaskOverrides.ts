@@ -23,6 +23,10 @@ router.get("/manual-task-overrides", async (_req, res) => {
       taskId: r.taskId,
       done: r.done,
       note: r.note,
+      titleOverride: r.titleOverride,
+      deadlineOverride: r.deadlineOverride,
+      estMinOverride: r.estMinOverride,
+      hidden: r.hidden,
     })),
   );
 });
@@ -50,6 +54,13 @@ router.post("/manual-task-overrides/:taskId", async (req, res) => {
   };
   if (patch.done !== undefined) updateSet.done = patch.done;
   if (patch.note !== undefined) updateSet.note = patch.note;
+  if (patch.titleOverride !== undefined)
+    updateSet.titleOverride = patch.titleOverride;
+  if (patch.deadlineOverride !== undefined)
+    updateSet.deadlineOverride = patch.deadlineOverride;
+  if (patch.estMinOverride !== undefined)
+    updateSet.estMinOverride = patch.estMinOverride;
+  if (patch.hidden !== undefined) updateSet.hidden = patch.hidden;
   await db
     .insert(manualTaskOverridesTable)
     .values({
@@ -57,6 +68,10 @@ router.post("/manual-task-overrides/:taskId", async (req, res) => {
       taskId,
       done: patch.done ?? false,
       note: patch.note ?? null,
+      titleOverride: patch.titleOverride ?? null,
+      deadlineOverride: patch.deadlineOverride ?? null,
+      estMinOverride: patch.estMinOverride ?? null,
+      hidden: patch.hidden ?? false,
     })
     .onConflictDoUpdate({
       target: [

@@ -7,9 +7,21 @@
  */
 
 /**
- * Partial patch — omit a field to leave it alone, send note=null to clear.
+ * Partial patch — omit a field to leave it alone, send any nullable field as null to clear back to the seed value.
  */
 export interface ManualTaskOverridePatch {
   done?: boolean;
   note?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  titleOverride?: string | null;
+  deadlineOverride?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 600
+   */
+  estMinOverride?: number | null;
+  hidden?: boolean;
 }

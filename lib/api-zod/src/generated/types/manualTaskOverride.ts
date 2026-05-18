@@ -15,4 +15,12 @@ export interface ManualTaskOverride {
   done: boolean;
   /** Optional clinician-authored note attached when keeping a task open after the linked email is done. */
   note: string | null;
+  /** Clinician-edited title; null means use the seed title. */
+  titleOverride: string | null;
+  /** Clinician-edited deadline in days from today; null means use the seed deadline. */
+  deadlineOverride: number | null;
+  /** Clinician-edited time estimate in minutes; null means use the seed estimate. */
+  estMinOverride: number | null;
+  /** When true, the seed task is soft-deleted from every view. */
+  hidden: boolean;
 }

@@ -16,6 +16,7 @@ import {
 import { useUserPlannedItems } from './userPlannedItemsStore';
 import { usePromptedTasksState } from './promptedTasksStore';
 import { useLeaveBlocks } from './leaveBlocksStore';
+import { useUnclearGateOverrides } from './unclearGateOverridesStore';
 import type { PotentialTaskKind } from './potentialTaskDetect';
 import { buildPlannerInput } from './plannerAdapter';
 import type { AiCategory } from './types';
@@ -47,6 +48,7 @@ export function usePlannerOutput(
   const userPlannedItems = useUserPlannedItems();
   const { tasks: promptedTasks } = usePromptedTasksState();
   const leaveBlocks = useLeaveBlocks();
+  const unclearGateOverrides = useUnclearGateOverrides();
 
   const weekMondayKey = isoMondayOf(new Date());
 
@@ -126,6 +128,7 @@ export function usePlannerOutput(
     const planned = buildPlan({
       ...input,
       arrivals,
+      unclearGateOverrides,
       // Only counts weeks STRICTLY before this week. Records made
       // for the current week (by the effect below) are deliberately
       // ignored here — otherwise an item transiently in
@@ -226,6 +229,7 @@ export function usePlannerOutput(
     userPlannedItems,
     promptedTasks,
     leaveBlocks,
+    unclearGateOverrides,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's

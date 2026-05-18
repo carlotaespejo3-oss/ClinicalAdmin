@@ -1617,19 +1617,53 @@ components:
           type: string
           nullable: true
           description: Optional clinician-authored note attached when keeping a task open after the linked email is done.
+        titleOverride:
+          type: string
+          nullable: true
+          description: Clinician-edited title; null means use the seed title.
+        deadlineOverride:
+          type: integer
+          nullable: true
+          description: Clinician-edited deadline in days from today; null means use the seed deadline.
+        estMinOverride:
+          type: integer
+          nullable: true
+          description: Clinician-edited time estimate in minutes; null means use the seed estimate.
+        hidden:
+          type: boolean
+          description: When true, the seed task is soft-deleted from every view.
       required:
         - taskId
         - done
         - note
+        - titleOverride
+        - deadlineOverride
+        - estMinOverride
+        - hidden
     ManualTaskOverridePatch:
       type: object
-      description: "Partial patch — omit a field to leave it alone, send note=null to clear."
+      description: "Partial patch — omit a field to leave it alone, send any nullable field as null to clear back to the seed value."
       properties:
         done:
           type: boolean
         note:
           type: string
           nullable: true
+        titleOverride:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+        deadlineOverride:
+          type: integer
+          nullable: true
+        estMinOverride:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 600
+        hidden:
+          type: boolean
       additionalProperties: false
     SidebarTaskInput:
       type: object

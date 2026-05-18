@@ -138,6 +138,14 @@ export interface PlannerInput {
   // become a 28-day-old unanswered email with no UI signal. Keyed
   // by email id; absent / 0 = never deferred before.
   deferralHistory?: ReadonlyMap<number, number>;
+  // Per-day overrides on the synthetic "unclear gate" item. The gate
+  // is computed live from the current unclear-email count, but the
+  // clinician can resize the time block or dismiss it for the day from
+  // the calendar modal. Keyed by YYYY-MM-DD; absent = no override.
+  unclearGateOverrides?: ReadonlyMap<
+    string,
+    { estMin?: number; dismissed?: boolean }
+  >;
 }
 
 // ============================================================================
@@ -469,19 +477,23 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   const unclearEmailIds = input.emails.filter((e) => e.unclear).map((e) => e.id);
   const unclearCount = unclearEmailIds.length;
   if (unclearCount > 0 && runway.length > 0) {
-    runway[0].items.push({
-      kind: 'unclear_gate',
-      refId: null,
-      title:
-        unclearCount === 1
-          ? '1 email needs classifying'
-          : `${unclearCount} emails need classifying`,
-      detail: 'Triage these first — one of them could be urgent.',
-      category: 'UNCLEAR',
-      estMin: 5,
-      reason: 'unclear_gate',
-      reasonText: 'Classify before continuing',
-    });
+    const gateDate = runway[0].date;
+    const gateOverride = input.unclearGateOverrides?.get(gateDate);
+    if (!gateOverride?.dismissed) {
+      runway[0].items.push({
+        kind: 'unclear_gate',
+        refId: null,
+        title:
+          unclearCount === 1
+            ? '1 email needs classifying'
+            : `${unclearCount} emails need classifying`,
+        detail: 'Triage these first — one of them could be urgent.',
+        category: 'UNCLEAR',
+        estMin: gateOverride?.estMin ?? 5,
+        reason: 'unclear_gate',
+        reasonText: 'Classify before continuing',
+      });
+    }
   }
 
   // 3 — Compute weekly capacity (week 1 = first 7 days) and apply the

@@ -65,18 +65,23 @@ function ItemChip({
       : item.kind === 'task'
         ? ClipboardList
         : Mail;
-  // Email items open the email; tasks and events open the detail
-  // modal where the clinician can edit or delete. Unclear-gate
-  // rows stay non-interactive — they're a status indicator, not a
-  // task with its own row in any store.
+  // Email items open the email; tasks, events, and the unclear-gate
+  // row open the detail modal. The unclear-gate row used to be a
+  // pure status indicator; now the clinician can resize it or dismiss
+  // it for the day from the modal, so it needs to be clickable too.
   const clickable =
     (item.kind === 'email' && typeof item.refId === 'number') ||
     item.kind === 'task' ||
-    item.kind === 'event';
+    item.kind === 'event' ||
+    item.kind === 'unclear_gate';
   const handleClick = () => {
     if (item.kind === 'email' && typeof item.refId === 'number') {
       onOpenEmail(item.refId);
-    } else if (item.kind === 'task' || item.kind === 'event') {
+    } else if (
+      item.kind === 'task' ||
+      item.kind === 'event' ||
+      item.kind === 'unclear_gate'
+    ) {
       onOpenTask(item);
     }
   };

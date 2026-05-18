@@ -683,6 +683,25 @@ export const ListManualTaskOverridesResponseItem = zod
       .describe(
         "Optional clinician-authored note attached when keeping a task open after the linked email is done.",
       ),
+    titleOverride: zod
+      .string()
+      .nullable()
+      .describe("Clinician-edited title; null means use the seed title."),
+    deadlineOverride: zod
+      .number()
+      .nullable()
+      .describe(
+        "Clinician-edited deadline in days from today; null means use the seed deadline.",
+      ),
+    estMinOverride: zod
+      .number()
+      .nullable()
+      .describe(
+        "Clinician-edited time estimate in minutes; null means use the seed estimate.",
+      ),
+    hidden: zod
+      .boolean()
+      .describe("When true, the seed task is soft-deleted from every view."),
   })
   .describe("One row of manual_task_overrides.");
 export const ListManualTaskOverridesResponse = zod.array(
@@ -697,13 +716,30 @@ export const UpsertManualTaskOverrideParams = zod.object({
   taskId: zod.coerce.string().describe('Seed ManualTask id (e.g. \"m2\")'),
 });
 
+export const upsertManualTaskOverrideBodyTitleOverrideMax = 200;
+
+export const upsertManualTaskOverrideBodyEstMinOverrideMin = 0;
+export const upsertManualTaskOverrideBodyEstMinOverrideMax = 600;
+
 export const UpsertManualTaskOverrideBody = zod
   .object({
     done: zod.boolean().optional(),
     note: zod.string().nullish(),
+    titleOverride: zod
+      .string()
+      .min(1)
+      .max(upsertManualTaskOverrideBodyTitleOverrideMax)
+      .nullish(),
+    deadlineOverride: zod.number().nullish(),
+    estMinOverride: zod
+      .number()
+      .min(upsertManualTaskOverrideBodyEstMinOverrideMin)
+      .max(upsertManualTaskOverrideBodyEstMinOverrideMax)
+      .nullish(),
+    hidden: zod.boolean().optional(),
   })
   .describe(
-    "Partial patch — omit a field to leave it alone, send note=null to clear.",
+    "Partial patch — omit a field to leave it alone, send any nullable field as null to clear back to the seed value.",
   );
 
 /**

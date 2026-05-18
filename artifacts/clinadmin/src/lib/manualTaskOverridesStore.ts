@@ -27,7 +27,20 @@ import type { ManualTask } from '@/lib/types';
 export interface ManualTaskOverride {
   done: boolean;
   note: string | null;
+  titleOverride: string | null;
+  deadlineOverride: number | null;
+  estMinOverride: number | null;
+  hidden: boolean;
 }
+
+const EMPTY_OVERRIDE: ManualTaskOverride = {
+  done: false,
+  note: null,
+  titleOverride: null,
+  deadlineOverride: null,
+  estMinOverride: null,
+  hidden: false,
+};
 
 const overrides = new Map<string, ManualTaskOverride>();
 const listeners = new Set<() => void>();
@@ -50,7 +63,14 @@ async function hydrate(): Promise<void> {
       // Don't clobber overrides set locally before hydration finished —
       // the user's clicks are more recent than the GET.
       if (overrides.has(r.taskId)) continue;
-      overrides.set(r.taskId, { done: r.done, note: r.note ?? null });
+      overrides.set(r.taskId, {
+        done: r.done,
+        note: r.note ?? null,
+        titleOverride: r.titleOverride ?? null,
+        deadlineOverride: r.deadlineOverride ?? null,
+        estMinOverride: r.estMinOverride ?? null,
+        hidden: r.hidden,
+      });
     }
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -74,7 +94,7 @@ function chainWrite(taskId: string, run: () => Promise<unknown>) {
 }
 
 export function setManualTaskDone(taskId: string, done: boolean): void {
-  const prev = overrides.get(taskId) ?? { done: false, note: null };
+  const prev = overrides.get(taskId) ?? EMPTY_OVERRIDE;
   // When toggling back to default (done=false, no note) we could DELETE
   // the row, but keeping it is cheaper than a round-trip and lets the
   // server hold updatedAt for diagnostics. Fine either way.
@@ -86,11 +106,53 @@ export function setManualTaskDone(taskId: string, done: boolean): void {
 }
 
 export function setManualTaskNote(taskId: string, note: string | null): void {
-  const prev = overrides.get(taskId) ?? { done: false, note: null };
+  const prev = overrides.get(taskId) ?? EMPTY_OVERRIDE;
   overrides.set(taskId, { ...prev, note });
   emit();
   chainWrite(taskId, () =>
     upsertManualTaskOverride(encodeURIComponent(taskId), { note }),
+  );
+}
+
+// Edit the seed task's user-facing fields. Pass null to clear an override
+// back to the seed value. Planner reflection is automatic: the override
+// flows through useManualTasksWithOverrides → manualTaskList → planner.
+export function setManualTaskFields(
+  taskId: string,
+  patch: {
+    titleOverride?: string | null;
+    deadlineOverride?: number | null;
+    estMinOverride?: number | null;
+  },
+): void {
+  const prev = overrides.get(taskId) ?? EMPTY_OVERRIDE;
+  overrides.set(taskId, {
+    ...prev,
+    ...(patch.titleOverride !== undefined && {
+      titleOverride: patch.titleOverride,
+    }),
+    ...(patch.deadlineOverride !== undefined && {
+      deadlineOverride: patch.deadlineOverride,
+    }),
+    ...(patch.estMinOverride !== undefined && {
+      estMinOverride: patch.estMinOverride,
+    }),
+  });
+  emit();
+  chainWrite(taskId, () =>
+    upsertManualTaskOverride(encodeURIComponent(taskId), patch),
+  );
+}
+
+// Soft-delete: removes a seed task from every view. The seed array
+// itself is never mutated; clearing the override (via clearManualTaskOverride)
+// brings it back.
+export function setManualTaskHidden(taskId: string, hidden: boolean): void {
+  const prev = overrides.get(taskId) ?? EMPTY_OVERRIDE;
+  overrides.set(taskId, { ...prev, hidden });
+  emit();
+  chainWrite(taskId, () =>
+    upsertManualTaskOverride(encodeURIComponent(taskId), { hidden }),
   );
 }
 
@@ -118,15 +180,24 @@ const getSnapshot = () => snapshotToken;
 // unchanged.
 export function useManualTasksWithOverrides(): ManualTask[] {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return seedManualTasks.map((t) => {
+  const merged: ManualTask[] = [];
+  for (const t of seedManualTasks) {
     const ovr = overrides.get(t.id);
-    if (!ovr) return t;
-    return {
+    if (!ovr) {
+      merged.push(t);
+      continue;
+    }
+    if (ovr.hidden) continue;
+    merged.push({
       ...t,
       done: ovr.done,
       noteAfterEmailDone: ovr.note ?? undefined,
-    };
-  });
+      title: ovr.titleOverride ?? t.title,
+      deadline: ovr.deadlineOverride ?? t.deadline,
+      estMin: ovr.estMinOverride ?? t.estMin,
+    });
+  }
+  return merged;
 }
 
 export function isManualOverridesHydrated(): boolean {

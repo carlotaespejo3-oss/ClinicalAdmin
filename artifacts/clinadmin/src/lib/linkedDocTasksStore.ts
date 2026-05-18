@@ -148,6 +148,34 @@ export function setLinkedDocDone(emailId: number, done: boolean) {
   persist(next);
 }
 
+// Patch the clinician-editable fields on an auto-generated document
+// task. Title/deadline/estMin flow into the planner via the same path
+// as the seed manual tasks — usePlannerOutput reads from this store.
+export function updateLinkedDocTask(
+  emailId: number,
+  patch: { title?: string; deadline?: number; estMin?: number },
+): void {
+  const t = cache.get(emailId);
+  if (!t) return;
+  const next: LinkedDocTask = {
+    ...t,
+    ...(patch.title !== undefined && { title: patch.title }),
+    ...(patch.deadline !== undefined && { deadline: patch.deadline }),
+    ...(patch.estMin !== undefined && { estMin: patch.estMin }),
+  };
+  cache.set(emailId, next);
+  emit();
+  persist(next);
+}
+
+// Remove a linked-doc task entirely. The originating email is left
+// untouched in Outlook (storage rule); only our derived task row is
+// dropped. We don't yet have a DELETE endpoint for these — flip done
+// to true so the planner stops scheduling it.
+export function dismissLinkedDocTask(emailId: number): void {
+  setLinkedDocDone(emailId, true);
+}
+
 function senderName(from: string): string {
   // "Mrs Davies (SENCO) <a@b>" → "Mrs Davies"
   return from.replace(/<.*?>/g, '').replace(/\(.+?\)/g, '').trim() || from;

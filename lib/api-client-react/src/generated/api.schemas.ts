@@ -392,14 +392,34 @@ export interface ManualTaskOverride {
   done: boolean;
   /** Optional clinician-authored note attached when keeping a task open after the linked email is done. */
   note: string | null;
+  /** Clinician-edited title; null means use the seed title. */
+  titleOverride: string | null;
+  /** Clinician-edited deadline in days from today; null means use the seed deadline. */
+  deadlineOverride: number | null;
+  /** Clinician-edited time estimate in minutes; null means use the seed estimate. */
+  estMinOverride: number | null;
+  /** When true, the seed task is soft-deleted from every view. */
+  hidden: boolean;
 }
 
 /**
- * Partial patch — omit a field to leave it alone, send note=null to clear.
+ * Partial patch — omit a field to leave it alone, send any nullable field as null to clear back to the seed value.
  */
 export interface ManualTaskOverridePatch {
   done?: boolean;
   note?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  titleOverride?: string | null;
+  deadlineOverride?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 600
+   */
+  estMinOverride?: number | null;
+  hidden?: boolean;
 }
 
 export type SidebarTaskInputPriority =

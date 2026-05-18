@@ -1,4 +1,11 @@
-import { pgTable, text, boolean, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  boolean,
+  integer,
+  timestamp,
+  primaryKey,
+} from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 // Per-clinician overrides on the seed ManualTask records that ship
@@ -30,6 +37,16 @@ export const manualTaskOverridesTable = pgTable(
     taskId: text("task_id").notNull(),
     done: boolean("done").notNull().default(false),
     note: text("note"),
+    // Editable overlays on the seed record. Nullable = "use seed value".
+    // Lets the clinician retitle, reschedule, or resize a seed task
+    // (e.g. shrink a discharge letter that turned out to be quick)
+    // without us editing the shipped seed array.
+    titleOverride: text("title_override"),
+    deadlineOverride: integer("deadline_override"),
+    estMinOverride: integer("est_min_override"),
+    // Soft-delete for seed records. The seed array stays static; this
+    // just hides the row from every consumer of useManualTasksWithOverrides.
+    hidden: boolean("hidden").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -42,6 +59,10 @@ export const manualTaskOverridesTable = pgTable(
 export const manualTaskOverrideSchema = z.object({
   done: z.boolean().optional(),
   note: z.string().nullable().optional(),
+  titleOverride: z.string().min(1).max(200).nullable().optional(),
+  deadlineOverride: z.number().int().nullable().optional(),
+  estMinOverride: z.number().int().min(0).max(600).nullable().optional(),
+  hidden: z.boolean().optional(),
 });
 
 export type ManualTaskOverrideRow = typeof manualTaskOverridesTable.$inferSelect;

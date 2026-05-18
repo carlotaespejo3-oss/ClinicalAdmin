@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Trash2, Save, ExternalLink, Phone, ClipboardList, CalendarClock, Info } from 'lucide-react';
+import {
+  X,
+  Trash2,
+  Save,
+  ExternalLink,
+  Phone,
+  ClipboardList,
+  CalendarClock,
+  Info,
+  RotateCcw,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PlanItem } from '@/lib/planner';
 import {
@@ -15,6 +25,22 @@ import {
   removePromptedTask,
   type PromptedTask,
 } from '@/lib/promptedTasksStore';
+import {
+  useManualTasksWithOverrides,
+  setManualTaskFields,
+  setManualTaskHidden,
+  clearManualTaskOverride,
+} from '@/lib/manualTaskOverridesStore';
+import {
+  useLinkedDocTasks,
+  updateLinkedDocTask,
+  dismissLinkedDocTask,
+} from '@/lib/linkedDocTasksStore';
+import {
+  setUnclearGateEstMin,
+  dismissUnclearGate,
+} from '@/lib/unclearGateOverridesStore';
+import type { ManualTask } from '@/lib/types';
 
 // Detail / edit modal for an item the clinician clicked on the
 // **calendar**. Different from `TaskDetailModal` (the read-only Home /
@@ -23,21 +49,33 @@ import {
 // Routing by item.refId namespace:
 //   - 'upt_*' / 'upe_*' → userPlannedItems (full edit)
 //   - 'pt_*'           → promptedTasks (edit via re-POST upsert)
-//   - anything else    → read-only with a pointer to the Tasks tab
+//   - 'doc_*'          → linkedDocTasks (auto-generated document tasks)
+//   - other string id  → seed ManualTask (m2..m5) edited via overrides
+//   - kind='unclear_gate', refId=null → resize / dismiss the unclear gate
+//   - none of the above → read-only with a pointer to the Tasks tab
 //
 // Phone-call rule: when the underlying promptedTask has
 // kind='phone_call', the minutes field is locked at 30. The clamp
 // also lives in the store (defence in depth), so even if a stray
 // path bypassed the UI the rule would still hold.
 //
-// Date editing for promptedTasks uses a normal date picker; we
-// convert picked-date → `dueDays` on save (days-from-today, clamped
-// non-negative). Calendar-day arithmetic, not 24h windows.
+// Date editing for date-based tasks uses a normal date picker; we
+// convert picked-date → days-from-today on save (clamped non-negative).
+// Calendar-day arithmetic, not 24h windows.
+//
+// Planner reflection: every mutation here writes to the store the
+// planner subscribes to, so the runway recomputes on the next render.
+// Manual title/estMin/deadline edits → manualTaskOverridesStore;
+// linked-doc edits → linkedDocTasksStore; unclear-gate overrides →
+// unclearGateOverridesStore. No prop drilling required.
 
 type EditableSource =
   | { kind: 'userTask'; item: Extract<UserPlannedItem, { kind: 'task' }> }
   | { kind: 'userEvent'; item: Extract<UserPlannedItem, { kind: 'event' }> }
   | { kind: 'prompted'; item: PromptedTask }
+  | { kind: 'manual'; item: ManualTask }
+  | { kind: 'linkedDoc'; item: ManualTask & { linkedEmailId: number } }
+  | { kind: 'unclear'; dateKey: string }
   | { kind: 'readonly'; title: string; reason: string };
 
 interface Props {
@@ -68,9 +106,16 @@ function dateKeyFromDueDays(dueDays: number | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, onNavigateToTasks }: Props) {
+export default function CalendarTaskDetailModal({
+  item,
+  scheduledDate,
+  onClose,
+  onNavigateToTasks,
+}: Props) {
   const userItems = useUserPlannedItems();
   const { tasks: prompted } = usePromptedTasksState();
+  const manualTasks = useManualTasksWithOverrides();
+  const linkedDocTasks = useLinkedDocTasks();
 
   const source: EditableSource = useMemo(() => {
     const refId = item.refId;
@@ -87,16 +132,30 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
         const p = prompted.find((x) => x.id === refId);
         if (p) return { kind: 'prompted', item: p };
       }
+      if (refId.startsWith('doc_')) {
+        // linkedDocTasks is a Map<number, LinkedDocTask>; find by id string.
+        for (const t of linkedDocTasks.values()) {
+          if (t.id === refId) {
+            return {
+              kind: 'linkedDoc',
+              item: t as ManualTask & { linkedEmailId: number },
+            };
+          }
+        }
+      }
+      // Fall through: try seed manual task lookup (ids like 'm2'..'m5').
+      const m = manualTasks.find((x) => x.id === refId);
+      if (m) return { kind: 'manual', item: m };
+    }
+    if (item.kind === 'unclear_gate') {
+      return { kind: 'unclear', dateKey: scheduledDate || todayKey() };
     }
     return {
       kind: 'readonly',
       title: item.title,
-      reason:
-        item.kind === 'unclear_gate'
-          ? "Unclear emails are reviewed from the Inbox — they aren't editable as tasks."
-          : 'This task is managed from the Tasks tab.',
+      reason: 'This task is managed from the Tasks tab.',
     };
-  }, [item, userItems, prompted]);
+  }, [item, userItems, prompted, manualTasks, linkedDocTasks, scheduledDate]);
 
   const [title, setTitle] = useState('');
   const [date, setDate] = useState<string>(scheduledDate || todayKey());
@@ -124,21 +183,30 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
       setEstMin(source.item.kind === 'phone_call' ? 30 : source.item.estMin);
       setNotes(source.item.notes ?? '');
       setPriority(source.item.priority);
+    } else if (source.kind === 'manual' || source.kind === 'linkedDoc') {
+      setTitle(source.item.title);
+      setDate(dateKeyFromDueDays(source.item.deadline));
+      setEstMin(source.item.estMin);
+    } else if (source.kind === 'unclear') {
+      setTitle(item.title);
+      setDate(source.dateKey);
+      setEstMin(item.estMin);
     } else {
       setTitle(source.title);
     }
-  }, [source, scheduledDate]);
+  }, [source, scheduledDate, item.title, item.estMin]);
 
-  const phoneCallLocked = source.kind === 'prompted' && source.item.kind === 'phone_call';
+  const phoneCallLocked =
+    source.kind === 'prompted' && source.item.kind === 'phone_call';
 
   const handleSave = () => {
     setError(null);
     const titleTrim = title.trim();
-    if (!titleTrim) {
+    if (source.kind !== 'unclear' && !titleTrim) {
       setError('Give the task a short title before saving.');
       return;
     }
-    if (!date) {
+    if (source.kind !== 'unclear' && !date) {
       setError('Pick a date.');
       return;
     }
@@ -161,22 +229,78 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
         priority,
         notes,
       });
+    } else if (source.kind === 'manual') {
+      const newDeadline = Math.max(0, daysBetweenLocal(todayKey(), date));
+      // source.item.title is the MERGED title (override-or-seed). If the
+      // user didn't touch the field we send `undefined` (no change) — sending
+      // null would clobber an existing override back to the seed, which
+      // they didn't ask for. The dedicated "Reset to default" button is
+      // the only path that clears overrides.
+      const titleChanged = titleTrim !== source.item.title;
+      setManualTaskFields(source.item.id, {
+        ...(titleChanged && { titleOverride: titleTrim }),
+        deadlineOverride: newDeadline,
+        estMinOverride: estMin,
+      });
+    } else if (source.kind === 'linkedDoc') {
+      const newDeadline = Math.max(0, daysBetweenLocal(todayKey(), date));
+      updateLinkedDocTask(source.item.linkedEmailId, {
+        title: titleTrim,
+        deadline: newDeadline,
+        estMin,
+      });
+    } else if (source.kind === 'unclear') {
+      setUnclearGateEstMin(source.dateKey, estMin);
     }
     onClose();
   };
 
   const handleDelete = () => {
+    if (source.kind === 'readonly') return;
+    if (source.kind === 'unclear') {
+      const ok = window.confirm(
+        "Dismiss the unclear-emails reminder for today? It'll come back tomorrow if any emails still need classifying.",
+      );
+      if (!ok) return;
+      dismissUnclearGate(source.dateKey);
+      onClose();
+      return;
+    }
     let label = 'this task';
-    if (source.kind === 'userTask' || source.kind === 'prompted') label = `"${title.trim() || item.title}"`;
-    else if (source.kind === 'userEvent') label = `the event "${title.trim() || item.title}"`;
-    else return;
+    if (
+      source.kind === 'userTask' ||
+      source.kind === 'prompted' ||
+      source.kind === 'manual' ||
+      source.kind === 'linkedDoc'
+    ) {
+      label = `"${title.trim() || item.title}"`;
+    } else if (source.kind === 'userEvent') {
+      label = `the event "${title.trim() || item.title}"`;
+    }
     const ok = window.confirm(`Remove ${label}? The week will be replanned.`);
     if (!ok) return;
     if (source.kind === 'userTask' || source.kind === 'userEvent') {
       deleteUserPlannedItem(source.item.id);
     } else if (source.kind === 'prompted') {
       removePromptedTask(source.item.id);
+    } else if (source.kind === 'manual') {
+      setManualTaskHidden(source.item.id, true);
+    } else if (source.kind === 'linkedDoc') {
+      dismissLinkedDocTask(source.item.linkedEmailId);
     }
+    onClose();
+  };
+
+  // For manual seeds: let the clinician revert all overrides
+  // (title/deadline/estMin/done/hidden) back to the shipped seed in
+  // one click. The seed array itself is never touched.
+  const handleResetManual = () => {
+    if (source.kind !== 'manual') return;
+    const ok = window.confirm(
+      'Reset this task to its default title, deadline, and time? Your edits will be lost.',
+    );
+    if (!ok) return;
+    clearManualTaskOverride(source.item.id);
     onClose();
   };
 
@@ -188,19 +312,35 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const Icon = item.kind === 'event' ? CalendarClock : phoneCallLocked ? Phone : ClipboardList;
+  const Icon =
+    item.kind === 'event'
+      ? CalendarClock
+      : phoneCallLocked
+        ? Phone
+        : ClipboardList;
   const heading =
     source.kind === 'userEvent'
       ? 'Edit event'
       : source.kind === 'readonly'
         ? 'Task details'
-        : 'Edit task';
+        : source.kind === 'unclear'
+          ? 'Unclear emails reminder'
+          : source.kind === 'linkedDoc'
+            ? 'Edit document task'
+            : source.kind === 'manual'
+              ? 'Edit task'
+              : 'Edit task';
   const editable = source.kind !== 'readonly';
+  const showTitleField = source.kind !== 'unclear';
+  const showDateField = source.kind !== 'unclear';
+  const deleteLabel = source.kind === 'unclear' ? 'Dismiss for today' : 'Delete';
 
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={heading}
@@ -213,7 +353,9 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
               <Icon size={14} />
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm font-bold leading-tight truncate">{heading}</h2>
+              <h2 className="text-sm font-bold leading-tight truncate">
+                {heading}
+              </h2>
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
                 {item.category} · {item.reasonText}
               </p>
@@ -233,13 +375,19 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
         <div className="p-4 space-y-3">
           {!editable && source.kind === 'readonly' && (
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs flex items-start gap-2">
-              <Info size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+              <Info
+                size={14}
+                className="mt-0.5 flex-shrink-0 text-muted-foreground"
+              />
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold leading-snug">{source.title}</p>
                 <p className="text-muted-foreground">{source.reason}</p>
                 <button
                   type="button"
-                  onClick={() => { onNavigateToTasks(); onClose(); }}
+                  onClick={() => {
+                    onNavigateToTasks();
+                    onClose();
+                  }}
                   className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
                 >
                   Open Tasks tab <ExternalLink size={11} />
@@ -248,35 +396,64 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
             </div>
           )}
 
+          {source.kind === 'unclear' && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs flex items-start gap-2">
+              <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-700" />
+              <p className="leading-snug text-amber-900">
+                {item.title}. Set how long you want to reserve for this triage,
+                or dismiss it for today if you've already handled it.
+              </p>
+            </div>
+          )}
+
           {editable && (
             <>
-              <label className="block">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Title</span>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  maxLength={200}
-                  className="mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
-                  data-testid="calendar-task-detail-title"
-                />
-              </label>
-
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Date</span>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
-                    data-testid="calendar-task-detail-date"
-                  />
-                </label>
+              {showTitleField && (
                 <label className="block">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {source.kind === 'userEvent' ? 'Duration (mins)' : 'Time (mins)'}
-                    {phoneCallLocked && <span className="ml-1 text-sky-700 normal-case font-normal">· fixed</span>}
+                    Title
+                  </span>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={200}
+                    className="mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
+                    data-testid="calendar-task-detail-title"
+                  />
+                </label>
+              )}
+
+              <div
+                className={cn(
+                  'grid gap-3',
+                  showDateField ? 'grid-cols-2' : 'grid-cols-1',
+                )}
+              >
+                {showDateField && (
+                  <label className="block">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Date
+                    </span>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
+                      data-testid="calendar-task-detail-date"
+                    />
+                  </label>
+                )}
+                <label className="block">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    {source.kind === 'userEvent'
+                      ? 'Duration (mins)'
+                      : 'Time (mins)'}
+                    {phoneCallLocked && (
+                      <span className="ml-1 text-sky-700 normal-case font-normal">
+                        · fixed
+                      </span>
+                    )}
                   </span>
                   <input
                     type="number"
@@ -284,7 +461,9 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
                     step={5}
                     value={estMin}
                     disabled={phoneCallLocked}
-                    onChange={(e) => setEstMin(Math.max(5, Number(e.target.value) || 5))}
+                    onChange={(e) =>
+                      setEstMin(Math.max(5, Number(e.target.value) || 5))
+                    }
                     className={cn(
                       'mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background',
                       phoneCallLocked && 'opacity-60 cursor-not-allowed',
@@ -292,14 +471,18 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
                     data-testid="calendar-task-detail-mins"
                   />
                   {phoneCallLocked && (
-                    <span className="text-[10px] text-muted-foreground">Phone callbacks always book 30 mins.</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Phone callbacks always book 30 mins.
+                    </span>
                   )}
                 </label>
               </div>
 
               {source.kind === 'userEvent' && (
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Start time (optional)</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Start time (optional)
+                  </span>
                   <input
                     type="time"
                     value={startTime}
@@ -312,10 +495,14 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
 
               {source.kind === 'prompted' && (
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Priority</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Priority
+                  </span>
                   <select
                     value={priority}
-                    onChange={(e) => setPriority(e.target.value as 'high' | 'medium' | 'low')}
+                    onChange={(e) =>
+                      setPriority(e.target.value as 'high' | 'medium' | 'low')
+                    }
                     className="mt-1 w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
                     data-testid="calendar-task-detail-priority"
                   >
@@ -329,7 +516,9 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
               {(source.kind === 'userEvent' || source.kind === 'prompted') && (
                 <label className="block">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {source.kind === 'userEvent' ? 'Notes (optional)' : 'Description / notes'}
+                    {source.kind === 'userEvent'
+                      ? 'Notes (optional)'
+                      : 'Description / notes'}
                   </span>
                   <textarea
                     value={notes}
@@ -342,8 +531,28 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
                 </label>
               )}
 
+              {source.kind === 'linkedDoc' && (
+                <p className="text-[11px] text-muted-foreground italic">
+                  Auto-generated from a linked email. Edits stay on this task
+                  only — the original message in Outlook is left untouched.
+                </p>
+              )}
+
+              {source.kind === 'manual' && (
+                <button
+                  type="button"
+                  onClick={handleResetManual}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  data-testid="calendar-task-detail-reset-manual"
+                >
+                  <RotateCcw size={11} /> Reset to default
+                </button>
+              )}
+
               {error && (
-                <p className="text-xs text-red-700 font-medium" role="alert">{error}</p>
+                <p className="text-xs text-red-700 font-medium" role="alert">
+                  {error}
+                </p>
               )}
             </>
           )}
@@ -357,7 +566,7 @@ export default function CalendarTaskDetailModal({ item, scheduledDate, onClose, 
               className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2.5 py-1.5 rounded text-red-700 hover:bg-red-50"
               data-testid="calendar-task-detail-delete"
             >
-              <Trash2 size={12} /> Delete
+              <Trash2 size={12} /> {deleteLabel}
             </button>
           ) : (
             <span />
