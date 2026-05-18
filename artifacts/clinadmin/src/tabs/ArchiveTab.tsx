@@ -9,6 +9,12 @@ import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { useSentLog, lastSentByEmailId } from '@/lib/sentLogStore';
 import { Send } from 'lucide-react';
 import { CATEGORY_LABEL, CATEGORY_BADGE } from '@/lib/aiCategory';
+import OnLeaveTabBanner from '@/components/OnLeaveTabBanner';
+import type { WeekSetup } from '@/pages/ClinAdmin';
+
+interface Props {
+  weekSetup?: WeekSetup | null;
+}
 
 function fmtAgo(epochMs: number): string {
   const diffMs = Date.now() - epochMs;
@@ -21,7 +27,7 @@ function fmtAgo(epochMs: number): string {
   return `${days}d ago`;
 }
 
-export default function ArchiveTab() {
+export default function ArchiveTab({ weekSetup = null }: Props = {}) {
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
   const sentLog = useSentLog();
@@ -48,6 +54,7 @@ export default function ArchiveTab() {
 
   return (
     <div className="h-[calc(100vh-12rem)] flex flex-col gap-4 animate-in fade-in duration-500">
+      <OnLeaveTabBanner weekSetup={weekSetup} surface="archive" />
       <div className="flex items-center justify-between border border-border/50 rounded-xl bg-card shadow-sm px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">

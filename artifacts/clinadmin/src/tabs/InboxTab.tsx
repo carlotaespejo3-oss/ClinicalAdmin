@@ -41,7 +41,9 @@ import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
 import AutoCreatedTasksStrip from '@/components/AutoCreatedTasksStrip';
 import UnresolvedTaskStrip from '@/components/UnresolvedTaskStrip';
+import OnLeaveTabBanner from '@/components/OnLeaveTabBanner';
 import { useAutoTaskCreator } from '@/lib/autoTaskCreator';
+import type { WeekSetup } from '@/pages/ClinAdmin';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -112,9 +114,10 @@ const KIND_COLOUR: Record<string, string> = {
 
 interface InboxTabProps {
   initialSelectedId?: number | null;
+  weekSetup?: WeekSetup | null;
 }
 
-export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
+export default function InboxTab({ initialSelectedId, weekSetup = null }: InboxTabProps = {}) {
   const [selectedId, setSelectedId] = useState<number | null>(
     initialSelectedId ?? emails[0]?.id ?? null
   );
@@ -629,7 +632,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   };
 
   return (
-    <div className="h-[calc(100vh-12rem)] flex gap-6 animate-in fade-in duration-500">
+    <div className="h-[calc(100vh-12rem)] flex flex-col gap-3 animate-in fade-in duration-500">
+      <OnLeaveTabBanner weekSetup={weekSetup} surface="inbox" />
+      <div className="flex-1 min-h-0 flex gap-6">
       {/* List Pane */}
       <div className="w-1/3 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm">
         <div className="p-4 border-b border-border bg-muted/20">
@@ -1477,6 +1482,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
             <p className="text-xs mt-1">Select any item from the left pane to view clinical details and AI tools.</p>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

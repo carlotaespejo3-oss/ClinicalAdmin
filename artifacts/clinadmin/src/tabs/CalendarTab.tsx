@@ -16,6 +16,7 @@ import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import AvailabilityPanel from '@/components/AvailabilityPanel';
 import LeavePanel from '@/components/LeavePanel';
 import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
+import OnLeaveTabBanner from '@/components/OnLeaveTabBanner';
 import {
   useLeaveBlocks,
   leaveBlocksForDay,
@@ -463,6 +464,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
+      <OnLeaveTabBanner weekSetup={weekSetup} surface="calendar" />
       {/* Header */}
       <Card className="border-border/60">
         <CardContent className="p-4">

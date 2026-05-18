@@ -1,27 +1,9 @@
-import { LEAVE_TYPE_LABEL, type LeaveBlock } from '@/lib/leaveBlocksStore';
+import { type LeaveBlock } from '@/lib/leaveBlocksStore';
+import { onLeaveHeadlineFor, onLeaveTypeLabel, formatBackDay } from '@/lib/leaveCopy';
 
 interface Props {
   block: LeaveBlock;
   dayBackKey: string | null;
-}
-
-const HEADLINES: Record<LeaveBlock['leaveType'], string> = {
-  annual: "You're on annual leave — the planner's taking the day off too.",
-  sick: "You're on sick leave — rest up. The planner's paused for today.",
-  conference: "You're at a conference today — the planner's stepped back.",
-  pd: "You're on professional development today — the planner's stepped back.",
-  unpaid: "You're on unpaid leave — the planner's paused for today.",
-};
-
-function formatBackDay(dayKey: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
-  if (!m) return dayKey;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
 }
 
 // Friendly empty state shown on the dashboard when the clinician is on
@@ -30,8 +12,8 @@ function formatBackDay(dayKey: string): string {
 // calm panel. No counts, no buttons — the point is to get out of the
 // way and let them enjoy their day off.
 export default function OnLeaveDashboard({ block, dayBackKey }: Props) {
-  const headline = HEADLINES[block.leaveType] ?? HEADLINES.annual;
-  const typeLabel = LEAVE_TYPE_LABEL[block.leaveType];
+  const headline = onLeaveHeadlineFor(block.leaveType);
+  const typeLabel = onLeaveTypeLabel(block.leaveType);
 
   return (
     <div
