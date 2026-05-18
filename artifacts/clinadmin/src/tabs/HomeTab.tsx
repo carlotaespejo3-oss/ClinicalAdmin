@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Settings2, Minus, Plus, RotateCcw, Check, ChevronRight } from 'lucide-react';
-import { emails, CAT } from '@/lib/data';
+import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Settings2, Minus, Plus, RotateCcw, Check, ChevronDown } from 'lucide-react';
+import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, PRIORITY_PILL, type Priority } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
@@ -22,6 +22,10 @@ interface Props {
 }
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+// Buffer minutes the planner assumes per week for unscheduled overhead
+// (interruptions, context-switching). Mirrors the constant in TodayTab so
+// the "Top up by X" recommendation matches across views.
+const projectedExtra = 45;
 
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
@@ -173,7 +177,114 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
     setDraftMinutesByDay(buildInitialDraft());
   };
 
-  // ---- Slim status banner ----
+  // ---- AI recommendation panel (mirrors TodayTab so the clinician can
+  // top up hours straight from Home without bouncing to Detailed View) ----
+  const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
+  const taskMins = manualTasks
+    .filter(t => !t.done && !isLinkedDocTask(t))
+    .reduce((a, t) => a + t.estMin, 0);
+  const recommendedMins = Math.round(Math.max(emailMins + taskMins + projectedExtra, 284) * 1.1 / 10) * 10;
+
+  const activeDays = weekSetup ? weekSetup.days : weekData.map(d => d.day);
+
+  const minutesPerDay = useMemo<Record<string, number>>(() => {
+    if (!weekSetup) {
+      return Object.fromEntries(weekData.map(d => [d.day, d.planned]));
+    }
+    const totalMins = Math.round(weekSetup.hours * 60);
+    const overrides = weekSetup.minutesByDay ?? {};
+    const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+    const result: Record<string, number> = {};
+    for (const d of weekSetup.days) {
+      result[d] = overrides[d] != null ? overrides[d] : evenSplit;
+    }
+    return result;
+  }, [weekSetup]);
+
+  const allocatedMins = weekSetup
+    ? activeDays.reduce((sum, d) => sum + (minutesPerDay[d] ?? 0), 0)
+    : weekData.reduce((a, d) => a + d.planned, 0);
+  const isAtRisk = allocatedMins < recommendedMins;
+  const shortfall = recommendedMins - allocatedMins;
+
+  // Pick the two best days to top up — least-loaded active days first,
+  // then any inactive admin days so the clinician can opt-in.
+  const recommendedDays = useMemo(() => {
+    const sortedActive = [...activeDays].sort((a, b) => {
+      const ma = minutesPerDay[a] ?? 0;
+      const mb = minutesPerDay[b] ?? 0;
+      if (ma !== mb) return ma - mb;
+      return ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b);
+    });
+    const inactive = ALL_DAYS.filter(d => !activeDays.includes(d));
+    return [...sortedActive, ...inactive].slice(0, 2);
+  }, [activeDays, minutesPerDay]);
+
+  const [showWhyRec, setShowWhyRec] = useState(false);
+  const [recToast, setRecToast] = useState<string | null>(null);
+
+  type UndoSnapshot = { hours: number; days: string[]; minutesByDay?: Record<string, number> };
+  const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null);
+
+  const showRecToast = (msg: string) => {
+    setRecToast(msg);
+    window.setTimeout(() => setRecToast(prev => {
+      if (prev === msg) {
+        setUndoSnapshot(null);
+        return null;
+      }
+      return prev;
+    }), 2800);
+  };
+
+  const captureSnapshot = (): UndoSnapshot | null => {
+    if (!weekSetup) return null;
+    return {
+      hours: weekSetup.hours,
+      days: [...weekSetup.days],
+      minutesByDay: weekSetup.minutesByDay ? { ...weekSetup.minutesByDay } : undefined,
+    };
+  };
+
+  const handleAddMinutesToDay = (day: string, minsToAdd: number = 30) => {
+    const snapshot = captureSnapshot();
+    const baseDays = weekSetup?.days ?? [];
+    const newDays = baseDays.includes(day)
+      ? baseDays
+      : [...baseDays, day].sort((a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b));
+    const nextMinutes: Record<string, number> = {};
+    for (const d of newDays) {
+      const current = minutesPerDay[d] ?? 0;
+      nextMinutes[d] = d === day ? current + minsToAdd : current;
+    }
+    const newTotalMins = Object.values(nextMinutes).reduce((a, b) => a + b, 0);
+    const newHours = +(newTotalMins / 60).toFixed(2);
+    onUpdateAvailability(newHours, newDays, nextMinutes);
+    setUndoSnapshot(snapshot);
+    showRecToast(`Added ${fmtMins(minsToAdd)} to every ${day} in your weekly schedule`);
+  };
+
+  const handleRebalance = () => {
+    const snapshot = captureSnapshot();
+    const baseHours = weekSetup?.hours ?? 0;
+    const baseDays = weekSetup?.days ?? [];
+    const days = baseDays.length > 0 ? baseDays : ['Tue', 'Wed', 'Thu'];
+    const recommendedHoursRaw = recommendedMins / 60;
+    const targetHours = Math.max(baseHours, Math.ceil(recommendedHoursRaw * 2) / 2);
+    onUpdateAvailability(targetHours, days, undefined);
+    setUndoSnapshot(snapshot);
+    const perDay = Math.round((targetHours * 60) / days.length);
+    showRecToast(`Rebalanced to ${fmtMins(perDay)} per day across ${days.length} day${days.length !== 1 ? 's' : ''}`);
+  };
+
+  const handleUndoRec = () => {
+    if (!undoSnapshot) return;
+    onUpdateAvailability(undoSnapshot.hours, undoSnapshot.days, undoSnapshot.minutesByDay);
+    setUndoSnapshot(null);
+    setRecToast(null);
+  };
+
+  // ---- Status banner ----
   const status = plannerOutput.overallStatus;
   const statusStyles = {
     red:   { bg: 'bg-red-100',   icon: 'text-red-600',   text: 'text-red-600',   Ico: ShieldAlert    },
@@ -228,32 +339,146 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
         })}
       </div>
 
-      {/* Slim status banner — left side only, no AI rec column. The full
-          recommendation surface lives in the Detailed View so this page
-          stays calm. */}
-      <div
-        className="bg-white border border-border rounded-2xl shadow-sm p-5 flex items-start gap-4"
-        data-testid={`status-banner-${status}`}
-      >
-        <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', statusStyles.bg)}>
-          <StatusIcon size={24} className={statusStyles.icon} />
+      {/* Status + AI recommendation banner — left column is the at-a-glance
+          status; right column lets the clinician top up hours directly so
+          the week plan readjusts without bouncing to the Detailed View. */}
+      <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          <div className="p-6 flex items-start gap-4" data-testid={`status-banner-${status}`}>
+            <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', statusStyles.bg)}>
+              <StatusIcon size={24} className={statusStyles.icon} />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted-foreground font-medium">You're currently:</p>
+              <p className={cn('text-xl font-bold', statusStyles.text)} data-testid="status-banner-headline">
+                {youAre} — {plannerOutput.statusHeadline}
+              </p>
+              <p className="text-sm text-foreground" data-testid="status-banner-detail">
+                {plannerOutput.statusDetail}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                You have <strong>{fmtMins(allocatedMins)}</strong> admin booked this week
+                {activeDays.length > 0 && <> across <strong>{activeDays.join(', ')}</strong></>}.
+              </p>
+              {plannerOutput.recommendation && (
+                <p className={cn('text-sm font-medium', statusStyles.text)} data-testid="status-banner-recommendation">
+                  {plannerOutput.recommendation}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6 bg-slate-50/60 border-l border-border">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">AI recommendation</p>
+            {isAtRisk ? (
+              <>
+                <p className="text-lg font-bold text-foreground leading-tight mb-1">
+                  Top up your week by {fmtMins(Math.max(shortfall, 30))}
+                </p>
+                <div className="flex items-center gap-2 mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    {recommendedDays[0]
+                      ? <>Best option: add a 30-min slot to {recommendedDays[0]} afternoon. Tap once for +30min, twice for +1h.</>
+                      : <>Top up your week to cover the shortfall.</>}
+                  </p>
+                  <span className="text-amber-500 text-xl">↷</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {recommendedDays[0] && (
+                    <div className="inline-flex rounded-lg overflow-hidden border border-primary shadow-sm" data-testid="button-rec-add-group-primary">
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[0], 30)}
+                        className="bg-primary text-white text-xs font-bold px-3 py-2 hover:bg-primary/90 transition-colors"
+                        data-testid="button-rec-add-30-primary"
+                      >
+                        +30min {recommendedDays[0]}
+                      </button>
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[0], 60)}
+                        className="bg-primary/80 text-white text-xs font-bold px-3 py-2 border-l border-white/30 hover:bg-primary/90 transition-colors"
+                        data-testid="button-rec-add-60-primary"
+                        aria-label={`Add 1 hour to ${recommendedDays[0]}`}
+                      >
+                        +1h
+                      </button>
+                    </div>
+                  )}
+                  {recommendedDays[1] && (
+                    <div className="inline-flex rounded-lg overflow-hidden border border-border" data-testid="button-rec-add-group-secondary">
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[1], 30)}
+                        className="bg-white text-foreground text-xs font-bold px-3 py-2 hover:bg-accent transition-colors"
+                        data-testid="button-rec-add-30-secondary"
+                      >
+                        +30min {recommendedDays[1]}
+                      </button>
+                      <button
+                        onClick={() => handleAddMinutesToDay(recommendedDays[1], 60)}
+                        className="bg-slate-50 text-foreground text-xs font-bold px-3 py-2 border-l border-border hover:bg-accent transition-colors"
+                        data-testid="button-rec-add-60-secondary"
+                        aria-label={`Add 1 hour to ${recommendedDays[1]}`}
+                      >
+                        +1h
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleRebalance}
+                    className="bg-white border border-border text-foreground text-xs font-bold px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                    data-testid="button-rec-rebalance"
+                  >
+                    Rebalance my week
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-foreground leading-tight mb-1">You're well-planned for this week</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Your {fmtMins(allocatedMins)} allocation covers all current and projected workload.
+                </p>
+              </>
+            )}
+            {recToast && (
+              <div
+                className="mb-3 inline-flex items-center gap-2 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full animate-in fade-in"
+                data-testid="rec-toast"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Check size={11} /> {recToast}
+                </span>
+                {undoSnapshot && (
+                  <>
+                    <span className="text-green-300">·</span>
+                    <button
+                      type="button"
+                      onClick={handleUndoRec}
+                      className="text-green-700 hover:text-green-800 underline underline-offset-2 font-bold"
+                      data-testid="button-rec-undo"
+                    >
+                      Undo
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setShowWhyRec(v => !v)}
+              className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+              data-testid="button-rec-why"
+            >
+              See why this is recommended
+              <ChevronDown size={12} className={cn("transition-transform", showWhyRec && "rotate-180")} />
+            </button>
+            {showWhyRec && (
+              <div className="mt-3 p-3 bg-white border border-border rounded-xl text-xs text-muted-foreground space-y-1">
+                <p><strong className="text-foreground">Emails:</strong> {fmtMins(emailMins)} across {emails.length} items in your inbox.</p>
+                <p><strong className="text-foreground">Tasks:</strong> {fmtMins(taskMins)} across {manualTasks.length} clinical/admin tasks.</p>
+                <p><strong className="text-foreground">Buffer:</strong> {fmtMins(projectedExtra)} projected overhead based on your history.</p>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="space-y-1 flex-1 min-w-0">
-          <p className="text-sm text-muted-foreground font-medium">You're currently:</p>
-          <p className={cn('text-xl font-bold', statusStyles.text)} data-testid="status-banner-headline">
-            {youAre} — {plannerOutput.statusHeadline}
-          </p>
-          <p className="text-sm text-foreground" data-testid="status-banner-detail">
-            {plannerOutput.statusDetail}
-          </p>
-        </div>
-        <button
-          onClick={() => onNavigate('Detailed View')}
-          className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline whitespace-nowrap flex-shrink-0 mt-1"
-          data-testid="button-open-detailed-view"
-        >
-          Detailed view <ChevronRight size={12} />
-        </button>
       </div>
 
       {/* Today's plan — the only Today's Plan on this page. Reads from
