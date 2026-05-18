@@ -1065,11 +1065,6 @@ export const RecordDraftAuditBody = zod
       .describe(
         "AI draft text BEFORE de-identification. Discarded server-side after scrub + hash.",
       ),
-    aiDraftHash: zod
-      .string()
-      .describe(
-        "SHA-256 hex of the original pre-scrub draft, computed client-side.",
-      ),
     evidenceSnapshot: zod.array(
       zod
         .object({
@@ -1106,7 +1101,7 @@ export const RecordDraftAuditBody = zod
     draftedAt: zod.coerce.date(),
   })
   .describe(
-    "Payload for POST \/draft-audit\/{id}\/draft. The server scrubs aiDraftText against participants before storing it, and hashes the ORIGINAL pre-scrub text into ai_draft_hash.",
+    "Payload for POST \/draft-audit\/{id}\/draft. The server scrubs aiDraftText against participants before storing it, hashes the ORIGINAL pre-scrub text server-side into ai_draft_hash (single source of truth for tamper-evidence), then discards the original.",
   );
 
 /**

@@ -9,13 +9,11 @@ import type { EmailParticipant } from "./emailParticipant";
 import type { EvidenceSnapshotEntry } from "./evidenceSnapshotEntry";
 
 /**
- * Payload for POST /draft-audit/{id}/draft. The server scrubs aiDraftText against participants before storing it, and hashes the ORIGINAL pre-scrub text into ai_draft_hash.
+ * Payload for POST /draft-audit/{id}/draft. The server scrubs aiDraftText against participants before storing it, hashes the ORIGINAL pre-scrub text server-side into ai_draft_hash (single source of truth for tamper-evidence), then discards the original.
  */
 export interface DraftAuditInput {
   /** AI draft text BEFORE de-identification. Discarded server-side after scrub + hash. */
   aiDraftText: string;
-  /** SHA-256 hex of the original pre-scrub draft, computed client-side. */
-  aiDraftHash: string;
   evidenceSnapshot: EvidenceSnapshotEntry[];
   participants: EmailParticipant[];
   draftedAt: Date;

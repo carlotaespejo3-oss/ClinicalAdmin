@@ -5,10 +5,12 @@
 // Two fire-and-forget operations on top of the generated API client:
 //
 //   recordDraft  — POST /api/draft-audit/{id}/draft after an AI draft lands.
-//                  Hashes the draft client-side (SHA-256 hex), sends the
-//                  evidence snapshot, the AI text, and the participants list
-//                  for server-side de-id. The server scrubs the text BEFORE
-//                  writing it to the DB.
+//                  Sends the AI text, the evidence snapshot, and the
+//                  participants list for server-side de-id. The server
+//                  scrubs the text and hashes the original pre-scrub
+//                  text into ai_draft_hash (server-side hash = single
+//                  source of truth for tamper-evidence) before writing
+//                  to the DB.
 //
 //   recordSent   — POST /api/draft-audit/{id}/sent when the clinician hits
 //                  Send. Hashes the final sent text and sends ONLY the hash.
@@ -50,10 +52,8 @@ export interface RecordDraftInput {
 
 export async function recordDraft(input: RecordDraftInput): Promise<void> {
   try {
-    const aiDraftHash = await sha256Hex(input.aiDraftText);
     await recordDraftAudit(input.outlookEmailId, {
       aiDraftText: input.aiDraftText,
-      aiDraftHash,
       evidenceSnapshot: input.evidenceSnapshot,
       participants: input.participants,
       draftedAt: new Date().toISOString(),

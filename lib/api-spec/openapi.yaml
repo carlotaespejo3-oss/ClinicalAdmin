@@ -1971,15 +1971,14 @@ components:
       type: object
       description: >-
         Payload for POST /draft-audit/{id}/draft. The server scrubs
-        aiDraftText against participants before storing it, and hashes
-        the ORIGINAL pre-scrub text into ai_draft_hash.
+        aiDraftText against participants before storing it, hashes
+        the ORIGINAL pre-scrub text server-side into ai_draft_hash
+        (single source of truth for tamper-evidence), then discards
+        the original.
       properties:
         aiDraftText:
           type: string
           description: AI draft text BEFORE de-identification. Discarded server-side after scrub + hash.
-        aiDraftHash:
-          type: string
-          description: SHA-256 hex of the original pre-scrub draft, computed client-side.
         evidenceSnapshot:
           type: array
           items:
@@ -1993,7 +1992,6 @@ components:
           format: date-time
       required:
         - aiDraftText
-        - aiDraftHash
         - evidenceSnapshot
         - participants
         - draftedAt

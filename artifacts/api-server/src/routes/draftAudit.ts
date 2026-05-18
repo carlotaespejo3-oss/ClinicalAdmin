@@ -1,8 +1,13 @@
 import { Router } from "express";
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db, draftAuditTable, type EvidenceSnapshotEntry } from "@workspace/db";
 import { RecordDraftAuditBody, RecordDraftAuditSentBody } from "@workspace/api-zod";
 import { deidentify, type Participant } from "../lib/deidentify";
+
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
 
 const router = Router();
 const DEFAULT_CLINICIAN_ID = "default";
@@ -65,12 +70,14 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
   const body = parsed.data;
 
   // De-id BEFORE write. Original is discarded after the call — never
-  // touches the DB. The hash the client computed is on the original
-  // pre-scrub text (single source of truth for draft_edited comparison).
+  // touches the DB. The hash is computed SERVER-SIDE from the original
+  // pre-scrub text so the tamper-evidence trail isn't trusting a
+  // client-supplied value (matches the chat_audit pattern).
   const participants: Participant[] = body.participants.map((p) => ({
     name: p.name,
     role: p.role,
   }));
+  const aiDraftHash = sha256Hex(body.aiDraftText);
   const scrubbed = deidentify(body.aiDraftText, participants);
 
   // Defensive: if the scrubber leaves any of the supplied names verbatim
@@ -110,7 +117,7 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
       clinicianId: DEFAULT_CLINICIAN_ID,
       outlookEmailId: id,
       aiDraftText: scrubbed,
-      aiDraftHash: body.aiDraftHash,
+      aiDraftHash,
       sentHash: null,
       draftEdited: false,
       evidenceSnapshot: snapshot,
@@ -121,7 +128,7 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
       target: [draftAuditTable.clinicianId, draftAuditTable.outlookEmailId],
       set: {
         aiDraftText: scrubbed,
-        aiDraftHash: body.aiDraftHash,
+        aiDraftHash,
         // Three cases, evaluated atomically inside the upsert so we are
         // race-safe against a concurrent /sent POST:
         //   1) STUB — prior row has aiDraftHash IS NULL but a sentHash
@@ -135,18 +142,18 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
         //      not be compared against this one; clear sent state.
         sentHash: sql`CASE
           WHEN ${draftAuditTable.aiDraftHash} IS NULL THEN ${draftAuditTable.sentHash}
-          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentHash}
+          WHEN ${draftAuditTable.aiDraftHash} = ${aiDraftHash} THEN ${draftAuditTable.sentHash}
           ELSE NULL
         END`,
         sentAt: sql`CASE
           WHEN ${draftAuditTable.aiDraftHash} IS NULL THEN ${draftAuditTable.sentAt}
-          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentAt}
+          WHEN ${draftAuditTable.aiDraftHash} = ${aiDraftHash} THEN ${draftAuditTable.sentAt}
           ELSE NULL
         END`,
         draftEdited: sql`CASE
           WHEN ${draftAuditTable.aiDraftHash} IS NULL AND ${draftAuditTable.sentHash} IS NOT NULL
-            THEN ${draftAuditTable.sentHash} <> ${body.aiDraftHash}
-          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.draftEdited}
+            THEN ${draftAuditTable.sentHash} <> ${aiDraftHash}
+          WHEN ${draftAuditTable.aiDraftHash} = ${aiDraftHash} THEN ${draftAuditTable.draftEdited}
           ELSE FALSE
         END`,
         evidenceSnapshot: snapshot,
@@ -158,9 +165,14 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
 });
 
 // POST /api/draft-audit/:outlookEmailId/sent
-// Hash-only sent-record. The full sent text never leaves the browser.
-// Server compares sentHash against the stored ai_draft_hash to derive
-// draft_edited.
+// Hash-only sent-record. The full sent text never leaves the browser
+// (storage rule: outgoing correspondence lives in Outlook Sent Items,
+// nowhere else). So unlike the /draft handler — which receives the
+// full text and recomputes the hash server-side — this endpoint
+// necessarily trusts the client-supplied sentHash. The asymmetry is
+// deliberate: we'd rather have a client-trusted hash than persist the
+// sent body. Server compares sentHash against the stored ai_draft_hash
+// to derive draft_edited.
 //
 // Race-safety: the comparison happens INSIDE the upsert (single SQL
 // statement) — no read-modify-write, so a concurrent /draft POST cannot
