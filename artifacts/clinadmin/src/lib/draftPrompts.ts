@@ -265,3 +265,63 @@ ${returnOnlyBody()}
 
 ${emailBodyBlock(email)}`;
 }
+
+// ---- Mini chat: freeform conversation about the open email ----
+//
+// The chat box supports two intents in a single thread:
+//   1. Writing or revising a reply draft ("decline politely", "make it warmer")
+//   2. Answering a clinical / literature / practical question
+//      ("what's the evidence for X in adolescents?", "is Y safe with Z?")
+//
+// The AI replies with a small JSON envelope so the client knows which kind it
+// is — drafts get a copy-to-clipboard button, answers render as prose.
+// Anything that fails to parse falls back to a plain answer.
+export type ChatTurn = {
+  role: 'clinician' | 'assistant';
+  kind: 'draft' | 'answer';
+  content: string;
+};
+
+function renderHistory(history: ChatTurn[]): string {
+  if (history.length === 0) return '(no prior turns)';
+  return history
+    .map((t) => {
+      if (t.role === 'clinician') return `[clinician]: ${t.content}`;
+      const label = t.kind === 'draft' ? '[assistant draft]' : '[assistant answer]';
+      return `${label}: ${t.content}`;
+    })
+    .join('\n\n');
+}
+
+export function buildChatPrompt(
+  email: Email,
+  history: ChatTurn[],
+  userMessage: string,
+): string {
+  return `${COMMON_HEADER}
+
+You are a clinical assistant for the consultant. They are looking at the email below and chatting with you about it. You can do two things:
+
+1) WRITE OR REVISE A DRAFT REPLY when they ask for one ("draft a polite decline", "rewrite as a one-liner", "make it warmer").
+2) ANSWER A CLINICAL / LITERATURE / PRACTICAL QUESTION concisely ("what's the evidence for X in adolescents?", "is Y safe with Z?", "what does the RANZCP guidance say about Z?"). Cite specific guidelines or papers by name where you can. The clinician knows the field — be brief and practical, not introductory.
+
+Reply as a SINGLE JSON object only — no markdown fences, no preamble, no commentary outside the JSON:
+
+{ "kind": "draft", "body": "..." }     ← use when writing or revising a reply
+{ "kind": "answer", "text": "..." }    ← use for everything else (questions, discussion, clarifications)
+
+Use "draft" ONLY when the clinician has clearly asked for a reply to be written or revised. If you are unsure, use "answer".
+
+Drafts MUST end with EXACTLY this sign-off (do not modify):
+${signOffFor(email)}${styleBlockFor(email)}
+
+${emailBodyBlock(email)}
+
+Conversation so far:
+${renderHistory(history)}
+
+Most recent clinician message:
+${userMessage.trim()}
+
+Respond now with the JSON envelope only.`;
+}

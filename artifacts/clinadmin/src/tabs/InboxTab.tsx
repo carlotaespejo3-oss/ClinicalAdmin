@@ -26,6 +26,8 @@ import {
   buildAdminPrompt,
   buildAcknowledgementPrompt,
   buildExtraDraftPrompt,
+  buildChatPrompt,
+  type ChatTurn,
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
@@ -604,29 +606,94 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     void runDraft(selectedEmail, 'single', buildAcknowledgementPrompt(selectedEmail));
   };
 
-  // ---- Mini chat box (extra draft from a freeform clinician instruction) ----
-  const [extraInstruction, setExtraInstruction] = useState('');
-  const [extraDraft, setExtraDraft] = useState<Record<number, string>>({});
-  const [extraLoading, setExtraLoading] = useState<Record<number, boolean>>({});
-  const [extraError, setExtraError] = useState<Record<number, boolean>>({});
-  const handleExtraDraft = async () => {
+  // ---- Mini chat box: ad-hoc conversation about the open email ----
+  //
+  // The clinician can either ask for a different draft ("decline politely")
+  // or a clinical/literature question ("what does RANZCP say about X?"). The
+  // AI replies with a small JSON envelope { kind: 'draft'|'answer', ... } so
+  // the UI knows whether to render a copyable draft or a prose answer.
+  // Anything that fails to parse falls back to a plain answer.
+  const [chatInput, setChatInput] = useState('');
+  const [chatThreads, setChatThreads] = useState<Record<number, ChatTurn[]>>({});
+  const [chatLoading, setChatLoading] = useState<Record<number, boolean>>({});
+  const [chatError, setChatError] = useState<Record<number, boolean>>({});
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Latest AI draft per email, harvested from chat — used by the
+  // reply-language detector below. Old name kept to minimise churn at the
+  // call site.
+  const extraDraft: Record<number, string> = Object.fromEntries(
+    Object.entries(chatThreads).map(([id, turns]) => {
+      const lastDraft = [...turns].reverse().find((t) => t.role === 'assistant' && t.kind === 'draft');
+      return [id, lastDraft?.content ?? ''];
+    }),
+  );
+
+  const parseChatReply = (raw: string): { kind: 'draft' | 'answer'; content: string } => {
+    const trimmed = (raw ?? '').trim();
+    // Strip a possible ```json fence the model may add despite instructions.
+    const unfenced = trimmed
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    try {
+      const obj = JSON.parse(unfenced) as { kind?: string; body?: string; text?: string };
+      if (obj && obj.kind === 'draft' && typeof obj.body === 'string') {
+        return { kind: 'draft', content: obj.body };
+      }
+      if (obj && obj.kind === 'answer' && typeof obj.text === 'string') {
+        return { kind: 'answer', content: obj.text };
+      }
+    } catch {
+      // fall through to plain-text fallback
+    }
+    return { kind: 'answer', content: unfenced };
+  };
+
+  const handleChatSend = async () => {
     if (!selectedEmail) return;
-    const instruction = extraInstruction.trim();
-    if (!instruction) return;
+    const message = chatInput.trim();
+    if (!message) return;
     const id = selectedEmail.id;
-    setExtraLoading((p) => ({ ...p, [id]: true }));
-    setExtraError((p) => ({ ...p, [id]: false }));
+    const history = chatThreads[id] ?? [];
+    const nextHistory: ChatTurn[] = [...history, { role: 'clinician', kind: 'answer', content: message }];
+    setChatThreads((p) => ({ ...p, [id]: nextHistory }));
+    setChatInput('');
+    setChatLoading((p) => ({ ...p, [id]: true }));
+    setChatError((p) => ({ ...p, [id]: false }));
     try {
       const res = await aiComplete.mutateAsync({
-        data: { prompt: buildExtraDraftPrompt(selectedEmail, instruction) },
+        data: { prompt: buildChatPrompt(selectedEmail, history, message) },
       });
-      setExtraDraft((p) => ({ ...p, [id]: res.text ?? '' }));
-      setExtraInstruction('');
+      const parsed = parseChatReply(res.text ?? '');
+      setChatThreads((p) => ({
+        ...p,
+        [id]: [...nextHistory, { role: 'assistant', kind: parsed.kind, content: parsed.content }],
+      }));
     } catch {
-      setExtraError((p) => ({ ...p, [id]: true }));
+      setChatError((p) => ({ ...p, [id]: true }));
     } finally {
-      setExtraLoading((p) => ({ ...p, [id]: false }));
+      setChatLoading((p) => ({ ...p, [id]: false }));
     }
+  };
+
+  // Auto-scroll the chat thread to the latest message whenever the open
+  // email's turns or loading state changes.
+  const selectedTurns = selectedEmail ? chatThreads[selectedEmail.id] ?? [] : [];
+  const selectedLoading = selectedEmail ? chatLoading[selectedEmail.id] ?? false : false;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [selectedTurns.length, selectedLoading, selectedEmail?.id]);
+
+  const handleChatClear = () => {
+    if (!selectedEmail) return;
+    setChatThreads((p) => {
+      const next = { ...p };
+      delete next[selectedEmail.id];
+      return next;
+    });
+    setChatError((p) => ({ ...p, [selectedEmail.id]: false }));
   };
 
   // ---- UNCLEAR override (manual category pick) ----
@@ -1557,70 +1624,114 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   classification={classifications.get(selectedEmail.id)}
                 />
 
-                {/* ---- Mini chat box: ad-hoc extra drafts (hidden for UNCLEAR) ---- */}
+                {/* ---- Mini chat: ad-hoc conversation about the open email ----
+                  Supports two intents in one thread: writing/revising a reply
+                  draft, OR asking a clinical / literature question. Hidden for
+                  LEGAL (human-only) and UNCLEAR (pick a category first). */}
                 {(() => {
                   const cls = classifications.get(selectedEmail.id);
                   if (!cls) return null;
                   const mode = draftModeFor(cls.category);
-                  // LEGAL is human-only — never offer any AI draft surface,
-                  // including the freeform mini chat. UNCLEAR also hidden
-                  // because the clinician should pick a category first.
                   if (mode === 'unclear' || mode === 'legal') return null;
-                  const text = extraDraft[selectedEmail.id];
-                  const isLoading = extraLoading[selectedEmail.id];
-                  const isError = extraError[selectedEmail.id];
+                  const turns = chatThreads[selectedEmail.id] ?? [];
+                  const isLoading = chatLoading[selectedEmail.id];
+                  const isError = chatError[selectedEmail.id];
                   return (
                     <div className="bg-blue-50/40 border border-blue-200 rounded-xl p-4 shadow-sm" data-testid="mini-chat-box">
                       <div className="flex items-center gap-2 mb-2">
                         <MessageSquare size={14} className="text-blue-700" />
-                        <h4 className="text-[11px] font-bold text-blue-800 uppercase tracking-widest">Need a different draft?</h4>
+                        <h4 className="text-[11px] font-bold text-blue-800 uppercase tracking-widest flex-1">Ask the AI</h4>
+                        {turns.length > 0 && (
+                          <button
+                            onClick={handleChatClear}
+                            className="text-[10px] font-semibold text-blue-700/70 hover:text-blue-900 uppercase tracking-tight"
+                            data-testid="button-chat-clear"
+                          >
+                            Clear
+                          </button>
+                        )}
                       </div>
-                      <p className="text-[11px] text-blue-900/80 mb-3">
-                        Tell the AI what to write instead — e.g. "decline politely", "ask for blood results first", "write a one-liner".
-                      </p>
+                      {turns.length === 0 && (
+                        <p className="text-[11px] text-blue-900/80 mb-3">
+                          Ask for a different draft (e.g. "decline politely", "write a one-liner"), or a clinical question
+                          (e.g. "what does RANZCP say about SSRIs in under-18s?", "is sertraline safe with methylphenidate?").
+                        </p>
+                      )}
+                      {turns.length > 0 && (
+                        <div ref={chatScrollRef} className="space-y-2 mb-3 max-h-[420px] overflow-y-auto pr-1" data-testid="chat-thread">
+                          {turns.map((turn, i) => {
+                            if (turn.role === 'clinician') {
+                              return (
+                                <div key={i} className="flex justify-end" data-testid={`chat-turn-clinician-${i}`}>
+                                  <div className="max-w-[85%] bg-blue-600 text-white text-xs leading-relaxed px-3 py-2 rounded-2xl rounded-br-sm whitespace-pre-wrap">
+                                    {turn.content}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (turn.kind === 'draft') {
+                              return (
+                                <div key={i} className="flex flex-col items-start" data-testid={`chat-turn-draft-${i}`}>
+                                  <div className="text-[10px] font-bold text-blue-700/70 uppercase tracking-widest mb-1 pl-1">
+                                    Suggested draft
+                                  </div>
+                                  <div className="w-full text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-4 border-blue-300 pl-4 bg-white p-4 rounded shadow-inner font-sans">
+                                    {turn.content}
+                                  </div>
+                                  <div className="mt-1.5 self-end">
+                                    <button
+                                      onClick={() => handleCopy(selectedEmail.id, 'single', turn.content)}
+                                      className="text-[10px] font-bold bg-blue-600 text-white px-3 py-1.5 rounded shadow hover:bg-blue-700 transition-colors uppercase tracking-tight"
+                                      data-testid={`button-copy-chat-draft-${i}`}
+                                    >
+                                      Copy to Clipboard
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div key={i} className="flex justify-start" data-testid={`chat-turn-answer-${i}`}>
+                                <div className="max-w-[92%] bg-white border border-blue-100 text-slate-800 text-xs leading-relaxed px-3 py-2 rounded-2xl rounded-bl-sm whitespace-pre-wrap shadow-sm">
+                                  {turn.content}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {isLoading && (
+                            <div className="flex justify-start" data-testid="chat-loading">
+                              <div className="bg-white border border-blue-100 text-blue-700 text-xs px-3 py-2 rounded-2xl rounded-bl-sm shadow-sm flex items-center gap-2">
+                                <Loader2 size={12} className="animate-spin" />
+                                Thinking…
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {isError && (
+                        <p className="mb-2 text-[11px] text-red-600 font-bold">That didn't go through. Try again or rephrase.</p>
+                      )}
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          value={extraInstruction}
-                          onChange={(e) => setExtraInstruction(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !isLoading) void handleExtraDraft(); }}
-                          placeholder="Type an instruction…"
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !isLoading) void handleChatSend(); }}
+                          placeholder="Draft a reply, or ask a clinical question…"
                           className="flex-1 bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"
                           data-testid="input-extra-instruction"
                           disabled={isLoading}
                         />
                         <button
-                          onClick={() => void handleExtraDraft()}
-                          disabled={isLoading || !extraInstruction.trim()}
+                          onClick={() => void handleChatSend()}
+                          disabled={isLoading || !chatInput.trim()}
                           className="flex items-center gap-1.5 bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
                           data-testid="button-extra-draft"
                         >
-                          {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                          Draft
+                          {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                          Send
                         </button>
                       </div>
-                      {isError && !text && (
-                        <p className="mt-2 text-[11px] text-red-600 font-bold">Draft failed. Try rephrasing.</p>
-                      )}
-                      {text && (
-                        <div className="mt-3">
-                          <textarea
-                            value={text}
-                            onChange={(e) => setExtraDraft((p) => ({ ...p, [selectedEmail.id]: e.target.value }))}
-                            className="w-full min-h-[160px] text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-4 border-blue-300 pl-4 bg-white p-4 rounded shadow-inner font-sans resize-y focus:outline-none focus:ring-2 focus:ring-blue-300"
-                            data-testid="extra-draft-textarea"
-                          />
-                          <div className="mt-2 flex justify-end">
-                            <button
-                              onClick={() => handleCopy(selectedEmail.id, 'single', text)}
-                              className="text-[10px] font-bold bg-blue-600 text-white px-3 py-1.5 rounded shadow hover:bg-blue-700 transition-colors uppercase tracking-tight"
-                              data-testid="button-copy-extra-draft"
-                            >
-                              Copy to Clipboard
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })()}
