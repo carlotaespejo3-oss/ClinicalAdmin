@@ -30,6 +30,8 @@ import type {
   AnthropicMessageInput,
   ArchiveEmailInput,
   ArchivedRecord,
+  ChatAuditTurn,
+  ChatAuditTurnInput,
   ClinicianSettings,
   DeferralRecord,
   DismissPromptedTaskInput,
@@ -4415,6 +4417,182 @@ export const useRecordDraftAuditSent = <
   TContext
 > => {
   return useMutation(getRecordDraftAuditSentMutationOptions(options));
+};
+
+/**
+ * @summary Get the full chat-audit thread for one email (in turn order)
+ */
+export const getGetChatAuditUrl = (outlookEmailId: string) => {
+  return `/api/chat-audit/${outlookEmailId}`;
+};
+
+export const getChatAudit = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<ChatAuditTurn[]> => {
+  return customFetch<ChatAuditTurn[]>(getGetChatAuditUrl(outlookEmailId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetChatAuditQueryKey = (outlookEmailId: string) => {
+  return [`/api/chat-audit/${outlookEmailId}`] as const;
+};
+
+export const getGetChatAuditQueryOptions = <
+  TData = Awaited<ReturnType<typeof getChatAudit>>,
+  TError = ErrorType<unknown>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getChatAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetChatAuditQueryKey(outlookEmailId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatAudit>>> = ({
+    signal,
+  }) => getChatAudit(outlookEmailId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!outlookEmailId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getChatAudit>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetChatAuditQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getChatAudit>>
+>;
+export type GetChatAuditQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the full chat-audit thread for one email (in turn order)
+ */
+
+export function useGetChatAudit<
+  TData = Awaited<ReturnType<typeof getChatAudit>>,
+  TError = ErrorType<unknown>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getChatAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetChatAuditQueryOptions(outlookEmailId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Server de-identifies the content (replaces patient/parent/person names with placeholders) before any write. The original pre-scrub text is discarded after hashing. One row per turn.
+ * @summary Append one turn to the chat-audit thread for an email
+ */
+export const getRecordChatAuditTurnUrl = (outlookEmailId: string) => {
+  return `/api/chat-audit/${outlookEmailId}/turn`;
+};
+
+export const recordChatAuditTurn = async (
+  outlookEmailId: string,
+  chatAuditTurnInput: ChatAuditTurnInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRecordChatAuditTurnUrl(outlookEmailId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(chatAuditTurnInput),
+  });
+};
+
+export const getRecordChatAuditTurnMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordChatAuditTurn>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<ChatAuditTurnInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordChatAuditTurn>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<ChatAuditTurnInput> },
+  TContext
+> => {
+  const mutationKey = ["recordChatAuditTurn"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordChatAuditTurn>>,
+    { outlookEmailId: string; data: BodyType<ChatAuditTurnInput> }
+  > = (props) => {
+    const { outlookEmailId, data } = props ?? {};
+
+    return recordChatAuditTurn(outlookEmailId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordChatAuditTurnMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordChatAuditTurn>>
+>;
+export type RecordChatAuditTurnMutationBody = BodyType<ChatAuditTurnInput>;
+export type RecordChatAuditTurnMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Append one turn to the chat-audit thread for an email
+ */
+export const useRecordChatAuditTurn = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordChatAuditTurn>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<ChatAuditTurnInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordChatAuditTurn>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<ChatAuditTurnInput> },
+  TContext
+> => {
+  return useMutation(getRecordChatAuditTurnMutationOptions(options));
 };
 
 /**

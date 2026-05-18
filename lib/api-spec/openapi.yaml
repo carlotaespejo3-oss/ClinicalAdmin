@@ -44,6 +44,8 @@ tags:
     description: Per-email evidence citations — references into the source registry, never guideline content
   - name: draftAudit
     description: Medico-legal audit trail of AI drafts (de-identified) + evidence snapshot + sent-text hashes. Audit-only carve-out from the three-bucket rule.
+  - name: chatAudit
+    description: Medico-legal audit trail of the freeform AI chat next to each email (de-identified). Audit-only carve-out from the three-bucket rule.
   - name: evidenceFetch
     description: Server-side live fetch of registered guideline URLs with allow-list + timeouts (no cross-domain redirects).
 paths:
@@ -1000,6 +1002,50 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DraftAuditSentInput"
+      responses:
+        "204":
+          description: Recorded
+  /chat-audit/{outlookEmailId}:
+    get:
+      operationId: getChatAudit
+      tags: [chatAudit]
+      summary: Get the full chat-audit thread for one email (in turn order)
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chat-audit thread (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatAuditTurn"
+  /chat-audit/{outlookEmailId}/turn:
+    post:
+      operationId: recordChatAuditTurn
+      tags: [chatAudit]
+      summary: Append one turn to the chat-audit thread for an email
+      description: >-
+        Server de-identifies the content (replaces patient/parent/person
+        names with placeholders) before any write. The original pre-scrub
+        text is discarded after hashing. One row per turn.
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatAuditTurnInput"
       responses:
         "204":
           description: Recorded
@@ -1968,6 +2014,79 @@ components:
         - sentHash
         - sentAt
       additionalProperties: false
+    ChatAuditTurnInput:
+      type: object
+      description: >-
+        Payload for POST /chat-audit/{id}/turn. The server scrubs
+        content against participants before storing it, hashes the
+        ORIGINAL pre-scrub text server-side (single source of truth
+        for tamper-evidence), then discards the original.
+      properties:
+        turnIndex:
+          type: integer
+          minimum: 0
+          description: >-
+            0-based position of this turn in the email's chat thread.
+        role:
+          type: string
+          enum: [clinician, assistant]
+        kind:
+          type: string
+          enum: [message, draft, answer]
+          description: >-
+            "message" for clinician turns; "draft" or "answer" for assistant turns.
+        content:
+          type: string
+          description: Turn content BEFORE de-identification. Discarded server-side after scrub + hash.
+        participants:
+          type: array
+          minItems: 1
+          description: >-
+            Names to scrub from the content. At minimum the sender of
+            the email; the de-id pass is only as good as this list, so
+            empty lists are rejected (400).
+          items:
+            $ref: "#/components/schemas/EmailParticipant"
+      required:
+        - turnIndex
+        - role
+        - kind
+        - content
+        - participants
+      additionalProperties: false
+    ChatAuditTurn:
+      type: object
+      description: One de-identified turn from the chat-audit thread.
+      properties:
+        id:
+          type: integer
+        outlookEmailId:
+          type: string
+        turnIndex:
+          type: integer
+        role:
+          type: string
+          enum: [clinician, assistant]
+        kind:
+          type: string
+          enum: [message, draft, answer]
+        contentDeid:
+          type: string
+          description: De-identified — patient/parent/other names replaced with placeholders.
+        contentHash:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - outlookEmailId
+        - turnIndex
+        - role
+        - kind
+        - contentDeid
+        - contentHash
+        - createdAt
     DraftAuditRecord:
       type: object
       description: One row of draft_audit (audit-only carve-out from the three-bucket rule).

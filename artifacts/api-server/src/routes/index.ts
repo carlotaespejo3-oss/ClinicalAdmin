@@ -17,6 +17,7 @@ import sidebarTasksRouter from "./sidebarTasks";
 import evidenceSourcesRouter from "./evidenceSources";
 import emailEvidenceRouter from "./emailEvidence";
 import draftAuditRouter from "./draftAudit";
+import chatAuditRouter from "./chatAudit";
 import evidenceFetchRouter from "./evidenceFetch";
 import leaveBlocksRouter from "./leaveBlocks";
 
@@ -40,6 +41,7 @@ router.use(sidebarTasksRouter);
 router.use(evidenceSourcesRouter);
 router.use(emailEvidenceRouter);
 router.use(draftAuditRouter);
+router.use(chatAuditRouter);
 router.use(evidenceFetchRouter);
 router.use(leaveBlocksRouter);
 

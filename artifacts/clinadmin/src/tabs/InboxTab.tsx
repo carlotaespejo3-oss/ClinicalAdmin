@@ -34,6 +34,7 @@ import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/
 import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources } from '@/lib/evidenceStore';
 import { buildEvidenceSnapshot, fetchEvidenceForGrounding, buildGroundingBlock } from '@/lib/evidenceGrounding';
 import { recordDraft, recordSent as recordAuditSent } from '@/lib/draftAuditStore';
+import { recordChatTurn } from '@/lib/chatAuditStore';
 import { extractParticipants } from '@/lib/draftParticipants';
 import type { EvidenceSnapshotEntry, EmailParticipant } from '@workspace/api-zod';
 import { useEnsureEvidenceMatch } from '@/lib/useEnsureEvidenceMatch';
@@ -661,6 +662,21 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     setChatInput('');
     setChatLoading((p) => ({ ...p, [id]: true }));
     setChatError((p) => ({ ...p, [id]: false }));
+
+    // Medico-legal trail: capture the clinician turn before the AI call so a
+    // network failure still leaves the question in the audit log. Server
+    // scrubs names against participants before any DB write. Fire-and-forget.
+    const participants = extractParticipants(selectedEmail, classifications.get(id));
+    const clinicianTurnIndex = history.length;
+    void recordChatTurn({
+      outlookEmailId: String(id),
+      turnIndex: clinicianTurnIndex,
+      role: 'clinician',
+      kind: 'message',
+      content: message,
+      participants,
+    });
+
     try {
       const res = await aiComplete.mutateAsync({
         data: { prompt: buildChatPrompt(selectedEmail, history, message) },
@@ -670,6 +686,19 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         ...p,
         [id]: [...nextHistory, { role: 'assistant', kind: parsed.kind, content: parsed.content }],
       }));
+      // And the assistant turn — same de-id pass, same fire-and-forget. The
+      // ai_draft_hash in draft_audit covers the consultant's SENT reply
+      // text; this audit row covers the AI's chat reply, which may never
+      // be sent at all (questions, discarded drafts) but still needs a
+      // trail for a clinical pilot.
+      void recordChatTurn({
+        outlookEmailId: String(id),
+        turnIndex: clinicianTurnIndex + 1,
+        role: 'assistant',
+        kind: parsed.kind,
+        content: parsed.content,
+        participants,
+      });
     } catch {
       setChatError((p) => ({ ...p, [id]: true }));
     } finally {

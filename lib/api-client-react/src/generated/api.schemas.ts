@@ -662,6 +662,79 @@ export interface DraftAuditSentInput {
   sentAt: string;
 }
 
+export type ChatAuditTurnInputRole =
+  (typeof ChatAuditTurnInputRole)[keyof typeof ChatAuditTurnInputRole];
+
+export const ChatAuditTurnInputRole = {
+  clinician: "clinician",
+  assistant: "assistant",
+} as const;
+
+/**
+ * "message" for clinician turns; "draft" or "answer" for assistant turns.
+ */
+export type ChatAuditTurnInputKind =
+  (typeof ChatAuditTurnInputKind)[keyof typeof ChatAuditTurnInputKind];
+
+export const ChatAuditTurnInputKind = {
+  message: "message",
+  draft: "draft",
+  answer: "answer",
+} as const;
+
+/**
+ * Payload for POST /chat-audit/{id}/turn. The server scrubs content against participants before storing it, hashes the ORIGINAL pre-scrub text server-side (single source of truth for tamper-evidence), then discards the original.
+ */
+export interface ChatAuditTurnInput {
+  /**
+   * 0-based position of this turn in the email's chat thread.
+   * @minimum 0
+   */
+  turnIndex: number;
+  role: ChatAuditTurnInputRole;
+  /** "message" for clinician turns; "draft" or "answer" for assistant turns. */
+  kind: ChatAuditTurnInputKind;
+  /** Turn content BEFORE de-identification. Discarded server-side after scrub + hash. */
+  content: string;
+  /**
+   * Names to scrub from the content. At minimum the sender of the email; the de-id pass is only as good as this list, so empty lists are rejected (400).
+   * @minItems 1
+   */
+  participants: EmailParticipant[];
+}
+
+export type ChatAuditTurnRole =
+  (typeof ChatAuditTurnRole)[keyof typeof ChatAuditTurnRole];
+
+export const ChatAuditTurnRole = {
+  clinician: "clinician",
+  assistant: "assistant",
+} as const;
+
+export type ChatAuditTurnKind =
+  (typeof ChatAuditTurnKind)[keyof typeof ChatAuditTurnKind];
+
+export const ChatAuditTurnKind = {
+  message: "message",
+  draft: "draft",
+  answer: "answer",
+} as const;
+
+/**
+ * One de-identified turn from the chat-audit thread.
+ */
+export interface ChatAuditTurn {
+  id: number;
+  outlookEmailId: string;
+  turnIndex: number;
+  role: ChatAuditTurnRole;
+  kind: ChatAuditTurnKind;
+  /** De-identified — patient/parent/other names replaced with placeholders. */
+  contentDeid: string;
+  contentHash: string;
+  createdAt: string;
+}
+
 /**
  * One row of draft_audit (audit-only carve-out from the three-bucket rule).
  */

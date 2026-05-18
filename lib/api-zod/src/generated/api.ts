@@ -1129,6 +1129,78 @@ export const RecordDraftAuditSentBody = zod
   );
 
 /**
+ * @summary Get the full chat-audit thread for one email (in turn order)
+ */
+export const GetChatAuditParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const GetChatAuditResponseItem = zod
+  .object({
+    id: zod.number(),
+    outlookEmailId: zod.string(),
+    turnIndex: zod.number(),
+    role: zod.enum(["clinician", "assistant"]),
+    kind: zod.enum(["message", "draft", "answer"]),
+    contentDeid: zod
+      .string()
+      .describe(
+        "De-identified — patient\/parent\/other names replaced with placeholders.",
+      ),
+    contentHash: zod.string(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe("One de-identified turn from the chat-audit thread.");
+export const GetChatAuditResponse = zod.array(GetChatAuditResponseItem);
+
+/**
+ * Server de-identifies the content (replaces patient/parent/person names with placeholders) before any write. The original pre-scrub text is discarded after hashing. One row per turn.
+ * @summary Append one turn to the chat-audit thread for an email
+ */
+export const RecordChatAuditTurnParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const recordChatAuditTurnBodyTurnIndexMin = 0;
+
+export const RecordChatAuditTurnBody = zod
+  .object({
+    turnIndex: zod
+      .number()
+      .min(recordChatAuditTurnBodyTurnIndexMin)
+      .describe("0-based position of this turn in the email's chat thread."),
+    role: zod.enum(["clinician", "assistant"]),
+    kind: zod
+      .enum(["message", "draft", "answer"])
+      .describe(
+        '\"message\" for clinician turns; \"draft\" or \"answer\" for assistant turns.',
+      ),
+    content: zod
+      .string()
+      .describe(
+        "Turn content BEFORE de-identification. Discarded server-side after scrub + hash.",
+      ),
+    participants: zod
+      .array(
+        zod
+          .object({
+            name: zod.string(),
+            role: zod.enum(["patient", "parent", "other"]),
+          })
+          .describe(
+            "Name pair used by the server-side de-identifier to scrub the AI draft. Roles map onto the placeholder tokens.",
+          ),
+      )
+      .min(1)
+      .describe(
+        "Names to scrub from the content. At minimum the sender of the email; the de-id pass is only as good as this list, so empty lists are rejected (400).",
+      ),
+  })
+  .describe(
+    "Payload for POST \/chat-audit\/{id}\/turn. The server scrubs content against participants before storing it, hashes the ORIGINAL pre-scrub text server-side (single source of truth for tamper-evidence), then discards the original.",
+  );
+
+/**
  * The url MUST exact-match evidence_sources.url for the given sourceId. Sources marked publicly_accessible=false are never fetched. Redirects outside the registered host are blocked. 8s timeout. Successful fetches bump last_verified_url.
  * @summary Fetch live content for a registered evidence-source URL (server-side, allow-listed)
  */
