@@ -57,10 +57,11 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const isLinkedDocTask = (t: ManualTask) =>
     !!t.linkedEmailId && linkedDocTasks.has(t.linkedEmailId);
 
-  // Priority summary: bucket all actionable items into Urgent / Medium / Low.
-  // Subscribes to acknowledged + archived so handling an email in the Inbox
-  // immediately decrements the pill count here too — without this the pills
-  // would feel stale ("Urgent: 8" even after you've actioned them all).
+  // "Pending, by priority" — counts pending INBOX EMAILS only, bucketed
+  // Urgent / Medium / Low. Matches the InboxTab's pending definition
+  // exactly (acknowledged OR archived → out of inbox) so the two views
+  // never disagree. Tasks deliberately excluded — the card is framed
+  // around email handling and "My tasks" has its own surface below.
   const priorityCounts = useMemo(() => {
     const counts = { High: 0, Medium: 0, Low: 0 } as Record<Priority, number>;
     for (const e of emails) {
@@ -69,18 +70,8 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       if (archived.has(e.id)) continue;
       counts[getEmailPriority(e)]++;
     }
-    for (const t of manualTasks) {
-      if (t.done) continue;
-      if (isLinkedDocTask(t)) continue;
-      counts[getTaskPriority(t)]++;
-    }
-    for (const t of sidebarTasks) {
-      if (t.done) continue;
-      counts[t.priority === 'high' ? 'High' : 'Low']++;
-    }
     return counts;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualTasks, sidebarTasks, linkedDocTasks, acknowledged, archived]);
+  }, [acknowledged, archived]);
 
   // ---- AI recommendation panel (lets the clinician top up hours
   // straight from Home) ----
