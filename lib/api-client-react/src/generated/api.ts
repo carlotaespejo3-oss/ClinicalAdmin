@@ -33,6 +33,9 @@ import type {
   ClinicianSettings,
   DeferralRecord,
   DismissPromptedTaskInput,
+  EmailEvidence,
+  EmailEvidenceInput,
+  EvidenceSource,
   HealthStatus,
   LinkedDocTaskRecord,
   ManualTaskOverride,
@@ -3565,4 +3568,332 @@ export const useDeleteSidebarTask = <
   TContext
 > => {
   return useMutation(getDeleteSidebarTaskMutationOptions(options));
+};
+
+/**
+ * Returns metadata pointers only — tier, source name, title, year, URL, AU flag, publicly_accessible, last_verified_url. The guideline content itself is never stored; Stage 3 fetches the live document from the URL at query time.
+ * @summary List every entry in the clinical-source registry
+ */
+export const getListEvidenceSourcesUrl = () => {
+  return `/api/evidence-sources`;
+};
+
+export const listEvidenceSources = async (
+  options?: RequestInit,
+): Promise<EvidenceSource[]> => {
+  return customFetch<EvidenceSource[]>(getListEvidenceSourcesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEvidenceSourcesQueryKey = () => {
+  return [`/api/evidence-sources`] as const;
+};
+
+export const getListEvidenceSourcesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEvidenceSources>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEvidenceSources>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListEvidenceSourcesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEvidenceSources>>
+  > = ({ signal }) => listEvidenceSources({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEvidenceSources>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEvidenceSourcesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEvidenceSources>>
+>;
+export type ListEvidenceSourcesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every entry in the clinical-source registry
+ */
+
+export function useListEvidenceSources<
+  TData = Awaited<ReturnType<typeof listEvidenceSources>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEvidenceSources>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEvidenceSourcesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List every per-email evidence record for the current clinician
+ */
+export const getListEmailEvidenceUrl = () => {
+  return `/api/email-evidence`;
+};
+
+export const listEmailEvidence = async (
+  options?: RequestInit,
+): Promise<EmailEvidence[]> => {
+  return customFetch<EmailEvidence[]>(getListEmailEvidenceUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEmailEvidenceQueryKey = () => {
+  return [`/api/email-evidence`] as const;
+};
+
+export const getListEmailEvidenceQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEmailEvidence>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailEvidence>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListEmailEvidenceQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEmailEvidence>>
+  > = ({ signal }) => listEmailEvidence({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailEvidence>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEmailEvidenceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEmailEvidence>>
+>;
+export type ListEmailEvidenceQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every per-email evidence record for the current clinician
+ */
+
+export function useListEmailEvidence<
+  TData = Awaited<ReturnType<typeof listEmailEvidence>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailEvidence>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEmailEvidenceQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get the evidence citations for one email
+ */
+export const getGetEmailEvidenceUrl = (outlookEmailId: string) => {
+  return `/api/email-evidence/${outlookEmailId}`;
+};
+
+export const getEmailEvidence = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<EmailEvidence> => {
+  return customFetch<EmailEvidence>(getGetEmailEvidenceUrl(outlookEmailId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEmailEvidenceQueryKey = (outlookEmailId: string) => {
+  return [`/api/email-evidence/${outlookEmailId}`] as const;
+};
+
+export const getGetEmailEvidenceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmailEvidence>>,
+  TError = ErrorType<void>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmailEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEmailEvidenceQueryKey(outlookEmailId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEmailEvidence>>
+  > = ({ signal }) =>
+    getEmailEvidence(outlookEmailId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!outlookEmailId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmailEvidence>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmailEvidenceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmailEvidence>>
+>;
+export type GetEmailEvidenceQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the evidence citations for one email
+ */
+
+export function useGetEmailEvidence<
+  TData = Awaited<ReturnType<typeof getEmailEvidence>>,
+  TError = ErrorType<void>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmailEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmailEvidenceQueryOptions(outlookEmailId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). Used both by the seeder script today and by the Stage 3 AI step later. Server replaces the whole row including the ordered citations array.
+ * @summary Create or replace the evidence citations for one email
+ */
+export const getUpsertEmailEvidenceUrl = (outlookEmailId: string) => {
+  return `/api/email-evidence/${outlookEmailId}`;
+};
+
+export const upsertEmailEvidence = async (
+  outlookEmailId: string,
+  emailEvidenceInput: EmailEvidenceInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertEmailEvidenceUrl(outlookEmailId), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(emailEvidenceInput),
+  });
+};
+
+export const getUpsertEmailEvidenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertEmailEvidence>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<EmailEvidenceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertEmailEvidence>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<EmailEvidenceInput> },
+  TContext
+> => {
+  const mutationKey = ["upsertEmailEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertEmailEvidence>>,
+    { outlookEmailId: string; data: BodyType<EmailEvidenceInput> }
+  > = (props) => {
+    const { outlookEmailId, data } = props ?? {};
+
+    return upsertEmailEvidence(outlookEmailId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertEmailEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertEmailEvidence>>
+>;
+export type UpsertEmailEvidenceMutationBody = BodyType<EmailEvidenceInput>;
+export type UpsertEmailEvidenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or replace the evidence citations for one email
+ */
+export const useUpsertEmailEvidence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertEmailEvidence>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<EmailEvidenceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertEmailEvidence>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<EmailEvidenceInput> },
+  TContext
+> => {
+  return useMutation(getUpsertEmailEvidenceMutationOptions(options));
 };

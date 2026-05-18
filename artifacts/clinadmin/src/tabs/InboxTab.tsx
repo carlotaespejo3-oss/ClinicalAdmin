@@ -29,7 +29,7 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
-import { getEvidenceBlock } from '@/lib/evidence';
+import { useEmailEvidenceMap } from '@/lib/evidenceStore';
 import { EvidenceBlockView, NoEvidenceRefusal } from '@/components/EvidenceBlockView';
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
@@ -133,6 +133,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
+  const evidenceMap = useEmailEvidenceMap();
   // Helper: an email is "out of the inbox" if it has been acknowledged or
   // archived (acknowledged or marked done). Both flow into the Archive tab.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
@@ -293,8 +294,11 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         // "Never invent" rule: do not generate an AI clinical draft
         // unless verified evidence exists in the approved tier
         // hierarchy. Gates the auto-draft effect AND the manual
-        // Regenerate button (both route through promptFor).
-        if (!getEvidenceBlock(email.id)) return null;
+        // Regenerate button (both route through promptFor). An
+        // EvidenceBlock with zero resolved citations (e.g. all source
+        // IDs orphaned) does NOT satisfy the gate.
+        const ev = evidenceMap.get(email.id);
+        if (!ev || ev.citations.length === 0) return null;
         return buildClinicalPrompt(email);
       }
       if (cls.category === 'PROFESSIONAL') return buildProfessionalPrompt(email, cls);
@@ -1201,7 +1205,12 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       ADMIN: { label: 'Admin reply', sub: 'Brief, decisive admin response' },
                     };
                     const meta = labelByCat[cls.category] ?? { label: 'Suggested draft', sub: 'Edit, regenerate or write your own.' };
-                    const evidence = cls.category === 'CLINICAL' ? getEvidenceBlock(selectedEmail.id) : undefined;
+                    const rawEvidence = cls.category === 'CLINICAL' ? evidenceMap.get(selectedEmail.id) : undefined;
+                    // A block with zero resolved citations counts as "no
+                    // evidence" for the never-invent gate — same as a
+                    // missing record. Prevents an AI draft sneaking
+                    // through with an empty/orphan citations array.
+                    const evidence = rawEvidence && rawEvidence.citations.length > 0 ? rawEvidence : undefined;
                     // "Never invent" rule: a CLINICAL email with no verified
                     // source in the approved hierarchy must not get an AI
                     // draft. Show a neutral refusal panel instead.

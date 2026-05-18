@@ -14,6 +14,8 @@ import clinicianSettingsRouter from "./clinicianSettings";
 import weeklyPlansRouter from "./weeklyPlans";
 import manualTaskOverridesRouter from "./manualTaskOverrides";
 import sidebarTasksRouter from "./sidebarTasks";
+import evidenceSourcesRouter from "./evidenceSources";
+import emailEvidenceRouter from "./emailEvidence";
 
 const router: IRouter = Router();
 
@@ -32,5 +34,7 @@ router.use(clinicianSettingsRouter);
 router.use(weeklyPlansRouter);
 router.use(manualTaskOverridesRouter);
 router.use(sidebarTasksRouter);
+router.use(evidenceSourcesRouter);
+router.use(emailEvidenceRouter);
 
 export default router;

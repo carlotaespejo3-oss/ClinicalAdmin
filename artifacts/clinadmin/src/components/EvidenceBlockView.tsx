@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, ExternalLink } from 'lucide-react';
+import { AlertTriangle, BookOpen, ExternalLink, Lock } from 'lucide-react';
 import type { Citation, EvidenceBlock } from '@/lib/evidence';
 import { FLAG_ICON, FLAG_LABEL } from '@/lib/evidence';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,9 @@ const TIER_LABEL: Record<number, string> = {
 function CitationCard({ c }: { c: Citation }) {
   const hasFlag = c.flag !== null;
   const isConflict = c.flag === 'C' || c.flag === 'D';
+  // publiclyAccessible defaults to true for safety on legacy callers;
+  // the DB-backed store always sets an explicit value.
+  const publiclyAccessible = c.publiclyAccessible !== false;
   return (
     <div
       className={cn(
@@ -36,7 +39,7 @@ function CitationCard({ c }: { c: Citation }) {
           <p className="text-xs text-slate-700 leading-snug mt-0.5">
             {c.title} <span className="text-slate-500">({c.year})</span>
           </p>
-          {c.url && (
+          {c.url && publiclyAccessible && (
             <a
               href={c.url}
               target="_blank"
@@ -46,6 +49,15 @@ function CitationCard({ c }: { c: Citation }) {
             >
               View source <ExternalLink size={10} />
             </a>
+          )}
+          {!publiclyAccessible && (
+            <p
+              className="inline-flex items-center gap-1 text-[11px] text-slate-600 mt-1 italic"
+              data-testid={`citation-restricted-${c.tier}`}
+            >
+              <Lock size={10} />
+              Not publicly accessible — refer to source directly
+            </p>
           )}
         </div>
       </div>

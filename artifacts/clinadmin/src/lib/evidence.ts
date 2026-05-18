@@ -1,5 +1,4 @@
 import type { AiCategory, AiClassification } from './types';
-import { EVIDENCE_SEED } from './evidenceSeed';
 
 export type EvidenceTier = 1 | 2 | 3 | 4 | 5;
 
@@ -11,6 +10,11 @@ export interface Citation {
   title: string;
   year: number;
   url?: string;
+  // False when the underlying guideline document sits behind a paywall,
+  // login wall, or is not machine-readable. The view renders a "refer
+  // to source directly" hint instead of a clickable link, and Stage 3
+  // will fall back to a metadata-only citation.
+  publiclyAccessible?: boolean;
   flag: EvidenceFlag;
   flagText?: string;
 }
@@ -30,10 +34,6 @@ export function isClinicalEmail(cls: AiClassification | undefined): boolean {
     return true;
   }
   return false;
-}
-
-export function getEvidenceBlock(emailId: number): EvidenceBlock | undefined {
-  return EVIDENCE_SEED[emailId];
 }
 
 export const FLAG_LABEL: Record<Exclude<EvidenceFlag, null>, string> = {

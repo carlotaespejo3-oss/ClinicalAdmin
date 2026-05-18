@@ -441,3 +441,83 @@ export interface SidebarTask {
   done: boolean;
   createdAt: string;
 }
+
+export type EvidenceSourceTier =
+  (typeof EvidenceSourceTier)[keyof typeof EvidenceSourceTier];
+
+export const EvidenceSourceTier = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const;
+
+/**
+ * Metadata pointer to a clinical guideline. Stores tier, source name, title, year, URL and maintenance signals — never the guideline content itself.
+ */
+export interface EvidenceSource {
+  id: number;
+  tier: EvidenceSourceTier;
+  sourceName: string;
+  title: string;
+  year: number;
+  url: string;
+  isAustralian: boolean;
+  /** @nullable */
+  specialty?: string | null;
+  /** False when the document sits behind a paywall, login wall or is not machine-readable. Stage 3 falls back to a metadata-only citation with a "refer to source directly" note. */
+  publiclyAccessible: boolean;
+  /**
+   * Date we last confirmed the URL resolves (link-rot signal).
+   * @nullable
+   */
+  lastVerifiedUrl?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type EmailEvidenceCitationFlag =
+  | (typeof EmailEvidenceCitationFlag)[keyof typeof EmailEvidenceCitationFlag]
+  | null;
+
+export const EmailEvidenceCitationFlag = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  tier5: "tier5",
+} as const;
+
+/**
+ * One citation entry — a reference into the source registry plus the per-link concordance flag for this email.
+ */
+export interface EmailEvidenceCitation {
+  sourceId: number;
+  /** @nullable */
+  flag: EmailEvidenceCitationFlag;
+  /** @nullable */
+  flagText?: string | null;
+}
+
+/**
+ * Per-email evidence record. Citations are an ordered array of registry references. prescribingWarning is the clinician's (or AI's) characterisation of the prescribing risk — not guideline content.
+ */
+export interface EmailEvidence {
+  outlookEmailId: string;
+  /** @nullable */
+  prescribingWarning: string | null;
+  citations: EmailEvidenceCitation[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Upsert body for PUT /email-evidence/{outlookEmailId}.
+ */
+export interface EmailEvidenceInput {
+  /** @nullable */
+  prescribingWarning: string | null;
+  citations: EmailEvidenceCitation[];
+}

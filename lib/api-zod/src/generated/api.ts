@@ -755,3 +755,149 @@ export const UpsertSidebarTaskBody = zod
 export const DeleteSidebarTaskParams = zod.object({
   id: zod.coerce.string(),
 });
+
+/**
+ * Returns metadata pointers only — tier, source name, title, year, URL, AU flag, publicly_accessible, last_verified_url. The guideline content itself is never stored; Stage 3 fetches the live document from the URL at query time.
+ * @summary List every entry in the clinical-source registry
+ */
+export const ListEvidenceSourcesResponseItem = zod
+  .object({
+    id: zod.number(),
+    tier: zod.union([
+      zod.literal(1),
+      zod.literal(2),
+      zod.literal(3),
+      zod.literal(4),
+      zod.literal(5),
+    ]),
+    sourceName: zod.string(),
+    title: zod.string(),
+    year: zod.number(),
+    url: zod.string(),
+    isAustralian: zod.boolean(),
+    specialty: zod.string().nullish(),
+    publiclyAccessible: zod
+      .boolean()
+      .describe(
+        'False when the document sits behind a paywall, login wall or is not machine-readable. Stage 3 falls back to a metadata-only citation with a \"refer to source directly\" note.',
+      ),
+    lastVerifiedUrl: zod.coerce
+      .date()
+      .nullish()
+      .describe("Date we last confirmed the URL resolves (link-rot signal)."),
+  })
+  .describe(
+    "Metadata pointer to a clinical guideline. Stores tier, source name, title, year, URL and maintenance signals — never the guideline content itself.",
+  );
+export const ListEvidenceSourcesResponse = zod.array(
+  ListEvidenceSourcesResponseItem,
+);
+
+/**
+ * @summary List every per-email evidence record for the current clinician
+ */
+export const ListEmailEvidenceResponseItem = zod
+  .object({
+    outlookEmailId: zod.string(),
+    prescribingWarning: zod.string().nullable(),
+    citations: zod.array(
+      zod
+        .object({
+          sourceId: zod.number(),
+          flag: zod
+            .union([
+              zod.literal("A"),
+              zod.literal("B"),
+              zod.literal("C"),
+              zod.literal("D"),
+              zod.literal("tier5"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          flagText: zod.string().nullish(),
+        })
+        .describe(
+          "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
+        ),
+    ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Per-email evidence record. Citations are an ordered array of registry references. prescribingWarning is the clinician's (or AI's) characterisation of the prescribing risk — not guideline content.",
+  );
+export const ListEmailEvidenceResponse = zod.array(
+  ListEmailEvidenceResponseItem,
+);
+
+/**
+ * @summary Get the evidence citations for one email
+ */
+export const GetEmailEvidenceParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const GetEmailEvidenceResponse = zod
+  .object({
+    outlookEmailId: zod.string(),
+    prescribingWarning: zod.string().nullable(),
+    citations: zod.array(
+      zod
+        .object({
+          sourceId: zod.number(),
+          flag: zod
+            .union([
+              zod.literal("A"),
+              zod.literal("B"),
+              zod.literal("C"),
+              zod.literal("D"),
+              zod.literal("tier5"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          flagText: zod.string().nullish(),
+        })
+        .describe(
+          "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
+        ),
+    ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Per-email evidence record. Citations are an ordered array of registry references. prescribingWarning is the clinician's (or AI's) characterisation of the prescribing risk — not guideline content.",
+  );
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId). Used both by the seeder script today and by the Stage 3 AI step later. Server replaces the whole row including the ordered citations array.
+ * @summary Create or replace the evidence citations for one email
+ */
+export const UpsertEmailEvidenceParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const UpsertEmailEvidenceBody = zod
+  .object({
+    prescribingWarning: zod.string().nullable(),
+    citations: zod.array(
+      zod
+        .object({
+          sourceId: zod.number(),
+          flag: zod
+            .union([
+              zod.literal("A"),
+              zod.literal("B"),
+              zod.literal("C"),
+              zod.literal("D"),
+              zod.literal("tier5"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          flagText: zod.string().nullish(),
+        })
+        .describe(
+          "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
+        ),
+    ),
+  })
+  .describe("Upsert body for PUT \/email-evidence\/{outlookEmailId}.");

@@ -38,6 +38,10 @@ tags:
     description: Per-clinician overrides on the static seed ManualTask records (done flag, optional kept-open note)
   - name: sidebarTasks
     description: Quick-checklist items the clinician adds in the sidebar (full CRUD)
+  - name: evidenceSources
+    description: Registry of clinical guideline pointers (metadata only; AI fetches live at query time)
+  - name: emailEvidence
+    description: Per-email evidence citations — references into the source registry, never guideline content
 paths:
   /healthz:
     get:
@@ -795,6 +799,82 @@ paths:
       responses:
         "204":
           description: Deleted
+  /evidence-sources:
+    get:
+      operationId: listEvidenceSources
+      tags: [evidenceSources]
+      summary: List every entry in the clinical-source registry
+      description: >-
+        Returns metadata pointers only — tier, source name, title, year,
+        URL, AU flag, publicly_accessible, last_verified_url. The
+        guideline content itself is never stored; Stage 3 fetches the
+        live document from the URL at query time.
+      responses:
+        "200":
+          description: All evidence sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvidenceSource"
+  /email-evidence:
+    get:
+      operationId: listEmailEvidence
+      tags: [emailEvidence]
+      summary: List every per-email evidence record for the current clinician
+      responses:
+        "200":
+          description: All email-evidence records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmailEvidence"
+  /email-evidence/{outlookEmailId}:
+    get:
+      operationId: getEmailEvidence
+      tags: [emailEvidence]
+      summary: Get the evidence citations for one email
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Evidence record for this email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailEvidence"
+        "404":
+          description: No evidence linked to this email yet
+    put:
+      operationId: upsertEmailEvidence
+      tags: [emailEvidence]
+      summary: Create or replace the evidence citations for one email
+      description: >-
+        Idempotent on (clinicianId, outlookEmailId). Used both by the
+        seeder script today and by the Stage 3 AI step later. Server
+        replaces the whole row including the ordered citations array.
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailEvidenceInput"
+      responses:
+        "204":
+          description: Saved
 components:
   schemas:
     HealthStatus:
@@ -1446,3 +1526,104 @@ components:
         - priority
         - done
         - createdAt
+    EvidenceSource:
+      type: object
+      description: >-
+        Metadata pointer to a clinical guideline. Stores tier, source
+        name, title, year, URL and maintenance signals — never the
+        guideline content itself.
+      properties:
+        id:
+          type: integer
+        tier:
+          type: integer
+          enum: [1, 2, 3, 4, 5]
+        sourceName:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+        url:
+          type: string
+        isAustralian:
+          type: boolean
+        specialty:
+          type: ["string", "null"]
+        publiclyAccessible:
+          type: boolean
+          description: >-
+            False when the document sits behind a paywall, login wall or
+            is not machine-readable. Stage 3 falls back to a
+            metadata-only citation with a "refer to source directly"
+            note.
+        lastVerifiedUrl:
+          type: ["string", "null"]
+          format: date-time
+          description: Date we last confirmed the URL resolves (link-rot signal).
+      required:
+        - id
+        - tier
+        - sourceName
+        - title
+        - year
+        - url
+        - isAustralian
+        - publiclyAccessible
+    EmailEvidenceCitation:
+      type: object
+      description: >-
+        One citation entry — a reference into the source registry plus
+        the per-link concordance flag for this email.
+      properties:
+        sourceId:
+          type: integer
+        flag:
+          type: ["string", "null"]
+          enum: [A, B, C, D, tier5, null]
+        flagText:
+          type: ["string", "null"]
+      required:
+        - sourceId
+        - flag
+    EmailEvidence:
+      type: object
+      description: >-
+        Per-email evidence record. Citations are an ordered array of
+        registry references. prescribingWarning is the clinician's (or
+        AI's) characterisation of the prescribing risk — not guideline
+        content.
+      properties:
+        outlookEmailId:
+          type: string
+        prescribingWarning:
+          type: ["string", "null"]
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailEvidenceCitation"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - outlookEmailId
+        - prescribingWarning
+        - citations
+        - createdAt
+        - updatedAt
+    EmailEvidenceInput:
+      type: object
+      description: Upsert body for PUT /email-evidence/{outlookEmailId}.
+      properties:
+        prescribingWarning:
+          type: ["string", "null"]
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailEvidenceCitation"
+      required:
+        - prescribingWarning
+        - citations

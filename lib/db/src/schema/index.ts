@@ -31,3 +31,5 @@ export * from "./clinicianSettings";
 export * from "./weeklyPlans";
 export * from "./manualTaskOverrides";
 export * from "./sidebarTasks";
+export * from "./evidenceSources";
+export * from "./emailEvidence";
