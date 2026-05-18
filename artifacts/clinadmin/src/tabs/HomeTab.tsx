@@ -246,7 +246,20 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
     };
   };
 
+  // Guard rail: the "Adjust this week's availability" panel below this
+  // banner keeps its own draft. Applying a recommendation overwrites
+  // weekSetup, which then resets that draft via the sync effect — so any
+  // unsaved tweaks the clinician was making would be silently lost.
+  // Confirm before applying when the draft is dirty.
+  const confirmIfDirty = (action: string): boolean => {
+    if (!dirty) return true;
+    return window.confirm(
+      `You have unsaved changes in 'Adjust this week\u2019s availability' below. ${action} will replace them. Continue?`,
+    );
+  };
+
   const handleAddMinutesToDay = (day: string, minsToAdd: number = 30) => {
+    if (!confirmIfDirty(`Adding ${fmtMins(minsToAdd)} to ${day}`)) return;
     const snapshot = captureSnapshot();
     const baseDays = weekSetup?.days ?? [];
     const newDays = baseDays.includes(day)
@@ -265,6 +278,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
   };
 
   const handleRebalance = () => {
+    if (!confirmIfDirty('Rebalancing the week')) return;
     const snapshot = captureSnapshot();
     const baseHours = weekSetup?.hours ?? 0;
     const baseDays = weekSetup?.days ?? [];
