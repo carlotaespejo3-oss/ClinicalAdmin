@@ -438,6 +438,19 @@ export const emails: Email[] = [
     deadline: 1,
     estMin: 8,
   },
+  {
+    id: 62,
+    from: 'Hana Tomic (parent)',
+    subject: "Mara T. (16) — asthma waking her at night, what should we do?",
+    preview: "Hi Dr Patterson, sorry to email outside our usual scope but Mara's GP is away. She's woken twice this week coughing, using her Ventolin most days now...",
+    body: "Hi Dr Patterson,\n\nSorry to email outside our usual scope — Mara's GP is away until next Tuesday and I wasn't sure who else to ask.\n\nMara (16) has woken twice this week coughing and feeling tight in her chest. She is using her blue Ventolin puffer most days now — definitely more than the once or twice a week she was using it last month. She is not breathless at rest and she went to school today, but she said she felt 'wheezy' running for the bus.\n\nShe is still on the same preventer she has been on for the last year (Flixotide 50, two puffs morning and night). No other changes — same flat, no new pets, no smokers. She has had a mild cold this week which might be part of it.\n\nQuestions:\n  1. Should we step up her preventer ourselves, or wait to see the GP next week?\n  2. Is it worth switching to one of those combination puffers we have read about (Symbicort?) — a friend's daughter is on one and her mum said it has made a big difference.\n  3. When should we actually worry and go to ED?\n\nThank you for any guidance. I know this isn't really your patch but we trust your judgement.\n\nKind regards,\nHana Tomic",
+    date: 'Today, 11:02',
+    risk: 'medium',
+    cat: CAT.REVIEW,
+    kind: 'clinical',
+    deadline: 1,
+    estMin: 12,
+  },
 
   // === Yesterday ===
   {

@@ -34,28 +34,33 @@ export const EVIDENCE_SEED: Record<number, EvidenceBlock> = {
     ],
   },
 
-  // Email 21 — "Prescription request — Teresa W."
-  // Flag B example: RACGP + NICE concordance on repeat prescribing governance.
-  21: {
+  // Email 62 — "Mara T. (16) — asthma waking her at night"
+  // Flag B example: National Asthma Council (Australian Asthma Handbook)
+  // + GINA are broadly concordant on step-up after rising SABA use; minor
+  // variation in the AIR therapy (ICS-formoterol PRN) recommendation
+  // weighting for adolescents 12+.
+  62: {
     prescribingWarning: TIER_1_WARNING,
     citations: [
       {
         tier: 2,
-        sourceName: 'RACGP',
-        title: 'Standards for general practices (5th ed.) — Criterion QI 1.2: Prescribing safety',
+        sourceName: 'National Asthma Council Australia',
+        title:
+          'Australian Asthma Handbook v2.2 — adjusting treatment for adolescents and adults (step-up after increased SABA use)',
         year: 2023,
-        url: 'https://www.racgp.org.au/running-a-practice/practice-standards',
+        url: 'https://www.asthmahandbook.org.au/',
         flag: null,
       },
       {
         tier: 4,
-        sourceName: 'NICE (UK)',
-        title: 'NG5 — Medicines optimisation: repeat prescribing',
-        year: 2015,
-        url: 'https://www.nice.org.uk/guidance/ng5',
+        sourceName: 'GINA (Global Initiative for Asthma)',
+        title:
+          'Global Strategy for Asthma Management and Prevention — Box 3-12: Stepwise approach for adolescents 12+',
+        year: 2024,
+        url: 'https://ginasthma.org/2024-report/',
         flag: 'B',
         flagText:
-          'Broadly concordant with RACGP standards. Minor wording differences on review interval (NICE: at least annually; RACGP: as clinically indicated). No action required.',
+          'Broadly concordant with the Australian Asthma Handbook on stepping up after rising SABA use. Minor variation: GINA preferences AIR therapy (ICS-formoterol as needed) as the Track 1 controller from Step 1 in adolescents 12+, whereas the Australian Asthma Handbook still treats low-dose daily ICS + SABA-PRN as a fully acceptable Step 2 option. Either pathway is defensible — defer to Australian Asthma Handbook unless there is a specific reason to follow GINA.',
       },
     ],
   },

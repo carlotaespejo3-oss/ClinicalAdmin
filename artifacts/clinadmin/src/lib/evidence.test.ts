@@ -58,9 +58,11 @@ describe('getEvidenceBlock seed', () => {
     assert.match(flagC!.flagText ?? '', /Australian|RANZCP|RACGP/i);
   });
 
-  it('email 21 has a Flag B (minor variation) citation', () => {
-    const block = getEvidenceBlock(21)!;
+  it('email 62 (asthma) has a Flag B (minor variation) citation', () => {
+    const block = getEvidenceBlock(62)!;
     assert.ok(block.citations.some((c) => c.flag === 'B'));
+    const flagB = block.citations.find((c) => c.flag === 'B')!;
+    assert.match(flagB.sourceName, /GINA/i);
   });
 
   it('email 61 has only Tier 2 AU sources, no flags', () => {
