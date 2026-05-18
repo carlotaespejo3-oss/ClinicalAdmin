@@ -234,6 +234,31 @@ export function setPromptedTaskDone(id: string, done: boolean) {
   persistDoneById(id);
 }
 
+// "Undo" for an auto-created prompted task. Removes the row from
+// the in-memory cache immediately so My tasks updates, and persists
+// the removal server-side as a soft-delete (done=true) — the server
+// has no DELETE for prompted tasks today, and treating undone-auto
+// as "done" keeps a clean audit trail without leaking the row back
+// into the active list.
+//
+// Crucially we KEEP the (emailId, kind) dismissal marker (added by
+// addPromptedTask itself), so the auto-creator won't immediately
+// re-create the task on the next render pass.
+export function removePromptedTask(id: string) {
+  const t = cache.tasks.find((x) => x.id === id);
+  if (!t) return;
+  cache.tasks = cache.tasks.filter((x) => x.id !== id);
+  emit();
+  setPromptedTaskDoneApi({
+    outlookEmailId: String(t.emailId),
+    kind: t.kind,
+    done: true,
+  }).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn('[promptedTasksStore] failed to persist undo', err);
+  });
+}
+
 function subscribe(l: () => void): () => void {
   listeners.add(l);
   if (!hydrationStarted) {

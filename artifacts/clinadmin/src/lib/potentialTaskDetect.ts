@@ -20,6 +20,36 @@ export type PotentialTaskKind =
   | 'follow_up'
   | 'deadline';
 
+// Confidence model — the AI scores its own certainty in two
+// dimensions so the UI can decide whether to act silently, act
+// loudly, or refuse to act.
+//
+//   dateConfidence  — how sure we are about WHEN
+//     high   : explicit weekday/date phrase we could parse exactly
+//              ("by Friday", "by Wed", "deadline is in 5 days")
+//     medium : anchored relative phrase ("end of this week",
+//              "before end of term", "by next week")
+//     low    : no date detected at all (dueDays === null)
+//
+//   intentConfidence — how sure we are this is a real ask of THIS
+//                      clinician (vs FYI / passive / CC'd)
+//     high   : 2nd-person direct address — "could you", "please
+//              send", "can you call" — kind is action-shaped
+//     medium : actionable but ambiguous owner — "the report needs
+//              to be done", "results should be reviewed"
+//     low    : vague follow-up language without ask wording, or
+//              kind === 'deadline' with no co-detected action
+//
+// Tier collapses the two scores into the policy the UI applies:
+//
+//   1 — silent auto-create (both high)
+//   2 — auto-create with amber "estimated" strip (one medium, none low)
+//   3 — do NOT auto-create; surface as an unresolved ghost row that
+//       the clinician taps to classify (either dimension low)
+export type DateConfidence = 'high' | 'medium' | 'low';
+export type IntentConfidence = 'high' | 'medium' | 'low';
+export type DetectionTier = 1 | 2 | 3;
+
 export interface PotentialTask {
   kind: PotentialTaskKind;
   // Human-readable suggested task title. Pre-fills the creation form
@@ -34,6 +64,20 @@ export interface PotentialTask {
   evidence: string;
   // Optional days-from-today deadline if the email mentions one.
   dueDays: number | null;
+  // Two-dimension confidence (see comment above for semantics).
+  dateConfidence: DateConfidence;
+  intentConfidence: IntentConfidence;
+  // Derived from the two scores. See deriveTier().
+  tier: DetectionTier;
+}
+
+export function deriveTier(
+  date: DateConfidence,
+  intent: IntentConfidence,
+): DetectionTier {
+  if (date === 'low' || intent === 'low') return 3;
+  if (date === 'high' && intent === 'high') return 1;
+  return 2;
 }
 
 interface KindRule {
@@ -197,12 +241,52 @@ function daysUntilWeekday(target: number): number {
   return diff > 0 ? diff : diff + 7;
 }
 
-function detectDueDays(text: string): number | null {
+interface DeadlineMatch {
+  days: number;
+  confidence: DateConfidence;
+}
+
+// The same patterns split into "exact" (high) vs "anchored relative"
+// (medium). When no pattern matches, the caller treats dateConfidence
+// as 'low'. Order mirrors DEADLINE_PATTERNS so behaviour is identical.
+const EXACT_DATE_REGEXES: RegExp[] = [
+  /\b(by|before)\s+(this\s+)?(monday|tuesday|wednesday|thursday|friday)\b/i,
+  /\bdeadline\s+is\s+in\s+\d{1,2}\s+(day|week)s?\b/i,
+  /\bdue\s+(by\s+|in\s+)?\d{1,2}\s+(day|week)s?\b/i,
+];
+
+function detectDueDays(text: string): DeadlineMatch | null {
   for (const { re, days } of DEADLINE_PATTERNS) {
     const m = text.match(re);
-    if (m) return days(m);
+    if (m) {
+      const isExact = EXACT_DATE_REGEXES.some((r) => r.test(m[0]));
+      return { days: days(m), confidence: isExact ? 'high' : 'medium' };
+    }
   }
   return null;
+}
+
+// Direct-address phrases mean "this is an ask, addressed to YOU".
+// When the detected evidence contains one of these, intent is HIGH.
+// Otherwise we treat the action as ambient/passive (MEDIUM), and the
+// 'deadline' fallback (no concrete kind) is always LOW.
+const DIRECT_ADDRESS_RE =
+  /\b(could|can|would)\s+you|please\s+(send|call|phone|ring|write|provide|renew|refer|book|schedule|review)|we\s+would\s+like\s+to\s+(book|come\s+in)|we\s+need\s+to\s+be\s+seen|give\s+us\s+a\s+call|call\s+(us|me)\s+back|ring\s+(us|me)\s+back|tried\s+to\s+reach\s+you/i;
+
+function scoreIntent(
+  kind: PotentialTaskKind,
+  evidence: string,
+  fullText: string,
+): IntentConfidence {
+  // The generic deadline fallback (no kind detected, only a date) is
+  // never a confident ask — it might be informational.
+  if (kind === 'deadline') return 'low';
+  // Direct 2nd-person ask either in the evidence phrase itself or
+  // somewhere in the email body counts as high.
+  if (DIRECT_ADDRESS_RE.test(evidence) || DIRECT_ADDRESS_RE.test(fullText)) {
+    return 'high';
+  }
+  return 'medium';
 }
 
 // "Mrs Davies (SENCO) <a@b>" → "Mrs Davies"
@@ -219,22 +303,32 @@ export interface DetectInput {
 export function detectPotentialTasks(email: DetectInput): PotentialTask[] {
   const text = `${email.subject ?? ''}\n${email.body ?? ''}`;
   const sender = senderShortName(email.from ?? '');
-  const dueDays = detectDueDays(text);
+  const deadline = detectDueDays(text);
+  const dueDays = deadline?.days ?? null;
+  const dateConfidence: DateConfidence = deadline?.confidence ?? 'low';
 
   const found: PotentialTask[] = [];
   for (const rule of KIND_RULES) {
     for (const re of rule.patterns) {
       const m = text.match(re);
       if (m) {
+        const evidence = m[0].trim();
+        // Only the FIRST detected kind inherits the deadline — the
+        // clinician can adjust the rest manually if needed. Later
+        // kinds therefore have dateConfidence='low'.
+        const isFirst = found.length === 0;
+        const intent = scoreIntent(rule.kind, evidence, text);
+        const date: DateConfidence = isFirst ? dateConfidence : 'low';
         found.push({
           kind: rule.kind,
           suggestedTitle: rule.buildTitle(sender),
           type: rule.type,
           defaultMin: rule.defaultMin,
-          evidence: m[0].trim(),
-          // Only the FIRST detected kind inherits the deadline — the
-          // clinician can adjust the rest manually if needed.
-          dueDays: found.length === 0 ? dueDays : null,
+          evidence,
+          dueDays: isFirst ? dueDays : null,
+          dateConfidence: date,
+          intentConfidence: intent,
+          tier: deriveTier(date, intent),
         });
         break; // first matching pattern per kind wins
       }
@@ -244,8 +338,11 @@ export function detectPotentialTasks(email: DetectInput): PotentialTask[] {
   // If no kind matched but a deadline is mentioned with action
   // language ("by Friday", "deadline is in 5 days"), surface a
   // generic deadline prompt so the clinician can decide what to do.
+  // Intent is always 'low' here (we found a date but no ask), which
+  // forces tier 3 — surfaced as a ghost row, never auto-created.
   if (found.length === 0 && dueDays !== null) {
     const m = DEADLINE_PATTERNS.map((p) => text.match(p.re)).find(Boolean);
+    const intent: IntentConfidence = 'low';
     found.push({
       kind: 'deadline',
       suggestedTitle: `Action by deadline (${sender})`,
@@ -253,6 +350,9 @@ export function detectPotentialTasks(email: DetectInput): PotentialTask[] {
       defaultMin: 10,
       evidence: m ? m[0].trim() : 'deadline mentioned',
       dueDays,
+      dateConfidence,
+      intentConfidence: intent,
+      tier: deriveTier(dateConfidence, intent),
     });
   }
 

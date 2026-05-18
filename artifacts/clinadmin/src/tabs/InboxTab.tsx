@@ -32,6 +32,8 @@ import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
+import AutoCreatedTasksStrip from '@/components/AutoCreatedTasksStrip';
+import { useAutoTaskCreator } from '@/lib/autoTaskCreator';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -118,6 +120,12 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   const selectedEmail = emails.find(e => e.id === selectedId);
   const aiComplete = useAiComplete();
+  // Auto-creator: turns Tier 1/2 detections (high date + intent
+  // confidence) into prompted tasks silently. Tier 3 stays as a
+  // ghost row in My tasks. Mounted here because InboxTab is where
+  // classification happens, so the hook fires the moment new
+  // classifications arrive.
+  useAutoTaskCreator();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
@@ -1214,6 +1222,13 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                        mini chat box per spec. Auto-skipped for NONE,
                        CPD, LEGAL, UNCLEAR, and any email with a
                        documentDirection (handled by document detection). */}
+                {/* ---- Auto-created task strip: quiet acknowledgement
+                       that the AI added a task from this email's
+                       deadline. Tier 1 = slate (silent), tier 2 =
+                       amber ("date estimated"). Each strip exposes
+                       Undo (removes the task) — Edit is deferred. */}
+                <AutoCreatedTasksStrip email={selectedEmail} />
+
                 <PotentialTaskPanel
                   email={selectedEmail}
                   classification={classifications.get(selectedEmail.id)}

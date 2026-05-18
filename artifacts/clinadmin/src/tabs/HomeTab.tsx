@@ -427,7 +427,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           {/* My tasks — the clinician's hand-curated list. Anything
               added here also flows into the planner and onto the
               Week ahead grid below + the full Calendar tab. */}
-          <TaskList runway={plannerOutput.runway} />
+          <TaskList runway={plannerOutput.runway} onOpenEmail={onOpenEmail} />
         </div>
       </div>
 

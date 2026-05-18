@@ -1,17 +1,29 @@
 import { useMemo, useState } from 'react';
-import { ClipboardList, Plus, Trash2, Sparkles, Phone } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Sparkles, Phone, HelpCircle } from 'lucide-react';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import {
   useUserPlannedItems,
   deleteUserPlannedItem,
 } from '@/lib/userPlannedItemsStore';
-import { usePromptedTasksState } from '@/lib/promptedTasksStore';
+import { usePromptedTasksState, isPromptDismissed, hasPromptedTaskForKind } from '@/lib/promptedTasksStore';
+import { useAiClassifications } from '@/lib/aiClassifyStore';
+import { emails as seedEmails } from '@/lib/data';
+import { detectPotentialTasks } from '@/lib/potentialTaskDetect';
+import {
+  useAutoTaskSeenSet,
+  markAutoTaskSeen,
+} from '@/lib/autoTaskSeenStore';
 import { cn } from '@/lib/utils';
 import { fmtMin, dateKey, startOfDay } from '@/lib/calendarHelpers';
 import AddPlannedItemDialog from './AddPlannedItemDialog';
 
 interface Props {
   runway: DailyPlan[];
+  // Optional click-through for ghost rows: takes the clinician to
+  // the originating email in the Inbox where the existing
+  // PotentialTaskPanel form lets them resolve it. When omitted,
+  // ghost rows are still rendered but become read-only markers.
+  onOpenEmail?: (emailId: number) => void;
 }
 
 // A row in "My tasks" is something the clinician needs to do that
@@ -45,6 +57,18 @@ type Row =
       estMin: number;
       typeLabel: string;
       linkedEmailId: number;
+    }
+  // Tier-3 ghost row: the AI saw a possible task in an email but
+  // couldn't commit (date or intent was low confidence). Surfaced
+  // so the clinician knows there's something unresolved without
+  // the AI guessing — they tap to handle it in the Inbox.
+  | {
+      kind: 'ghost';
+      date: string;
+      id: string;
+      title: string;
+      emailId: number;
+      typeLabel: string;
     };
 
 // Flat task list shown beside Today's Plan on Home. See the Row
@@ -54,9 +78,11 @@ type Row =
 // the inline Add dialog. Linked-doc, manual, and AI-prompt rows
 // are owned by their respective tabs (Tasks / Inbox) and edited
 // there.
-export default function TaskList({ runway }: Props) {
+export default function TaskList({ runway, onOpenEmail }: Props) {
   const userPlanned = useUserPlannedItems();
   const { tasks: promptedTasks } = usePromptedTasksState();
+  const classifications = useAiClassifications();
+  const seenSet = useAutoTaskSeenSet();
   const [addOpen, setAddOpen] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -81,10 +107,10 @@ export default function TaskList({ runway }: Props) {
         out.push({ kind: 'plan', date: day.date, item });
       }
     }
-    // 2 — AI-prompt follow-ups the clinician accepted. These bypass
-    // the planner, so we add them by hand with a date computed from
-    // dueDays (null → today, so the clinician sees them immediately
-    // instead of having no date at all).
+    // 2 — AI-prompt follow-ups the clinician accepted OR the
+    // auto-creator added (Tier 1/2). These bypass the planner, so
+    // we add them by hand with a date computed from dueDays (null
+    // → today, so the clinician sees them immediately).
     for (const t of promptedTasks) {
       if (t.done) continue;
       const due = new Date(today);
@@ -100,11 +126,45 @@ export default function TaskList({ runway }: Props) {
         linkedEmailId: t.emailId,
       });
     }
+    // 3 — Tier-3 ghost rows. For every classified email, run the
+    // detector; surface any Tier-3 detection the clinician hasn't
+    // already accepted or dismissed via the inbox panel. These
+    // never auto-create — the row's whole purpose is to flag "you
+    // need to decide what to do with this".
+    for (const email of seedEmails) {
+      const cls = classifications.get(email.id);
+      if (!cls) continue;
+      // Mirror the skip rules of PotentialTaskPanel/auto-creator —
+      // categories that have their own task pipeline shouldn't
+      // also produce ghost rows.
+      if (cls.category === 'NONE' || cls.category === 'CPD' ||
+          cls.category === 'LEGAL' || cls.category === 'UNCLEAR') continue;
+      if (cls.documentDirection !== null && !cls.prescriptionRequest) continue;
+      const detected = detectPotentialTasks({
+        from: email.from,
+        subject: email.subject,
+        body: email.body,
+      });
+      for (const p of detected) {
+        if (p.tier !== 3) continue;
+        if (isPromptDismissed(email.id, p.kind)) continue;
+        if (hasPromptedTaskForKind(email.id, p.kind)) continue;
+        out.push({
+          kind: 'ghost',
+          date: todayKey,
+          id: `ghost_${email.id}_${p.kind}`,
+          title: p.suggestedTitle,
+          emailId: email.id,
+          typeLabel: p.type,
+        });
+      }
+    }
     // Sort by date soonest first so the clinician sees what's
-    // closest at the top regardless of source.
+    // closest at the top regardless of source. Ghosts use today's
+    // date so they cluster at the top — they want attention.
     out.sort((a, b) => a.date.localeCompare(b.date));
     return out;
-  }, [runway, promptedTasks, today]);
+  }, [runway, promptedTasks, today, classifications, todayKey]);
 
   return (
     <div
@@ -165,14 +225,23 @@ export default function TaskList({ runway }: Props) {
             const key =
               row.kind === 'plan'
                 ? `plan-${row.date}-${row.item.refId}-${idx}`
-                : `prompt-${row.id}`;
+                : `${row.kind}-${row.id}`;
             const isUserItem =
               row.kind === 'plan' &&
               typeof row.item.refId === 'string' &&
               userIds.has(row.item.refId);
+            // Unseen dot only applies to auto/prompted rows; planner
+            // rows already have their own visibility (Today's Plan).
+            const isUnseen = row.kind === 'prompt' && !seenSet.has(row.id);
             return (
               <li key={key}>
-                <TaskRow row={row} todayKey={todayKey} isUserItem={isUserItem} />
+                <TaskRow
+                  row={row}
+                  todayKey={todayKey}
+                  isUserItem={isUserItem}
+                  isUnseen={isUnseen}
+                  onOpenEmail={onOpenEmail}
+                />
               </li>
             );
           })}
@@ -192,32 +261,77 @@ function TaskRow({
   row,
   todayKey,
   isUserItem,
+  isUnseen,
+  onOpenEmail,
 }: {
   row: Row;
   todayKey: string;
   isUserItem: boolean;
+  isUnseen: boolean;
+  onOpenEmail?: (emailId: number) => void;
 }) {
-  // Unpack the two row variants into a flat shape the rest of the
-  // render uses. Keeps the JSX a single template instead of two
+  // Unpack the row variants into a flat shape the rest of the
+  // render uses. Keeps the JSX a single template instead of three
   // near-identical copies.
-  const title = row.kind === 'plan' ? row.item.title : row.title;
-  const estMin = row.kind === 'plan' ? row.item.estMin : row.estMin;
+  const title =
+    row.kind === 'plan' ? row.item.title : row.title;
+  const estMin = row.kind === 'plan' ? row.item.estMin : row.kind === 'prompt' ? row.estMin : null;
   const subLabel =
-    row.kind === 'plan' ? null : row.typeLabel.toLowerCase();
+    row.kind === 'plan'
+      ? null
+      : row.kind === 'prompt'
+        ? row.typeLabel.toLowerCase()
+        : 'unresolved';
   // AI-derived = anything the clinician didn't add by hand. Covers
   // linked doc tasks, planner-scheduled work AND prompt follow-ups.
   const isAi = !isUserItem;
-  const Icon = row.kind === 'prompt' ? Phone : ClipboardList;
+  const isGhost = row.kind === 'ghost';
+  const Icon =
+    row.kind === 'prompt' ? Phone :
+    row.kind === 'ghost' ? HelpCircle :
+    ClipboardList;
+  // Ghost rows act as buttons: tap takes you to the originating
+  // email so you can decide what to do with it.
+  const handleClick = () => {
+    if (row.kind === 'ghost' && onOpenEmail) onOpenEmail(row.emailId);
+    if (row.kind === 'prompt' && isUnseen) markAutoTaskSeen(row.id);
+  };
   return (
-    <div className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50/60 group">
+    <div
+      className={cn(
+        'flex items-start gap-3 px-4 py-3 group',
+        isGhost && onOpenEmail
+          ? 'hover:bg-amber-50/60 cursor-pointer'
+          : 'hover:bg-slate-50/60',
+        row.kind === 'prompt' ? 'cursor-pointer' : '',
+      )}
+      onClick={handleClick}
+      role={isGhost && onOpenEmail ? 'button' : undefined}
+      tabIndex={isGhost && onOpenEmail ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (isGhost && onOpenEmail && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onOpenEmail(row.emailId);
+        }
+      }}
+      data-testid={
+        row.kind === 'ghost'
+          ? `task-list-ghost-${row.emailId}`
+          : row.kind === 'prompt'
+            ? `task-list-prompt-${row.id}`
+            : undefined
+      }
+    >
       <span
         className={cn(
           'w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 border',
           isUserItem
             ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
-            : row.kind === 'prompt'
-              ? 'bg-violet-50 text-violet-700 border-violet-200'
-              : 'bg-slate-100 text-slate-700 border-slate-200',
+            : isGhost
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : row.kind === 'prompt'
+                ? 'bg-violet-50 text-violet-700 border-violet-200'
+                : 'bg-slate-100 text-slate-700 border-slate-200',
         )}
       >
         <Icon size={14} />
@@ -227,12 +341,18 @@ function TaskRow({
           <p className="text-sm font-semibold text-foreground truncate">
             {title}
           </p>
-          {isAi && (
+          {isUnseen && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"
+              title="New — not yet opened"
+            />
+          )}
+          {isAi && !isGhost && (
             <span
               className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded flex-shrink-0"
               title={
                 row.kind === 'prompt'
-                  ? 'AI-detected follow-up — confirmed by you in the inbox'
+                  ? 'Added by the AI from an email'
                   : 'Scheduled by the AI planner'
               }
             >
@@ -240,17 +360,35 @@ function TaskRow({
               AI
             </span>
           )}
+          {isGhost && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded flex-shrink-0"
+              title="The AI spotted something but isn't sure — tap to handle in Inbox"
+            >
+              Unresolved
+            </span>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-          <span className={row.date === todayKey ? 'text-primary font-bold' : ''}>
-            {formatDateLabel(row.date, todayKey)}
-          </span>
-          <span className="mx-1.5 text-border">·</span>
-          <span className="tabular-nums">{fmtMin(estMin)}</span>
-          {subLabel && (
+          {isGhost ? (
+            <span>Tap to classify in Inbox</span>
+          ) : (
             <>
-              <span className="mx-1.5 text-border">·</span>
-              <span className="truncate">{subLabel}</span>
+              <span className={row.date === todayKey ? 'text-primary font-bold' : ''}>
+                {formatDateLabel(row.date, todayKey)}
+              </span>
+              {estMin !== null && (
+                <>
+                  <span className="mx-1.5 text-border">·</span>
+                  <span className="tabular-nums">{fmtMin(estMin)}</span>
+                </>
+              )}
+              {subLabel && (
+                <>
+                  <span className="mx-1.5 text-border">·</span>
+                  <span className="truncate">{subLabel}</span>
+                </>
+              )}
             </>
           )}
         </p>
@@ -258,7 +396,10 @@ function TaskRow({
       {isUserItem && row.kind === 'plan' && typeof row.item.refId === 'string' && (
         <button
           type="button"
-          onClick={() => deleteUserPlannedItem(row.item.refId as string)}
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteUserPlannedItem(row.item.refId as string);
+          }}
           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-700 mt-1.5 transition-opacity"
           aria-label="Remove"
           data-testid={`task-list-remove-${row.item.refId}`}
