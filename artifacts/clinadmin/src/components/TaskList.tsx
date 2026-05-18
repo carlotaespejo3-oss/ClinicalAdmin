@@ -1,13 +1,18 @@
-import { useMemo, useState } from 'react';
-import { ClipboardList, Plus, Trash2, Sparkles, Phone, HelpCircle } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { ClipboardList, Plus, Trash2, Sparkles, Phone, HelpCircle, Mail, Hand } from 'lucide-react';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import {
   useUserPlannedItems,
   deleteUserPlannedItem,
 } from '@/lib/userPlannedItemsStore';
-import { usePromptedTasksState, isPromptDismissed, hasPromptedTaskForKind } from '@/lib/promptedTasksStore';
+import {
+  usePromptedTasksState,
+  isPromptDismissed,
+  hasPromptedTaskForKind,
+} from '@/lib/promptedTasksStore';
 import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { emails as seedEmails } from '@/lib/data';
+import { useManualTasksWithOverrides } from '@/lib/manualTaskOverridesStore';
 import { detectPotentialTasks } from '@/lib/potentialTaskDetect';
 import {
   useAutoTaskSeenSet,
@@ -16,13 +21,14 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtMin, dateKey, startOfDay } from '@/lib/calendarHelpers';
 import AddPlannedItemDialog from './AddPlannedItemDialog';
+import EmailPreviewModal from './EmailPreviewModal';
+import TaskDetailModal, { type TaskDetail } from './TaskDetailModal';
 
 interface Props {
   runway: DailyPlan[];
-  // Optional click-through for ghost rows: takes the clinician to
-  // the originating email in the Inbox where the existing
-  // PotentialTaskPanel form lets them resolve it. When omitted,
-  // ghost rows are still rendered but become read-only markers.
+  // Optional click-through that takes the clinician to the
+  // originating email in the Inbox tab. Used by ghost rows and by
+  // the "Open in Inbox" button inside the email preview modal.
   onOpenEmail?: (emailId: number) => void;
 }
 
@@ -57,6 +63,8 @@ type Row =
       estMin: number;
       typeLabel: string;
       linkedEmailId: number;
+      notes: string;
+      patientName: string | null;
     }
   // Tier-3 ghost row: the AI saw a possible task in an email but
   // couldn't commit (date or intent was low confidence). Surfaced
@@ -83,7 +91,10 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
   const { tasks: promptedTasks } = usePromptedTasksState();
   const classifications = useAiClassifications();
   const seenSet = useAutoTaskSeenSet();
+  const manualTasks = useManualTasksWithOverrides();
   const [addOpen, setAddOpen] = useState(false);
+  const [previewEmailId, setPreviewEmailId] = useState<number | null>(null);
+  const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayKey = useMemo(() => dateKey(today), [today]);
@@ -95,6 +106,15 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
     () => new Set(userPlanned.map((u) => u.id)),
     [userPlanned],
   );
+
+  // Quick lookup for the seed manual-task source row so the detail
+  // modal can show notes / type / risk for plan rows whose refId
+  // points back to a manual task.
+  const manualTasksById = useMemo(() => {
+    const m = new Map<string, (typeof manualTasks)[number]>();
+    for (const t of manualTasks) m.set(t.id, t);
+    return m;
+  }, [manualTasks]);
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
@@ -124,6 +144,8 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
         estMin: t.estMin,
         typeLabel: t.type,
         linkedEmailId: t.emailId,
+        notes: t.notes ?? '',
+        patientName: t.patientName,
       });
     }
     // 3 — Tier-3 ghost rows. For every classified email, run the
@@ -165,6 +187,59 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
     out.sort((a, b) => a.date.localeCompare(b.date));
     return out;
   }, [runway, promptedTasks, today, classifications, todayKey]);
+
+  // Group rows by date so we can render a "Today" / "Tomorrow" /
+  // "Wed 20 May" header above each group. Sort already happened
+  // above so consecutive same-date rows are adjacent.
+  const groups = useMemo(() => {
+    const out: { date: string; rows: Row[] }[] = [];
+    for (const r of rows) {
+      const last = out[out.length - 1];
+      if (last && last.date === r.date) last.rows.push(r);
+      else out.push({ date: r.date, rows: [r] });
+    }
+    return out;
+  }, [rows]);
+
+  // ---- Click handlers shared with TaskRow ----------------------
+  // Decides which modal to open for a given row. Rules:
+  //   · prompt rows → email modal (linkedEmailId).
+  //   · plan rows whose item links back to an email (linked-doc
+  //     task) → email modal.
+  //   · plan rows for user-added or seed manual tasks → task
+  //     detail modal.
+  //   · ghost rows → leave inline behaviour (jumps to Inbox).
+  const handleRowClick = (row: Row) => {
+    if (row.kind === 'ghost') {
+      if (onOpenEmail) onOpenEmail(row.emailId);
+      return;
+    }
+    if (row.kind === 'prompt') {
+      if (!seenSet.has(row.id)) markAutoTaskSeen(row.id);
+      setPreviewEmailId(row.linkedEmailId);
+      return;
+    }
+    // ---- row.kind === 'plan' ----
+    const item = row.item;
+    if (typeof item.linkedToEmailId === 'number') {
+      setPreviewEmailId(item.linkedToEmailId);
+      return;
+    }
+    // Try to resolve to a seed manual task for richer details.
+    const refId = typeof item.refId === 'string' ? item.refId : null;
+    const seed = refId ? manualTasksById.get(refId) : undefined;
+    const isUser = refId !== null && userIds.has(refId);
+    setDetailTask({
+      title: item.title,
+      sourceLabel: isUser ? 'Manually added' : 'Scheduled task',
+      dueLabel: formatDateLabel(row.date, todayKey),
+      estMin: item.estMin,
+      typeLabel: seed?.type ?? null,
+      risk: seed?.risk,
+      patientName: null,
+      notes: seed?.noteAfterEmailDone ?? null,
+    });
+  };
 
   return (
     <div
@@ -221,30 +296,46 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
           className="divide-y divide-border/60 flex-1 overflow-y-auto max-h-[480px]"
           data-testid="task-list-rows"
         >
-          {rows.map((row, idx) => {
-            const key =
-              row.kind === 'plan'
-                ? `plan-${row.date}-${row.item.refId}-${idx}`
-                : `${row.kind}-${row.id}`;
-            const isUserItem =
-              row.kind === 'plan' &&
-              typeof row.item.refId === 'string' &&
-              userIds.has(row.item.refId);
-            // Unseen dot only applies to auto/prompted rows; planner
-            // rows already have their own visibility (Today's Plan).
-            const isUnseen = row.kind === 'prompt' && !seenSet.has(row.id);
-            return (
-              <li key={key}>
-                <TaskRow
-                  row={row}
-                  todayKey={todayKey}
-                  isUserItem={isUserItem}
-                  isUnseen={isUnseen}
-                  onOpenEmail={onOpenEmail}
-                />
+          {groups.map((group) => (
+            <Fragment key={group.date}>
+              {/* ---- Day group separator ---- */}
+              <li
+                className={cn(
+                  'sticky top-0 z-10 px-5 py-1.5 text-[10px] font-bold uppercase tracking-widest',
+                  'bg-slate-50/95 backdrop-blur-sm border-b border-border text-slate-600',
+                  group.date === todayKey && 'text-primary',
+                )}
+                data-testid={`task-list-day-header-${group.date}`}
+              >
+                {formatDateLabel(group.date, todayKey)}
               </li>
-            );
-          })}
+              {group.rows.map((row, idx) => {
+                const key =
+                  row.kind === 'plan'
+                    ? `plan-${row.date}-${row.item.refId}-${idx}`
+                    : `${row.kind}-${row.id}`;
+                const refId =
+                  row.kind === 'plan' && typeof row.item.refId === 'string'
+                    ? row.item.refId
+                    : null;
+                const isUserItem = refId !== null && userIds.has(refId);
+                // Unseen dot only applies to auto/prompted rows; planner
+                // rows already have their own visibility (Today's Plan).
+                const isUnseen = row.kind === 'prompt' && !seenSet.has(row.id);
+                return (
+                  <li key={key}>
+                    <TaskRow
+                      row={row}
+                      todayKey={todayKey}
+                      isUserItem={isUserItem}
+                      isUnseen={isUnseen}
+                      onClick={() => handleRowClick(row)}
+                    />
+                  </li>
+                );
+              })}
+            </Fragment>
+          ))}
         </ul>
       )}
 
@@ -252,6 +343,17 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
         open={addOpen}
         defaultDate={todayKey}
         onClose={() => setAddOpen(false)}
+      />
+      <EmailPreviewModal
+        open={previewEmailId !== null}
+        emailId={previewEmailId}
+        onClose={() => setPreviewEmailId(null)}
+        onOpenInInbox={onOpenEmail}
+      />
+      <TaskDetailModal
+        open={detailTask !== null}
+        detail={detailTask}
+        onClose={() => setDetailTask(null)}
       />
     </div>
   );
@@ -262,13 +364,13 @@ function TaskRow({
   todayKey,
   isUserItem,
   isUnseen,
-  onOpenEmail,
+  onClick,
 }: {
   row: Row;
   todayKey: string;
   isUserItem: boolean;
   isUnseen: boolean;
-  onOpenEmail?: (emailId: number) => void;
+  onClick: () => void;
 }) {
   // Unpack the row variants into a flat shape the rest of the
   // render uses. Keeps the JSX a single template instead of three
@@ -276,42 +378,41 @@ function TaskRow({
   const title =
     row.kind === 'plan' ? row.item.title : row.title;
   const estMin = row.kind === 'plan' ? row.item.estMin : row.kind === 'prompt' ? row.estMin : null;
-  const subLabel =
-    row.kind === 'plan'
-      ? null
-      : row.kind === 'prompt'
-        ? row.typeLabel.toLowerCase()
-        : 'unresolved';
-  // AI-derived = anything the clinician didn't add by hand. Covers
-  // linked doc tasks, planner-scheduled work AND prompt follow-ups.
-  const isAi = !isUserItem;
+  // Linked-doc plan rows carry the originating email ID so we can
+  // label them as "AI · from email" too.
+  const isLinkedFromEmail =
+    row.kind === 'plan' && typeof row.item.linkedToEmailId === 'number';
   const isGhost = row.kind === 'ghost';
+  // Three "source" buckets the clinician should be able to tell
+  // apart at a glance:
+  //   · "AI · from email" — prompt rows + linked-doc plan rows
+  //   · "Manually added"  — user-planned items + seed manual tasks
+  //   · ghosts wear their own "Unresolved" pill, no source tag
+  const source: 'ai_email' | 'manual' | null = isGhost
+    ? null
+    : row.kind === 'prompt' || isLinkedFromEmail
+      ? 'ai_email'
+      : 'manual';
+
   const Icon =
     row.kind === 'prompt' ? Phone :
     row.kind === 'ghost' ? HelpCircle :
+    isLinkedFromEmail ? Mail :
     ClipboardList;
-  // Ghost rows act as buttons: tap takes you to the originating
-  // email so you can decide what to do with it.
-  const handleClick = () => {
-    if (row.kind === 'ghost' && onOpenEmail) onOpenEmail(row.emailId);
-    if (row.kind === 'prompt' && isUnseen) markAutoTaskSeen(row.id);
-  };
+
   return (
     <div
       className={cn(
-        'flex items-start gap-3 px-4 py-3 group',
-        isGhost && onOpenEmail
-          ? 'hover:bg-amber-50/60 cursor-pointer'
-          : 'hover:bg-slate-50/60',
-        row.kind === 'prompt' ? 'cursor-pointer' : '',
+        'flex items-start gap-3 px-4 py-3 group cursor-pointer transition-colors',
+        isGhost ? 'hover:bg-amber-50/60' : 'hover:bg-slate-50/80',
       )}
-      onClick={handleClick}
-      role={isGhost && onOpenEmail ? 'button' : undefined}
-      tabIndex={isGhost && onOpenEmail ? 0 : undefined}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
       onKeyDown={(e) => {
-        if (isGhost && onOpenEmail && (e.key === 'Enter' || e.key === ' ')) {
+        if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onOpenEmail(row.emailId);
+          onClick();
         }
       }}
       data-testid={
@@ -319,7 +420,7 @@ function TaskRow({
           ? `task-list-ghost-${row.emailId}`
           : row.kind === 'prompt'
             ? `task-list-prompt-${row.id}`
-            : undefined
+            : `task-list-plan-${row.item.refId ?? 'unknown'}`
       }
     >
       <span
@@ -329,7 +430,7 @@ function TaskRow({
             ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
             : isGhost
               ? 'bg-amber-50 text-amber-700 border-amber-200'
-              : row.kind === 'prompt'
+              : row.kind === 'prompt' || isLinkedFromEmail
                 ? 'bg-violet-50 text-violet-700 border-violet-200'
                 : 'bg-slate-100 text-slate-700 border-slate-200',
         )}
@@ -347,49 +448,47 @@ function TaskRow({
               title="New — not yet opened"
             />
           )}
-          {isAi && !isGhost && (
-            <span
-              className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded flex-shrink-0"
-              title={
-                row.kind === 'prompt'
-                  ? 'Added by the AI from an email'
-                  : 'Scheduled by the AI planner'
-              }
-            >
-              <Sparkles size={8} />
-              AI
-            </span>
-          )}
-          {isGhost && (
-            <span
-              className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded flex-shrink-0"
-              title="The AI spotted something but isn't sure — tap to handle in Inbox"
-            >
-              Unresolved
-            </span>
-          )}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+        <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
           {isGhost ? (
             <span>Tap to classify in Inbox</span>
           ) : (
             <>
-              <span className={row.date === todayKey ? 'text-primary font-bold' : ''}>
-                {formatDateLabel(row.date, todayKey)}
-              </span>
+              {/* ---- Source pill: tells the clinician at a glance
+                     where the row came from. AI rows get the
+                     violet sparkles, manual rows get a quiet
+                     slate "Manually added". */}
+              {source === 'ai_email' && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded"
+                  title="The AI added this from an email"
+                >
+                  <Sparkles size={8} /> AI · from email
+                </span>
+              )}
+              {source === 'manual' && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded"
+                  title="You added this by hand"
+                >
+                  <Hand size={8} /> Manually added
+                </span>
+              )}
               {estMin !== null && (
                 <>
-                  <span className="mx-1.5 text-border">·</span>
+                  <span className="text-border">·</span>
                   <span className="tabular-nums">{fmtMin(estMin)}</span>
                 </>
               )}
-              {subLabel && (
-                <>
-                  <span className="mx-1.5 text-border">·</span>
-                  <span className="truncate">{subLabel}</span>
-                </>
-              )}
             </>
+          )}
+          {isGhost && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded"
+              title="The AI spotted something but isn't sure — tap to handle in Inbox"
+            >
+              Unresolved
+            </span>
           )}
         </p>
       </div>
@@ -423,6 +522,15 @@ function formatDateLabel(iso: string, todayKey: string): string {
     date.getDate() === tomorrow.getDate()
   ) {
     return 'Tomorrow';
+  }
+  // Within the coming week, the day name on its own ("Wednesday")
+  // is friendlier than "Wed 20 May". Past a week, fall back to a
+  // dated label to avoid ambiguity.
+  const diffDays = Math.round(
+    (date.getTime() - new Date(ty, tm - 1, td).getTime()) / 86_400_000,
+  );
+  if (diffDays > 1 && diffDays <= 6) {
+    return date.toLocaleDateString('en-GB', { weekday: 'long' });
   }
   return date.toLocaleDateString('en-GB', {
     weekday: 'short',
