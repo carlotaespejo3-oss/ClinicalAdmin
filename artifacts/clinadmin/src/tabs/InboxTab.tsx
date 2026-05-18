@@ -139,10 +139,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   // Inbox list = anything not yet archived/acknowledged. Archived items live
   // in the Archive tab — they don't appear here at all.
+  const [searchQuery, setSearchQuery] = useState('');
+
   const orderedEmails = useMemo(() => {
-    return emails.filter(e => !isOutOfInbox(e.id));
+    const inInbox = emails.filter(e => !isOutOfInbox(e.id));
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return inInbox;
+    return inInbox.filter(e =>
+      e.subject.toLowerCase().includes(q) ||
+      e.from.toLowerCase().includes(q) ||
+      (e.preview ?? '').toLowerCase().includes(q) ||
+      (e.body ?? '').toLowerCase().includes(q),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acknowledged, archived]);
+  }, [acknowledged, archived, searchQuery]);
 
   // Move to the next remaining inbox email so the list flows naturally
   // after the current one leaves.
@@ -530,12 +540,24 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         <div className="p-4 border-b border-border bg-muted/20">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search clinical inbox..." 
-              className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search sender, subject or body..."
+              className="w-full bg-background border border-border rounded-lg pl-10 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               data-testid="input-search-inbox"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs px-1.5 py-0.5 rounded"
+                data-testid="button-clear-search"
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
         <ScrollArea className="flex-1">
