@@ -5,7 +5,7 @@ import type { Email } from '@/lib/data';
 import type { AiCategory, AiClassification } from '@/lib/types';
 import { cn, initials, avatarColor } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAiComplete } from '@workspace/api-client-react';
+import { useAiComplete, useAiChatWithTools } from '@workspace/api-client-react';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
 import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
 import { FolderColumn, type SelectedFolder } from '@/components/FolderColumn';
@@ -36,7 +36,7 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
-import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources, getRegistrySnapshot } from '@/lib/evidenceStore';
+import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources } from '@/lib/evidenceStore';
 import { buildEvidenceSnapshot, fetchEvidenceForGrounding, buildGroundingBlock } from '@/lib/evidenceGrounding';
 import { recordDraft, recordSent as recordAuditSent } from '@/lib/draftAuditStore';
 import { recordChatTurn } from '@/lib/chatAuditStore';
@@ -247,6 +247,10 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   const selectedEmail = emails.find(e => e.id === selectedId);
   const aiComplete = useAiComplete();
+  // Chat uses the tool-use endpoint so the model can actually fetch the
+  // registered evidence sources rather than self-report which it
+  // consulted. Server returns the IDs it really fetched.
+  const aiChatWithTools = useAiChatWithTools();
   // Auto-creator: turns Tier 1/2 detections (high date + intent
   // confidence) into prompted tasks silently. Tier 3 stays as a
   // ghost row in My tasks. Mounted here because InboxTab is where
@@ -679,14 +683,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     }),
   );
 
+  // The server's tool-use loop now owns "which sources did this turn
+  // consult" — it tracks the IDs it actually fetched. So all we need
+  // to do client-side is unwrap the JSON envelope (kind + body/text).
   const parseChatReply = (
     raw: string,
-    validIds: Set<number>,
   ): {
     kind: 'draft' | 'answer';
     content: string;
-    sourcesChecked: number[];
-    hadInvalidIds: boolean;
   } => {
     const trimmed = (raw ?? '').trim();
     // Strip a possible ```json fence the model may add despite instructions.
@@ -694,48 +698,38 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
-    // Coerce + filter source IDs against the live registry. The model
-    // occasionally returns strings, duplicates, or invented IDs — keep
-    // only well-formed positive integers that exist in the registry.
-    // We also report whether any IDs were dropped so the UI can flag
-    // "model named sources that aren't in our registry" rather than
-    // silently showing the empty "general knowledge" state.
-    const coerceAndValidate = (v: unknown): { valid: number[]; hadInvalid: boolean } => {
-      if (!Array.isArray(v)) return { valid: [], hadInvalid: false };
-      const valid: number[] = [];
-      let hadInvalid = false;
-      for (const x of v) {
-        const n = typeof x === 'number' ? x : typeof x === 'string' ? Number(x) : NaN;
-        if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
-          hadInvalid = true;
-          continue;
-        }
-        if (!validIds.has(n)) {
-          hadInvalid = true;
-          continue;
-        }
-        if (!valid.includes(n)) valid.push(n);
-      }
-      return { valid, hadInvalid };
-    };
-    try {
-      const obj = JSON.parse(unfenced) as {
-        kind?: string;
-        body?: string;
-        text?: string;
-        sources_checked?: unknown;
-      };
-      const { valid, hadInvalid } = coerceAndValidate(obj?.sources_checked);
-      if (obj && obj.kind === 'draft' && typeof obj.body === 'string') {
-        return { kind: 'draft', content: obj.body, sourcesChecked: valid, hadInvalidIds: hadInvalid };
-      }
-      if (obj && obj.kind === 'answer' && typeof obj.text === 'string') {
-        return { kind: 'answer', content: obj.text, sourcesChecked: valid, hadInvalidIds: hadInvalid };
-      }
-    } catch {
-      // fall through to plain-text fallback
+    // The model usually returns ONLY the JSON envelope, but after a
+    // tool-use loop it sometimes adds a sentence of preamble before the
+    // envelope. Try the whole string first; if that fails, take the
+    // longest trailing balanced JSON object substring.
+    const candidates: string[] = [unfenced];
+    const lastOpen = unfenced.lastIndexOf('{');
+    const lastClose = unfenced.lastIndexOf('}');
+    if (lastOpen >= 0 && lastClose > lastOpen) {
+      candidates.push(unfenced.slice(lastOpen, lastClose + 1));
     }
-    return { kind: 'answer', content: unfenced, sourcesChecked: [], hadInvalidIds: false };
+    const firstOpen = unfenced.indexOf('{');
+    if (firstOpen >= 0 && firstOpen !== lastOpen && lastClose > firstOpen) {
+      candidates.push(unfenced.slice(firstOpen, lastClose + 1));
+    }
+    for (const c of candidates) {
+      try {
+        const obj = JSON.parse(c) as {
+          kind?: string;
+          body?: string;
+          text?: string;
+        };
+        if (obj && obj.kind === 'draft' && typeof obj.body === 'string') {
+          return { kind: 'draft', content: obj.body };
+        }
+        if (obj && obj.kind === 'answer' && typeof obj.text === 'string') {
+          return { kind: 'answer', content: obj.text };
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+    return { kind: 'answer', content: unfenced };
   };
 
   const handleChatSend = async () => {
@@ -765,12 +759,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     });
 
     try {
-      const registry = getRegistrySnapshot();
-      const validIds = new Set(registry.map((s) => s.id));
-      const res = await aiComplete.mutateAsync({
-        data: { prompt: buildChatPrompt(selectedEmail, history, message, registry) },
+      const res = await aiChatWithTools.mutateAsync({
+        data: { prompt: buildChatPrompt(selectedEmail, history, message) },
       });
-      const parsed = parseChatReply(res.text ?? '', validIds);
+      const parsed = parseChatReply(res.text ?? '');
+      const sourcesChecked = Array.isArray(res.sourcesFetched) ? res.sourcesFetched : [];
+      const sourcesFailedToFetch = Array.isArray(res.sourcesFailedToFetch)
+        ? res.sourcesFailedToFetch
+        : [];
       setChatThreads((p) => ({
         ...p,
         [id]: [
@@ -779,8 +775,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
             role: 'assistant',
             kind: parsed.kind,
             content: parsed.content,
-            sourcesChecked: parsed.sourcesChecked,
-            hadInvalidSources: parsed.hadInvalidIds,
+            sourcesChecked,
+            sourcesFailedToFetch,
           },
         ],
       }));
@@ -788,7 +784,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       // ai_draft_hash in draft_audit covers the consultant's SENT reply
       // text; this audit row covers the AI's chat reply, which may never
       // be sent at all (questions, discarded drafts) but still needs a
-      // trail for a clinical pilot. sourcesChecked is the validated list
+      // trail for a clinical pilot. sourcesChecked is the server's
+      // authoritative list of IDs actually fetched by the tool-use loop
       // — server re-validates against the registry as a backstop.
       void recordChatTurn({
         outlookEmailId: String(id),
@@ -797,7 +794,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         kind: parsed.kind,
         content: parsed.content,
         participants,
-        sourcesChecked: parsed.sourcesChecked,
+        sourcesChecked,
       });
     } catch {
       setChatError((p) => ({ ...p, [id]: true }));
@@ -1855,7 +1852,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                                     <ChatSourcesPill
                                       ids={turn.sourcesChecked ?? []}
                                       sources={evidenceSources}
-                                      hadInvalidIds={turn.hadInvalidSources ?? false}
+                                      failedIds={turn.sourcesFailedToFetch ?? []}
+                                      turnKind="draft"
                                       testIdSuffix={`draft-${i}`}
                                     />
                                     <button
@@ -1878,7 +1876,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                                   <ChatSourcesPill
                                     ids={turn.sourcesChecked ?? []}
                                     sources={evidenceSources}
-                                    hadInvalidIds={turn.hadInvalidSources ?? false}
+                                    failedIds={turn.sourcesFailedToFetch ?? []}
+                                    turnKind="answer"
                                     testIdSuffix={`answer-${i}`}
                                   />
                                 </div>

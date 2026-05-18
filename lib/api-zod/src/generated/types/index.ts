@@ -7,6 +7,8 @@
  */
 
 export * from "./acknowledgeEmailInput";
+export * from "./aiChatWithToolsInput";
+export * from "./aiChatWithToolsResult";
 export * from "./aiClassificationRecord";
 export * from "./aiClassificationRecordCategory";
 export * from "./aiClassificationRecordComplexity";

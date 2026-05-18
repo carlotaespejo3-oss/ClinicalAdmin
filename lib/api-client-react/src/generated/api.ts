@@ -18,6 +18,8 @@ import type {
 
 import type {
   AcknowledgeEmailInput,
+  AiChatWithToolsInput,
+  AiChatWithToolsResult,
   AiClassificationRecord,
   AiCompleteInput,
   AiCompleteResult,
@@ -239,6 +241,92 @@ export const useAiComplete = <
   TContext
 > => {
   return useMutation(getAiCompleteMutationOptions(options));
+};
+
+/**
+ * @summary Run a chat completion with server-side tool-use so the model can search and fetch the live text of the clinician's registered evidence sources. Returns the final reply plus the IDs the model actually fetched (sourcesFetched) and any whose fetch failed (sourcesFailedToFetch). The model can ONLY fetch sources from the registry — arbitrary URLs are not allowed.
+ */
+export const getAiChatWithToolsUrl = () => {
+  return `/api/clinadmin/ai/chat`;
+};
+
+export const aiChatWithTools = async (
+  aiChatWithToolsInput: AiChatWithToolsInput,
+  options?: RequestInit,
+): Promise<AiChatWithToolsResult> => {
+  return customFetch<AiChatWithToolsResult>(getAiChatWithToolsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiChatWithToolsInput),
+  });
+};
+
+export const getAiChatWithToolsMutationOptions = <
+  TError = ErrorType<AiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiChatWithTools>>,
+    TError,
+    { data: BodyType<AiChatWithToolsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiChatWithTools>>,
+  TError,
+  { data: BodyType<AiChatWithToolsInput> },
+  TContext
+> => {
+  const mutationKey = ["aiChatWithTools"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiChatWithTools>>,
+    { data: BodyType<AiChatWithToolsInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return aiChatWithTools(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiChatWithToolsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiChatWithTools>>
+>;
+export type AiChatWithToolsMutationBody = BodyType<AiChatWithToolsInput>;
+export type AiChatWithToolsMutationError = ErrorType<AiError>;
+
+/**
+ * @summary Run a chat completion with server-side tool-use so the model can search and fetch the live text of the clinician's registered evidence sources. Returns the final reply plus the IDs the model actually fetched (sourcesFetched) and any whose fetch failed (sourcesFailedToFetch). The model can ONLY fetch sources from the registry — arbitrary URLs are not allowed.
+ */
+export const useAiChatWithTools = <
+  TError = ErrorType<AiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiChatWithTools>>,
+    TError,
+    { data: BodyType<AiChatWithToolsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiChatWithTools>>,
+  TError,
+  { data: BodyType<AiChatWithToolsInput> },
+  TContext
+> => {
+  return useMutation(getAiChatWithToolsMutationOptions(options));
 };
 
 /**

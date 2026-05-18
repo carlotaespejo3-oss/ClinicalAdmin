@@ -286,23 +286,16 @@ export type ChatTurn = {
   role: 'clinician' | 'assistant';
   kind: 'draft' | 'answer';
   content: string;
+  // Registry IDs the server's tool-use loop actually FETCHED for this
+  // turn — i.e. sources the model read live from the registered URL.
+  // The server is the source of truth; the client never invents this.
   sourcesChecked?: number[];
-  // True if the model returned source IDs that didn't exist in the
-  // registry — the pill surfaces this as a warning so an "empty"
-  // sources list isn't mistaken for "answered from general knowledge".
-  hadInvalidSources?: boolean;
+  // Registry IDs the model TRIED to fetch but couldn't (URL unreachable,
+  // non-OK status, timeout, restricted content). Distinct from "no
+  // sources used" — an attempted-and-failed fetch should be surfaced
+  // so the clinician knows the reply isn't grounded in what they expected.
+  sourcesFailedToFetch?: number[];
 };
-
-// Minimal shape buildChatPrompt needs from the registry — id + name +
-// title + year. Matches RegistryItem in evidenceStore so the call site
-// can pass `getRegistrySnapshot()` straight in.
-export interface ChatPromptSource {
-  id: number;
-  tier: number;
-  sourceName: string;
-  title: string;
-  year: number;
-}
 
 function renderHistory(history: ChatTurn[]): string {
   if (history.length === 0) return '(no prior turns)';
@@ -315,43 +308,21 @@ function renderHistory(history: ChatTurn[]): string {
     .join('\n\n');
 }
 
-function renderRegistry(registry: ChatPromptSource[]): string {
-  if (registry.length === 0) return '(no registered sources available — answer from general clinical knowledge only)';
-  // Sorted by tier then year (newest first) so the highest-quality
-  // guidelines lead. Ordering is informational only; the AI picks
-  // whichever entries are relevant.
-  const sorted = [...registry].sort((a, b) => a.tier - b.tier || b.year - a.year);
-  return sorted
-    .map((s) => `  [${s.id}] tier ${s.tier} — ${s.sourceName} (${s.year}): ${s.title}`)
-    .join('\n');
-}
-
+// Chat prompt for the tool-use endpoint. The model decides what to look
+// up via search_registered_sources / fetch_source — we no longer list
+// the registry inline or ask the model to self-report "sources_checked"
+// (that was unverifiable; now the server records what was actually
+// fetched). The system prompt on the server already covers the tool
+// contract and JSON envelope, so this prompt is just the email + thread
+// context plus the latest clinician message.
 export function buildChatPrompt(
   email: Email,
   history: ChatTurn[],
   userMessage: string,
-  registry: ChatPromptSource[] = [],
 ): string {
   return `${COMMON_HEADER}
 
-You are a clinical assistant for the consultant. They are looking at the email below and chatting with you about it. You can do two things:
-
-1) WRITE OR REVISE A DRAFT REPLY when they ask for one ("draft a polite decline", "rewrite as a one-liner", "make it warmer").
-2) ANSWER A CLINICAL / LITERATURE / PRACTICAL QUESTION concisely ("what's the evidence for X in adolescents?", "is Y safe with Z?", "what does the RANZCP guidance say about Z?"). Cite specific guidelines or papers by name where you can. The clinician knows the field — be brief and practical, not introductory.
-
-REGISTERED EVIDENCE SOURCES AVAILABLE TO YOU (cite by id when you draw on them):
-${renderRegistry(registry)}
-
-Reply as a SINGLE JSON object only — no markdown fences, no preamble, no commentary outside the JSON:
-
-{ "kind": "draft", "body": "...", "sources_checked": [<ids>] }     ← use when writing or revising a reply
-{ "kind": "answer", "text": "...", "sources_checked": [<ids>] }    ← use for everything else
-
-"sources_checked" MUST be an array of source IDs from the list above that you actually consulted for this turn. Use [] (empty array) if you answered from general clinical knowledge only — do NOT invent IDs. For pure draft-writing turns that don't need clinical evidence (e.g. "make it warmer", "shorten it"), [] is correct.
-
-Use "draft" ONLY when the clinician has clearly asked for a reply to be written or revised. If you are unsure, use "answer".
-
-Drafts MUST end with EXACTLY this sign-off (do not modify):
+Drafts (if you are writing one) MUST end with EXACTLY this sign-off (do not modify):
 ${signOffFor(email)}${styleBlockFor(email)}
 
 ${emailBodyBlock(email)}
@@ -362,5 +333,5 @@ ${renderHistory(history)}
 Most recent clinician message:
 ${userMessage.trim()}
 
-Respond now with the JSON envelope only.`;
+Use the tools to consult the clinician's registered evidence sources for any clinical question. Respond with the JSON envelope only when you have finished.`;
 }

@@ -23,6 +23,22 @@ export interface AiError {
   error: string;
 }
 
+/**
+ * Input for the tool-use chat endpoint. The prompt should contain the email context, conversation history and the latest clinician message — same shape as the prompt previously sent to /clinadmin/ai/complete. The registry is loaded server-side; the client does not pass it.
+ */
+export interface AiChatWithToolsInput {
+  prompt: string;
+}
+
+export interface AiChatWithToolsResult {
+  /** The model's final reply text (still a JSON envelope the client parses). */
+  text: string;
+  /** Registry IDs the model successfully fetched and read during this turn. */
+  sourcesFetched: number[];
+  /** Registry IDs the model tried to fetch but couldn't (URL unreachable, non-OK status, timeout, etc). Surfaced in the UI as a warning so an empty sources list isn't mistaken for "answered from general knowledge". */
+  sourcesFailedToFetch: number[];
+}
+
 export interface AnthropicConversation {
   id: number;
   title: string;

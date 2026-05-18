@@ -90,6 +90,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AiError"
+  /clinadmin/ai/chat:
+    post:
+      operationId: aiChatWithTools
+      tags: [clinadmin]
+      summary: >-
+        Run a chat completion with server-side tool-use so the model can
+        search and fetch the live text of the clinician's registered
+        evidence sources. Returns the final reply plus the IDs the model
+        actually fetched (sourcesFetched) and any whose fetch failed
+        (sourcesFailedToFetch). The model can ONLY fetch sources from
+        the registry — arbitrary URLs are not allowed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiChatWithToolsInput"
+      responses:
+        "200":
+          description: Chat reply plus the source IDs that were fetched.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatWithToolsResult"
+        "500":
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiError"
   /anthropic/conversations:
     get:
       operationId: listAnthropicConversations
@@ -1313,6 +1343,45 @@ components:
           type: string
       required:
         - error
+    AiChatWithToolsInput:
+      type: object
+      description: >-
+        Input for the tool-use chat endpoint. The prompt should contain
+        the email context, conversation history and the latest clinician
+        message — same shape as the prompt previously sent to
+        /clinadmin/ai/complete. The registry is loaded server-side; the
+        client does not pass it.
+      properties:
+        prompt:
+          type: string
+      required:
+        - prompt
+      additionalProperties: false
+    AiChatWithToolsResult:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The model's final reply text (still a JSON envelope the client parses).
+        sourcesFetched:
+          type: array
+          description: Registry IDs the model successfully fetched and read during this turn.
+          items:
+            type: integer
+        sourcesFailedToFetch:
+          type: array
+          description: >-
+            Registry IDs the model tried to fetch but couldn't (URL
+            unreachable, non-OK status, timeout, etc). Surfaced in the
+            UI as a warning so an empty sources list isn't mistaken for
+            "answered from general knowledge".
+          items:
+            type: integer
+      required:
+        - text
+        - sourcesFetched
+        - sourcesFailedToFetch
+      additionalProperties: false
     AnthropicConversation:
       type: object
       properties:

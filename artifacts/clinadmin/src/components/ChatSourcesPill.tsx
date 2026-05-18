@@ -16,42 +16,65 @@ import type { SourceRecord } from '@/lib/evidenceStore';
 // state without forcing an extra useState into InboxTab.
 
 export interface ChatSourcesPillProps {
+  // IDs the server's tool-use loop SUCCESSFULLY fetched and read.
   ids: number[];
   sources: Map<number, SourceRecord>;
-  // True if the AI returned source IDs the registry doesn't recognise.
-  // Surfaced as a distinct warning state so an empty list isn't
-  // mistaken for "answered from general knowledge" when in fact the
-  // AI named sources we couldn't verify.
-  hadInvalidIds: boolean;
+  // IDs the model tried to fetch but couldn't (URL unreachable, non-OK
+  // status, timeout). Surfaced as a distinct amber warning state so
+  // "we tried RCH but couldn't read it" isn't silently degraded to
+  // "answered from general knowledge".
+  failedIds?: number[];
+  // 'answer' turns surface clinical content from the model and should
+  // be flagged amber when nothing was consulted (the answer is then
+  // training-data-only). 'draft' turns are usually style/tone edits
+  // that legitimately need no sources, so a missing-source state for
+  // those is silent rather than noisy.
+  turnKind: 'draft' | 'answer';
   testIdSuffix: string;
 }
 
-export function ChatSourcesPill({ ids, sources, hadInvalidIds, testIdSuffix }: ChatSourcesPillProps) {
+export function ChatSourcesPill({
+  ids,
+  sources,
+  failedIds = [],
+  turnKind,
+  testIdSuffix,
+}: ChatSourcesPillProps) {
   const resolved = ids
+    .map((id) => sources.get(id))
+    .filter((s): s is SourceRecord => Boolean(s));
+  const failed = failedIds
     .map((id) => sources.get(id))
     .filter((s): s is SourceRecord => Boolean(s));
 
   if (resolved.length === 0) {
-    if (hadInvalidIds) {
+    if (failed.length > 0) {
+      // Failed fetches are always worth surfacing — the model TRIED to
+      // ground the answer and couldn't, regardless of turn kind.
+      const names = failed.map((s) => s.sourceName).join(', ');
       return (
         <span
           className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"
-          data-testid={`chat-sources-invalid-${testIdSuffix}`}
-          title="The AI named sources that are not in your registered evidence list. Treat this answer as unverified."
+          data-testid={`chat-sources-failed-${testIdSuffix}`}
+          title={`Tried to read ${names} but the fetch failed. This reply is NOT grounded in your registered sources — treat as unverified.`}
         >
           <AlertTriangle size={10} />
-          Sources named but not verified
+          Couldn't read: {names}
         </span>
       );
     }
+    if (turnKind === 'draft') {
+      // Pure draft/style edit with no source lookup — expected, no badge.
+      return null;
+    }
     return (
       <span
-        className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 italic"
+        className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"
         data-testid={`chat-sources-none-${testIdSuffix}`}
-        title="The AI answered from general clinical knowledge, not from a registered source."
+        title="The AI did not consult any of your registered sources for this reply. It answered from its training data — treat as unverified clinical content."
       >
-        <BookOpen size={10} />
-        Sources: general clinical knowledge
+        <AlertTriangle size={10} />
+        Not grounded in your sources
       </span>
     );
   }

@@ -29,6 +29,35 @@ export const AiCompleteResponse = zod.object({
 });
 
 /**
+ * @summary Run a chat completion with server-side tool-use so the model can search and fetch the live text of the clinician's registered evidence sources. Returns the final reply plus the IDs the model actually fetched (sourcesFetched) and any whose fetch failed (sourcesFailedToFetch). The model can ONLY fetch sources from the registry — arbitrary URLs are not allowed.
+ */
+export const AiChatWithToolsBody = zod
+  .object({
+    prompt: zod.string(),
+  })
+  .describe(
+    "Input for the tool-use chat endpoint. The prompt should contain the email context, conversation history and the latest clinician message — same shape as the prompt previously sent to \/clinadmin\/ai\/complete. The registry is loaded server-side; the client does not pass it.",
+  );
+
+export const AiChatWithToolsResponse = zod.object({
+  text: zod
+    .string()
+    .describe(
+      "The model's final reply text (still a JSON envelope the client parses).",
+    ),
+  sourcesFetched: zod
+    .array(zod.number())
+    .describe(
+      "Registry IDs the model successfully fetched and read during this turn.",
+    ),
+  sourcesFailedToFetch: zod
+    .array(zod.number())
+    .describe(
+      "Registry IDs the model tried to fetch but couldn't (URL unreachable, non-OK status, timeout, etc). Surfaced in the UI as a warning so an empty sources list isn't mistaken for \"answered from general knowledge\".",
+    ),
+});
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({
