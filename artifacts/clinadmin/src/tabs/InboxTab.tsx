@@ -139,65 +139,80 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function parseEmailDate(raw: string, now: Date): ParsedEmailDate {
+// Stable pseudo-time derived from the email id, used when the seed
+// string doesn't carry one ("Yesterday", "2 days ago", "1 week
+// ago"). Spread across working hours 08:00–17:59 so the column
+// looks like a real inbox. Deterministic so the same email always
+// shows the same time across reloads. Real Microsoft Graph
+// `receivedDateTime` values always include a time, so this branch
+// stops firing the moment seed data is replaced.
+function synthesiseTimeFromId(id: number): { h: number; m: number; label: string } {
+  const h = 8 + (Math.abs(id) % 10);                // 8..17
+  const m = (Math.abs(id) * 37) % 60;               // 0..59, deterministic
+  return { h, m, label: `${pad2(h)}:${pad2(m)}` };
+}
+
+function parseEmailDate(raw: string, now: Date, id: number): ParsedEmailDate {
   const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const todayMatch = raw.match(/^Today(?:,\s*(\d{1,2}):(\d{2}))?$/i);
   if (todayMatch) {
-    const h = todayMatch[1] ? parseInt(todayMatch[1], 10) : 23;
-    const m = todayMatch[2] ? parseInt(todayMatch[2], 10) : 59;
+    let h: number; let m: number; let label: string;
+    if (todayMatch[1]) {
+      h = parseInt(todayMatch[1], 10);
+      m = parseInt(todayMatch[2], 10);
+      label = `${pad2(h)}:${pad2(m)}`;
+    } else {
+      ({ h, m, label } = synthesiseTimeFromId(id));
+    }
     const d = new Date(todayMid);
     d.setHours(h, m, 0, 0);
-    return {
-      sortMs: d.getTime(),
-      groupKey: 'today',
-      groupLabel: 'Today',
-      rowLabel: todayMatch[1] ? `${pad2(h)}:${pad2(m)}` : '',
-    };
+    return { sortMs: d.getTime(), groupKey: 'today', groupLabel: 'Today', rowLabel: label };
   }
 
   const yMatch = raw.match(/^Yesterday(?:,\s*(\d{1,2}):(\d{2}))?$/i);
   if (yMatch) {
+    let h: number; let m: number; let label: string;
+    if (yMatch[1]) {
+      h = parseInt(yMatch[1], 10);
+      m = parseInt(yMatch[2], 10);
+      label = `${pad2(h)}:${pad2(m)}`;
+    } else {
+      ({ h, m, label } = synthesiseTimeFromId(id));
+    }
     const d = new Date(todayMid);
     d.setDate(d.getDate() - 1);
-    if (yMatch[1]) {
-      d.setHours(parseInt(yMatch[1], 10), parseInt(yMatch[2], 10), 0, 0);
-    } else {
-      d.setHours(23, 59, 0, 0);
-    }
-    return {
-      sortMs: d.getTime(),
-      groupKey: 'yesterday',
-      groupLabel: 'Yesterday',
-      rowLabel: yMatch[1] ? `${pad2(parseInt(yMatch[1], 10))}:${pad2(parseInt(yMatch[2], 10))}` : '',
-    };
+    d.setHours(h, m, 0, 0);
+    return { sortMs: d.getTime(), groupKey: 'yesterday', groupLabel: 'Yesterday', rowLabel: label };
   }
 
   const daysMatch = raw.match(/^(\d+)\s+days?\s+ago$/i);
   if (daysMatch) {
     const n = parseInt(daysMatch[1], 10);
+    const { h, m, label } = synthesiseTimeFromId(id);
     const d = new Date(todayMid);
     d.setDate(d.getDate() - n);
-    d.setHours(12, 0, 0, 0);
+    d.setHours(h, m, 0, 0);
     return {
       sortMs: d.getTime(),
       groupKey: `d-${n}`,
       groupLabel: formatGroupHeader(d, todayMid),
-      rowLabel: '',
+      rowLabel: label,
     };
   }
 
   const wkMatch = raw.match(/^(\d+)\s+weeks?\s+ago$/i);
   if (wkMatch) {
     const n = parseInt(wkMatch[1], 10);
+    const { h, m, label } = synthesiseTimeFromId(id);
     const d = new Date(todayMid);
     d.setDate(d.getDate() - n * 7);
-    d.setHours(12, 0, 0, 0);
+    d.setHours(h, m, 0, 0);
     return {
       sortMs: d.getTime(),
       groupKey: `w-${n}`,
       groupLabel: formatGroupHeader(d, todayMid),
-      rowLabel: '',
+      rowLabel: label,
     };
   }
 
@@ -275,7 +290,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       : inInbox;
     const now = new Date();
     return filtered
-      .map(email => ({ email, meta: parseEmailDate(email.date, now) }))
+      .map(email => ({ email, meta: parseEmailDate(email.date, now, email.id) }))
       .sort((a, b) => b.meta.sortMs - a.meta.sortMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acknowledged, archived, searchQuery]);
