@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Archive as ArchiveIcon, AlertTriangle, Scale, MessageSquare, Plus, ChevronDown, Info } from 'lucide-react';
 import { emails, manualTasks } from '@/lib/data';
 import type { Email } from '@/lib/data';
@@ -114,6 +114,112 @@ interface InboxTabProps {
   initialSelectedId?: number | null;
 }
 
+// ---- Inbox date parsing -----------------------------------------------------
+//
+// Seed email dates are fuzzy strings ('Today, 08:45', 'Yesterday',
+// '2 days ago', '1 week ago'). For the side-column inbox we want
+// two things from them: (a) a sortable timestamp so newest sits at
+// the top, and (b) a group label so we can render section headers
+// ("Today", "Yesterday", "Friday", "06 May") the way Outlook /
+// Gmail / Apple Mail all do. The row itself gets just the time
+// (when known) — the section header already carries the date.
+//
+// All clock reads use the BROWSER's local "now"; same input + same
+// clock → same output. When real Microsoft Graph timestamps replace
+// the seed strings this helper can collapse to a single
+// `new Date(receivedDateTime)` and the grouping stays identical.
+interface ParsedEmailDate {
+  sortMs: number;       // descending sort key
+  groupKey: string;     // stable grouping id (rows with same key bucket together)
+  groupLabel: string;   // header text rendered above the first row of the group
+  rowLabel: string;     // shown on the row itself; empty when we only know the day
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function parseEmailDate(raw: string, now: Date): ParsedEmailDate {
+  const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const todayMatch = raw.match(/^Today(?:,\s*(\d{1,2}):(\d{2}))?$/i);
+  if (todayMatch) {
+    const h = todayMatch[1] ? parseInt(todayMatch[1], 10) : 23;
+    const m = todayMatch[2] ? parseInt(todayMatch[2], 10) : 59;
+    const d = new Date(todayMid);
+    d.setHours(h, m, 0, 0);
+    return {
+      sortMs: d.getTime(),
+      groupKey: 'today',
+      groupLabel: 'Today',
+      rowLabel: todayMatch[1] ? `${pad2(h)}:${pad2(m)}` : '',
+    };
+  }
+
+  const yMatch = raw.match(/^Yesterday(?:,\s*(\d{1,2}):(\d{2}))?$/i);
+  if (yMatch) {
+    const d = new Date(todayMid);
+    d.setDate(d.getDate() - 1);
+    if (yMatch[1]) {
+      d.setHours(parseInt(yMatch[1], 10), parseInt(yMatch[2], 10), 0, 0);
+    } else {
+      d.setHours(23, 59, 0, 0);
+    }
+    return {
+      sortMs: d.getTime(),
+      groupKey: 'yesterday',
+      groupLabel: 'Yesterday',
+      rowLabel: yMatch[1] ? `${pad2(parseInt(yMatch[1], 10))}:${pad2(parseInt(yMatch[2], 10))}` : '',
+    };
+  }
+
+  const daysMatch = raw.match(/^(\d+)\s+days?\s+ago$/i);
+  if (daysMatch) {
+    const n = parseInt(daysMatch[1], 10);
+    const d = new Date(todayMid);
+    d.setDate(d.getDate() - n);
+    d.setHours(12, 0, 0, 0);
+    return {
+      sortMs: d.getTime(),
+      groupKey: `d-${n}`,
+      groupLabel: formatGroupHeader(d, todayMid),
+      rowLabel: '',
+    };
+  }
+
+  const wkMatch = raw.match(/^(\d+)\s+weeks?\s+ago$/i);
+  if (wkMatch) {
+    const n = parseInt(wkMatch[1], 10);
+    const d = new Date(todayMid);
+    d.setDate(d.getDate() - n * 7);
+    d.setHours(12, 0, 0, 0);
+    return {
+      sortMs: d.getTime(),
+      groupKey: `w-${n}`,
+      groupLabel: formatGroupHeader(d, todayMid),
+      rowLabel: '',
+    };
+  }
+
+  // Anything we don't recognise sorts to the bottom under its own
+  // header (preserves the raw label rather than silently losing it).
+  return { sortMs: 0, groupKey: `raw-${raw}`, groupLabel: raw, rowLabel: '' };
+}
+
+function formatGroupHeader(d: Date, todayMid: Date): string {
+  const diffDays = Math.round((todayMid.getTime() - d.getTime()) / 86_400_000);
+  if (diffDays >= 2 && diffDays <= 6) {
+    return d.toLocaleDateString('en-GB', { weekday: 'long' });
+  }
+  const sameYear = d.getFullYear() === todayMid.getFullYear();
+  return d.toLocaleDateString(
+    'en-GB',
+    sameYear
+      ? { day: '2-digit', month: 'short' }
+      : { day: '2-digit', month: 'short', year: 'numeric' },
+  );
+}
+
 export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const [selectedId, setSelectedId] = useState<number | null>(
     initialSelectedId ?? emails[0]?.id ?? null
@@ -153,16 +259,24 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // in the Archive tab — they don't appear here at all.
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Inbox list, sorted newest-first by parsed date, with each row
+  // carrying its parsed meta so the render pass can group rows and
+  // emit section headers (Today / Yesterday / Friday / 06 May).
   const orderedEmails = useMemo(() => {
     const inInbox = emails.filter(e => !isOutOfInbox(e.id));
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return inInbox;
-    return inInbox.filter(e =>
-      e.subject.toLowerCase().includes(q) ||
-      e.from.toLowerCase().includes(q) ||
-      (e.preview ?? '').toLowerCase().includes(q) ||
-      (e.body ?? '').toLowerCase().includes(q),
-    );
+    const filtered = q
+      ? inInbox.filter(e =>
+          e.subject.toLowerCase().includes(q) ||
+          e.from.toLowerCase().includes(q) ||
+          (e.preview ?? '').toLowerCase().includes(q) ||
+          (e.body ?? '').toLowerCase().includes(q),
+        )
+      : inInbox;
+    const now = new Date();
+    return filtered
+      .map(email => ({ email, meta: parseEmailDate(email.date, now) }))
+      .sort((a, b) => b.meta.sortMs - a.meta.sortMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acknowledged, archived, searchQuery]);
 
@@ -662,27 +776,50 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                 Inbox zero. Anything you've handled is in the Archive tab.
               </div>
             )}
-            {orderedEmails.map((e) => {
-              const cls = classifications.get(e.id);
-              return (
-                <div
-                  key={e.id}
-                  onClick={() => setSelectedId(e.id)}
-                  className={cn(
-                    "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
-                    selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
-                  )}
-                  data-testid={`email-row-${e.id}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
-                      {initials(e.from)}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex justify-between items-start mb-1">
-                        <p className="text-sm font-bold truncate">{e.from}</p>
-                        <span className="text-[10px] text-muted-foreground font-medium uppercase">{e.date}</span>
+            {(() => {
+              // Walk the sorted list and emit a sticky section header
+              // whenever the groupKey changes. Keeps the inbox feeling
+              // like a normal mail client (Today / Yesterday / Friday /
+              // 06 May) without changing the underlying data shape.
+              let lastGroupKey: string | null = null;
+              return orderedEmails.map(({ email: e, meta }) => {
+                const showHeader = meta.groupKey !== lastGroupKey;
+                lastGroupKey = meta.groupKey;
+                const cls = classifications.get(e.id);
+                return (
+                  <Fragment key={e.id}>
+                    {showHeader && (
+                      <div
+                        className="sticky top-0 z-10 px-4 py-1.5 bg-muted/80 backdrop-blur text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-y border-border"
+                        data-testid={`inbox-date-header-${meta.groupKey}`}
+                      >
+                        {meta.groupLabel}
                       </div>
+                    )}
+                    <div
+                      onClick={() => setSelectedId(e.id)}
+                      className={cn(
+                        "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
+                        selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
+                      )}
+                      data-testid={`email-row-${e.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
+                          {initials(e.from)}
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                          <div className="flex justify-between items-start mb-1 gap-2">
+                            <p className="text-sm font-bold truncate">{e.from}</p>
+                            {meta.rowLabel && (
+                              <span
+                                className="text-[11px] text-muted-foreground font-semibold tabular-nums flex-shrink-0"
+                                data-testid={`email-row-time-${e.id}`}
+                              >
+                                {meta.rowLabel}
+                              </span>
+                            )}
+                          </div>
                       <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
                       <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -719,8 +856,10 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </div>
                   </div>
                 </div>
-              );
-            })}
+                  </Fragment>
+                );
+              });
+            })()}
           </div>
         </ScrollArea>
       </div>
