@@ -803,29 +803,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     <div
                       onClick={() => setSelectedId(e.id)}
                       className={cn(
-                        "p-4 cursor-pointer transition-colors relative hover:bg-muted/30",
+                        "px-4 py-2.5 cursor-pointer transition-colors relative hover:bg-muted/30",
                         selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
                       )}
                       data-testid={`email-row-${e.id}`}
                     >
-                      <div className="flex items-start gap-3">
-                        {/* Leftmost column: received time. Fixed
-                            width so sender names align across rows.
-                            Top-aligned with the sender line. */}
-                        <div
-                          className="w-12 flex-shrink-0 pt-0.5 text-[11px] font-semibold text-muted-foreground tabular-nums leading-tight"
-                          data-testid={`email-row-time-${e.id}`}
-                        >
-                          {meta.rowLabel || '—'}
+                      {/* Outlook-style compact row: sender on top,
+                          subject + time on the second line, preview
+                          underneath. No avatar — keeps the column
+                          slim and readable when there's a lot to
+                          scan. */}
+                      <div className="overflow-hidden">
+                        <p className="text-sm font-bold truncate mb-0.5">{e.from}</p>
+                        <div className="flex items-baseline gap-2 mb-0.5">
+                          <p className="text-xs font-semibold truncate flex-1">{e.subject}</p>
+                          {meta.rowLabel && (
+                            <span
+                              className="text-[11px] text-muted-foreground font-medium tabular-nums flex-shrink-0"
+                              data-testid={`email-row-time-${e.id}`}
+                            >
+                              {meta.rowLabel}
+                            </span>
+                          )}
                         </div>
-                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
-                          {initials(e.from)}
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-bold truncate mb-1">{e.from}</p>
-                      <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
-                      <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
-                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                         {cls ? (
                           <>
                             <span
@@ -858,7 +860,6 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       </div>
                     </div>
                   </div>
-                </div>
                   </Fragment>
                 );
               });
