@@ -1,0 +1,56 @@
+# Consolidate the dashboard top region into one focused card below the "On track" status banner.
+
+## Why
+The current top region has three surfaces all saying "you're fine" in different visual languages: the standalone priority pills row, the "On track" banner, and the row of four stat cards. We're collapsing the redundancy. The "On track" banner keeps doing reassurance; one new card below it does celebration + triage.
+
+## What to remove
+- The standalone priority pills row at the top of the page (3 Urgent / 9 Medium / 47 Low). It moves into the new card.
+- The four-stat-card row (Emails safely deferred / Tasks scheduled / Unsafe deferrals / Missed deadlines). The numbers don't disappear — see Data contract.
+
+## What to keep, unchanged
+- The greeting header ("Good morning, Dr. Morgan…")
+- The "On track" + "AI Recommendation" two-column status banner
+- Today's plan and My tasks sections
+
+## What to add
+One new card directly below the "On track" banner. White background, 0.5px tertiary border, 12px radius, ~24px 28px padding. Two stacked sections separated by a 0.5px top divider.
+
+### Section 1 — hero
+- 72px number, weight 500, tight line-height, slight negative letter-spacing — bound to `weeklyDeferredCount`
+- Inline on the same baseline: "emails handled for you this week" at 22px / weight 500
+- Below, in secondary text colour at 14px: Tabler `clock` icon + "≈ {hoursSaved} hours of inbox time saved"
+- `hoursSaved = Math.round(weeklyDeferredCount * 5 / 60)` — placeholder formula (~5 min per email); confirm the constant with me before ship
+
+### Section 2 — priority triage
+- 14px secondary-text label: "Pending, by priority"
+- Three rounded-full pills in a row, 8px gap, ~5px 14px padding, 13px text:
+  - `{urgent}` "Urgent" — danger background token, danger text token
+  - `{medium}` "Medium" — warning background token, warning text token
+  - `{low}` "Low" — secondary background token; primary text on the number, secondary text on the label
+- Number is weight 500, label is weight 400. No icons inside the pills.
+
+## Copy is locked
+Use these strings exactly. Don't paraphrase, don't title-case, don't reorder:
+- "emails handled for you this week"
+- "≈ {n} hours of inbox time saved"
+- "Pending, by priority"
+- "Urgent" / "Medium" / "Low"
+
+## Data contract
+- `weeklyDeferredCount: number` → hero number, also drives hoursSaved
+- `pending.urgent`, `pending.medium`, `pending.low: number` → priority pills
+- `tasksScheduled`, `unsafeDeferrals`, `missedDeadlines` — these don't get a home in the new card. They belong in the "On track" banner above. If that banner doesn't already surface them, flag back to me before deleting them from the page.
+
+## States to handle
+- **Start of week** (`weeklyDeferredCount === 0`): "0 / ≈ 0 hours saved" falls flat. Flag back to me which you'd prefer — (a) show honest zeros as-is, or (b) swap to a forward-looking variant on Mondays.
+- **Empty priority bucket** (any of urgent/medium/low === 0): still show the pill at 0. "0 Urgent" is reassuring — the whole point of the row is triage.
+- **Issues present** (`unsafeDeferrals > 0` or `missedDeadlines > 0`): this card stays neutral. The "On track" banner above is responsible for changing tone. Don't dual-purpose this card.
+
+## Don'ts
+- No gradients, shadows, or extra colour accents
+- No title case, no mid-sentence bolding
+- Don't reintroduce the four stat cards anywhere
+- Don't keep the top priority pills row — delete the container, don't just hide it
+
+## Reference
+Mockup screenshot attached. If your tool accepts images, lead with that and use this brief as the spec.
