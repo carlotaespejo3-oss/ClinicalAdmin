@@ -44,6 +44,10 @@ export interface WorkingPattern {
   sunday: number;
 }
 
+/** Per-leave-type override: any omitted field falls back to the
+ *  top-level (annual/default) value field-by-field. */
+export type RecoveryConfigOverride = Partial<Omit<RecoveryConfig, 'byLeaveType'>>;
+
 export interface RecoveryConfig {
   /** Capacity multipliers for the first N working days back from leave. */
   rampMultipliers: number[];          // e.g. [0.5, 0.75, 1.0]
@@ -58,6 +62,17 @@ export interface RecoveryConfig {
   preLeaveWindDown: number[];         // e.g. [0.75, 0.5]
   /** Minimum total leave-day duration (calendar days) needed to apply wind-down/recovery. */
   triggerAfterDaysOff: number;        // e.g. 3
+  /** Optional per-leave-type overrides. Each entry is a partial config: any
+   *  field present overrides the corresponding top-level field for that type;
+   *  any omitted field falls back to the top-level value. The top-level
+   *  config is treated as the default ("annual") curve.
+   *
+   *  When a single off-stretch is fed by multiple leave types, the resolver
+   *  merges the contributing per-type configs and picks the strongest value
+   *  per dimension (longest ramp / wind-down arrays, max reserved minutes
+   *  per index, lowest triggerAfterDaysOff). The clinician is never
+   *  under-protected by booking an extra block. */
+  byLeaveType?: Partial<Record<LeaveType, RecoveryConfigOverride>>;
 }
 
 export interface ProjectedArrivalConfig {
@@ -237,6 +252,57 @@ function computeLeaveCoverage(
   return 'partial';
 }
 
+/** Resolve a single leave type's effective curve by overlaying its
+ *  per-type override (if any) on top of the defaults field-by-field. */
+function curveForType(
+  base: RecoveryConfig,
+  type: LeaveType
+): RecoveryConfig {
+  const override = base.byLeaveType?.[type];
+  if (!override) return base;
+  return {
+    rampMultipliers: override.rampMultipliers ?? base.rampMultipliers,
+    recoveryReservedMin: override.recoveryReservedMin ?? base.recoveryReservedMin,
+    triageReservedMin: override.triageReservedMin ?? base.triageReservedMin,
+    preLeaveWindDown: override.preLeaveWindDown ?? base.preLeaveWindDown,
+    triggerAfterDaysOff: override.triggerAfterDaysOff ?? base.triggerAfterDaysOff,
+  };
+}
+
+/** Combine a set of contributing-type curves into a single "strongest"
+ *  curve. Strongest = clinician is best protected:
+ *    - ramp / wind-down arrays: longest length wins; per index take the
+ *      lowest multiplier (lower = more protective).
+ *    - reserved-min arrays: longest length wins; per index take the max.
+ *    - triggerAfterDaysOff: lowest wins (triggers more easily). */
+function mergeCurves(curves: RecoveryConfig[]): RecoveryConfig {
+  const mergeMultipliers = (key: 'rampMultipliers' | 'preLeaveWindDown'): number[] => {
+    const len = Math.max(0, ...curves.map(c => c[key].length));
+    const out: number[] = [];
+    for (let i = 0; i < len; i++) {
+      const vals = curves.map(c => c[key][i]).filter((v): v is number => typeof v === 'number');
+      out.push(vals.length ? Math.min(...vals) : 1);
+    }
+    return out;
+  };
+  const mergeReserved = (key: 'recoveryReservedMin' | 'triageReservedMin'): number[] => {
+    const len = Math.max(0, ...curves.map(c => c[key].length));
+    const out: number[] = [];
+    for (let i = 0; i < len; i++) {
+      const vals = curves.map(c => c[key][i] ?? 0);
+      out.push(Math.max(0, ...vals));
+    }
+    return out;
+  };
+  return {
+    rampMultipliers: mergeMultipliers('rampMultipliers'),
+    recoveryReservedMin: mergeReserved('recoveryReservedMin'),
+    triageReservedMin: mergeReserved('triageReservedMin'),
+    preLeaveWindDown: mergeMultipliers('preLeaveWindDown'),
+    triggerAfterDaysOff: Math.min(...curves.map(c => c.triggerAfterDaysOff)),
+  };
+}
+
 function applyWindDownAndRecovery(
   days: DayInternal[],
   input: ResolveAvailabilityInput
@@ -270,23 +336,42 @@ function applyWindDownAndRecovery(
       const stretchStartMs = new Date(days[i].date + 'T00:00:00Z').getTime();
       const stretchEndMs = new Date(days[j].date + 'T00:00:00Z').getTime() + MS_PER_DAY;
 
+      // Gather the leave types that contribute to this stretch — each
+      // brings its own per-type curve override (sick skips wind-down,
+      // conference/PD use a lighter ramp, etc). We accumulate one
+      // curve per *type* (not per block) so two annual blocks that
+      // touch the same stretch don't double-count.
       let leaveDays = 0;
+      const contributingTypes = new Set<LeaveType>();
       for (const block of leaveBlocks) {
         const bs = new Date(block.startAt).getTime();
         const be = new Date(block.endAt).getTime();
         if (bs < stretchEndMs && be > stretchStartMs) {
           leaveDays += Math.ceil((be - bs) / MS_PER_DAY);
+          contributingTypes.add(block.type);
         }
       }
 
-      if (leaveDays >= recoveryConfig.triggerAfterDaysOff) {
+      // Resolve the effective curve: one type → use its curve directly;
+      // multiple types → merge to the strongest per dimension.
+      const curves = Array.from(contributingTypes).map(t => curveForType(recoveryConfig, t));
+      const stretchCurve: RecoveryConfig =
+        curves.length === 0
+          ? recoveryConfig
+          : curves.length === 1
+            ? curves[0]
+            : mergeCurves(curves);
+
+      if (leaveDays >= stretchCurve.triggerAfterDaysOff) {
         // Wind-down: walk backwards from i, applying preLeaveWindDown
         // multipliers to each working day found (skip non-working days
-        // like weekends entirely).
+        // like weekends entirely). When the curve has an empty wind-down
+        // array (sick, conference, PD) this loop runs zero iterations
+        // and no pre_leave days are marked.
         let steps = 0;
-        for (let k = i - 1; k >= 0 && steps < recoveryConfig.preLeaveWindDown.length; k--) {
+        for (let k = i - 1; k >= 0 && steps < stretchCurve.preLeaveWindDown.length; k--) {
           if (days[k].baselineMin === 0) continue;
-          days[k].multipliers.push(recoveryConfig.preLeaveWindDown[steps]);
+          days[k].multipliers.push(stretchCurve.preLeaveWindDown[steps]);
           // Recovery takes precedence over pre_leave for dayKind, since
           // recovery's reservedMin block is the more important UI signal.
           if (days[k].dayKind !== 'recovery') days[k].dayKind = 'pre_leave';
@@ -295,16 +380,16 @@ function applyWindDownAndRecovery(
 
         // Recovery: walk forwards from j, applying ramp + reserved admin + triage.
         steps = 0;
-        for (let k = j + 1; k < days.length && steps < recoveryConfig.rampMultipliers.length; k++) {
+        for (let k = j + 1; k < days.length && steps < stretchCurve.rampMultipliers.length; k++) {
           if (days[k].baselineMin === 0) continue;
-          days[k].multipliers.push(recoveryConfig.rampMultipliers[steps]);
+          days[k].multipliers.push(stretchCurve.rampMultipliers[steps]);
           days[k].recoveryReservedMin = Math.max(
             days[k].recoveryReservedMin,
-            recoveryConfig.recoveryReservedMin[steps] ?? 0
+            stretchCurve.recoveryReservedMin[steps] ?? 0
           );
           days[k].triageReservedMin = Math.max(
             days[k].triageReservedMin,
-            recoveryConfig.triageReservedMin[steps] ?? 0
+            stretchCurve.triageReservedMin[steps] ?? 0
           );
           days[k].dayKind = 'recovery';
           steps++;

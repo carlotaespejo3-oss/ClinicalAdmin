@@ -67,6 +67,32 @@ export function usePlannerOutput(
       triageReservedMin: appSettings.leavePlanner?.triageReservedMin ?? [20, 0, 0],
       preLeaveWindDown: appSettings.leavePlanner?.preLeaveWindDown ?? [0.75, 0.5],
       triggerAfterDaysOff: appSettings.leavePlanner?.triggerAfterDaysOff ?? 3,
+      // Per-type curve overrides. The top-level config above is the
+      // "annual" / default baseline; unpaid intentionally has no
+      // override (rare, but behaves like annual). Sick skips the
+      // pre-leave wind-down entirely — sick days are entered
+      // same-day/retroactively so any wind-down would land in the
+      // past. Conference/PD use a lighter recovery curve and no
+      // wind-down — the clinician has still been thinking about
+      // work, and the conference date is the deadline, not a
+      // switch-off point.
+      byLeaveType: {
+        sick: {
+          preLeaveWindDown: [],
+        },
+        conference: {
+          rampMultipliers: [0.75, 1.0],
+          recoveryReservedMin: [30, 0],
+          triageReservedMin: [10, 0],
+          preLeaveWindDown: [],
+        },
+        pd: {
+          rampMultipliers: [0.75, 1.0],
+          recoveryReservedMin: [30, 0],
+          triageReservedMin: [10, 0],
+          preLeaveWindDown: [],
+        },
+      },
     }),
     [appSettings.leavePlanner],
   );

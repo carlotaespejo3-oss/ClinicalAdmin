@@ -350,6 +350,194 @@ describe('resolveAvailability — arrivals scaling', () => {
   });
 });
 
+// ---- 8b. Per-leave-type curves ----------------------------------------------
+
+const RECOVERY_PER_TYPE: RecoveryConfig = {
+  ...RECOVERY,
+  byLeaveType: {
+    sick: {
+      preLeaveWindDown: [],
+    },
+    conference: {
+      rampMultipliers: [0.75, 1.0],
+      recoveryReservedMin: [30, 0],
+      triageReservedMin: [10, 0],
+      preLeaveWindDown: [],
+    },
+    pd: {
+      rampMultipliers: [0.75, 1.0],
+      recoveryReservedMin: [30, 0],
+      triageReservedMin: [10, 0],
+      preLeaveWindDown: [],
+    },
+  },
+};
+
+describe('resolveAvailability — per-type recovery curves', () => {
+  it('annual leave keeps the existing curve unchanged', () => {
+    // Same scenario as the "week-long annual leave" test above, but
+    // run through the per-type config. The output must match exactly.
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: [{
+        id: 'l1',
+        startAt: '2026-05-20T00:00:00Z',
+        endAt:   '2026-05-26T00:00:00Z',
+        type: 'annual',
+      }],
+    }));
+    expect(out.dailyAvailability[0]).toMatchObject({
+      date: '2026-05-18', dayKind: 'pre_leave', minutesAvailable: 90,
+    });
+    expect(out.dailyAvailability[1]).toMatchObject({
+      date: '2026-05-19', dayKind: 'pre_leave', minutesAvailable: 135,
+    });
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 90, recoveryReservedMin: 60, triageReservedMin: 20,
+    });
+    expect(out.dailyAvailability[10]).toMatchObject({
+      date: '2026-05-28', dayKind: 'recovery',
+      minutesAvailable: 180, recoveryReservedMin: 0, triageReservedMin: 0,
+    });
+  });
+
+  it('sick leave produces no wind-down but normal recovery', () => {
+    // Sick block Wed-Mon (6 cal days, same length as the annual case).
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: [{
+        id: 'l1',
+        startAt: '2026-05-20T00:00:00Z',
+        endAt:   '2026-05-26T00:00:00Z',
+        type: 'sick',
+      }],
+    }));
+    // Mon/Tue before — NO wind-down (sick is entered too late for it).
+    expect(out.dailyAvailability[0]).toMatchObject({
+      date: '2026-05-18', dayKind: 'normal', minutesAvailable: 180,
+    });
+    expect(out.dailyAvailability[1]).toMatchObject({
+      date: '2026-05-19', dayKind: 'normal', minutesAvailable: 180,
+    });
+    // Recovery on return is the annual default — sick override only
+    // touched preLeaveWindDown, so ramp+reserved fall through.
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 90, recoveryReservedMin: 60, triageReservedMin: 20,
+    });
+  });
+
+  it('conference leave uses a shorter ramp and lighter reserved minutes', () => {
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: [{
+        id: 'l1',
+        startAt: '2026-05-20T00:00:00Z',
+        endAt:   '2026-05-26T00:00:00Z',
+        type: 'conference',
+      }],
+    }));
+    // No wind-down before.
+    expect(out.dailyAvailability[0].dayKind).toBe('normal');
+    expect(out.dailyAvailability[1].dayKind).toBe('normal');
+    // First day back: ramp [0.75] → 135 min, lighter reserved (30/10).
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 135, recoveryReservedMin: 30, triageReservedMin: 10,
+    });
+    // Day 2 back: ramp [1.0] → full 180, no reserved.
+    expect(out.dailyAvailability[9]).toMatchObject({
+      date: '2026-05-27', dayKind: 'recovery',
+      minutesAvailable: 180, recoveryReservedMin: 0, triageReservedMin: 0,
+    });
+    // Day 3 back: ramp array only has 2 steps → back to normal.
+    expect(out.dailyAvailability[10].dayKind).toBe('normal');
+  });
+
+  it('pd leave behaves like conference', () => {
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: [{
+        id: 'l1',
+        startAt: '2026-05-20T00:00:00Z',
+        endAt:   '2026-05-26T00:00:00Z',
+        type: 'pd',
+      }],
+    }));
+    expect(out.dailyAvailability[0].dayKind).toBe('normal');
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 135, recoveryReservedMin: 30, triageReservedMin: 10,
+    });
+  });
+
+  it('unpaid leave behaves like annual (no override → falls back to baseline)', () => {
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: [{
+        id: 'l1',
+        startAt: '2026-05-20T00:00:00Z',
+        endAt:   '2026-05-26T00:00:00Z',
+        type: 'unpaid',
+      }],
+    }));
+    // Wind-down before — same as annual.
+    expect(out.dailyAvailability[0]).toMatchObject({
+      date: '2026-05-18', dayKind: 'pre_leave', minutesAvailable: 90,
+    });
+    expect(out.dailyAvailability[1]).toMatchObject({
+      date: '2026-05-19', dayKind: 'pre_leave', minutesAvailable: 135,
+    });
+    // Full annual recovery curve on the way back.
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 90, recoveryReservedMin: 60, triageReservedMin: 20,
+    });
+    expect(out.dailyAvailability[9]).toMatchObject({
+      date: '2026-05-27', dayKind: 'recovery',
+      minutesAvailable: 135, recoveryReservedMin: 30, triageReservedMin: 0,
+    });
+    expect(out.dailyAvailability[10]).toMatchObject({
+      date: '2026-05-28', dayKind: 'recovery', minutesAvailable: 180,
+    });
+  });
+
+  it('overlapping annual + conference resolves to the stronger (annual) curve', () => {
+    // Two blocks covering the same Wed-Mon stretch. The merge should
+    // pick the longer ramp + higher reserved minutes (annual wins on
+    // every dimension) and re-instate the wind-down (annual has one,
+    // conference doesn't — longer wins).
+    const blocks: LeaveBlock[] = [
+      { id: 'a', startAt: '2026-05-20T00:00:00Z', endAt: '2026-05-26T00:00:00Z', type: 'annual' },
+      { id: 'b', startAt: '2026-05-20T00:00:00Z', endAt: '2026-05-26T00:00:00Z', type: 'conference' },
+    ];
+    const out = resolveAvailability(baseInput({
+      recoveryConfig: RECOVERY_PER_TYPE,
+      leaveBlocks: blocks,
+    }));
+    // Wind-down restored.
+    expect(out.dailyAvailability[0]).toMatchObject({
+      date: '2026-05-18', dayKind: 'pre_leave', minutesAvailable: 90,
+    });
+    expect(out.dailyAvailability[1]).toMatchObject({
+      date: '2026-05-19', dayKind: 'pre_leave', minutesAvailable: 135,
+    });
+    // Recovery uses the annual ramp + reserved (the higher of the two).
+    expect(out.dailyAvailability[8]).toMatchObject({
+      date: '2026-05-26', dayKind: 'recovery',
+      minutesAvailable: 90, recoveryReservedMin: 60, triageReservedMin: 20,
+    });
+    expect(out.dailyAvailability[9]).toMatchObject({
+      date: '2026-05-27', dayKind: 'recovery',
+      minutesAvailable: 135, recoveryReservedMin: 30, triageReservedMin: 0,
+    });
+    expect(out.dailyAvailability[10]).toMatchObject({
+      date: '2026-05-28', dayKind: 'recovery', minutesAvailable: 180,
+    });
+  });
+});
+
 // ---- 9. Stress / smoke -------------------------------------------------------
 
 describe('resolveAvailability — invariants', () => {
