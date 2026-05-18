@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Mail, ClipboardList, ShieldCheck, Flag } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, PRIORITY_PILL, type Priority } from '@/lib/utils';
@@ -200,6 +200,82 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const StatusIcon = statusStyles.Ico;
   const youAre = status === 'red' ? 'Behind' : status === 'amber' ? 'Tight' : 'On track';
 
+  // ---- Plan-vs-inbox summary strip (4 cards under the status banner) ----
+  // All four numbers derive from the same `plannerOutput` the banner
+  // already consumes, plus `manualTasks` for the scheduled-tasks count.
+  // No new stores, no duplicated computation — when the planner output
+  // updates (capacity changes, emails archived, deferrals recorded),
+  // these cards re-render in lock-step with the banner above.
+  //
+  //   - Safely deferred: items the planner pushed beyond the current
+  //     runway because they don't need to fit this week (SLA still
+  //     comfortably ahead). These are the items that won't bite.
+  //   - Tasks scheduled: clinician's own organisational layer
+  //     (reports / letters / admin) that are still open and not
+  //     auto-completed by an email reply.
+  //   - Unsafe deferrals: items the planner couldn't fit and whose
+  //     SLA WILL bite within the runway — the "if you don't add
+  //     capacity, these slip" set.
+  //   - Missed deadlines: items already past their SLA today. This
+  //     should stay at 0 in a well-planned week.
+  const tasksScheduledCount = manualTasks.filter(
+    (t) => !t.done && !isLinkedDocTask(t),
+  ).length;
+  const safelyDeferredCount = plannerOutput.deferredItems.filter(
+    (i) => i.kind === 'email',
+  ).length;
+  const unsafeDeferralsCount = plannerOutput.breaches.filter(
+    (b) => b.reason === 'no_capacity_before_sla',
+  ).length;
+  const missedDeadlinesCount = plannerOutput.breaches.filter(
+    (b) => b.reason === 'already_overdue',
+  ).length;
+
+  const summaryCards = [
+    {
+      key: 'safely-deferred',
+      Icon: Mail,
+      iconBg: 'bg-emerald-100',
+      iconColor: 'text-emerald-600',
+      count: safelyDeferredCount,
+      title: 'Emails safely deferred',
+      subtitle: 'Scheduled for next week or later.',
+    },
+    {
+      key: 'tasks-scheduled',
+      Icon: ClipboardList,
+      iconBg: 'bg-indigo-100',
+      iconColor: 'text-indigo-600',
+      count: tasksScheduledCount,
+      title: 'Tasks scheduled',
+      subtitle: 'Reports / letters / admin tasks.',
+    },
+    {
+      key: 'unsafe-deferrals',
+      Icon: ShieldCheck,
+      iconBg: unsafeDeferralsCount > 0 ? 'bg-amber-100' : 'bg-emerald-100',
+      iconColor: unsafeDeferralsCount > 0 ? 'text-amber-600' : 'text-emerald-600',
+      count: unsafeDeferralsCount,
+      title: 'Unsafe deferrals',
+      subtitle:
+        unsafeDeferralsCount > 0
+          ? 'These will slip unless you add capacity.'
+          : "You're safe if you follow the plan.",
+    },
+    {
+      key: 'missed-deadlines',
+      Icon: Flag,
+      iconBg: missedDeadlinesCount > 0 ? 'bg-red-100' : 'bg-slate-100',
+      iconColor: missedDeadlinesCount > 0 ? 'text-red-600' : 'text-slate-500',
+      count: missedDeadlinesCount,
+      title: 'Missed deadlines',
+      subtitle:
+        missedDeadlinesCount > 0
+          ? 'Action these first to recover the week.'
+          : "You're on top of everything.",
+    },
+  ];
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
 
@@ -385,6 +461,42 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
             )}
           </div>
         </div>
+      </div>
+
+      {/* Plan-vs-inbox summary — four at-a-glance counts derived from
+          the same planner output as the status banner above. Stays in
+          sync with capacity changes, archives, deferrals. */}
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+        data-testid="plan-summary-strip"
+        aria-label="Plan versus inbox summary"
+      >
+        {summaryCards.map(({ key, Icon, iconBg, iconColor, count, title, subtitle }) => (
+          <div
+            key={key}
+            className="bg-white border border-border rounded-2xl shadow-sm p-4 flex items-start gap-3"
+            data-testid={`plan-summary-${key}`}
+          >
+            <div
+              className={cn(
+                'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
+                iconBg,
+              )}
+            >
+              <Icon size={18} className={iconColor} />
+            </div>
+            <div className="space-y-0.5 min-w-0">
+              <p
+                className="text-2xl font-bold text-foreground leading-none tabular-nums"
+                data-testid={`plan-summary-${key}-count`}
+              >
+                {count}
+              </p>
+              <p className="text-sm font-bold text-foreground leading-tight">{title}</p>
+              <p className="text-xs text-muted-foreground leading-snug">{subtitle}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Today's plan + mini workload calendar — paired side-by-side on
