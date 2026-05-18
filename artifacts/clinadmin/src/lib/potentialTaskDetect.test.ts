@@ -15,7 +15,9 @@ describe('detectPotentialTasks — spec example scenarios', () => {
     assert.equal(result.length, 1);
     assert.equal(result[0].kind, 'phone_call');
     assert.equal(result[0].type, 'Phone call');
-    assert.equal(result[0].defaultMin, 10);
+    // Phone calls always book 30 mins (standing clinician rule —
+    // see potentialTaskDetect.ts and promptedTasksStore.applyPhoneCallRule).
+    assert.equal(result[0].defaultMin, 30);
     assert.match(result[0].suggestedTitle, /Call .* back/);
   });
 

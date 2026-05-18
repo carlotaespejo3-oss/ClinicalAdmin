@@ -109,7 +109,11 @@ const KIND_RULES: KindRule[] = [
       /\b(can|could)\s+(we|you)\s+(have\s+)?a\s+(quick\s+)?(phone\s+)?call\b/i,
     ],
     type: 'Phone call',
-    defaultMin: 10,
+    // Phone calls always book 30 mins — per the clinician's standing
+    // rule. Even a "quick" callback covers history, the call itself,
+    // and the brief note afterwards, so 10 min was never realistic.
+    // Locked at the create/edit boundary too (see promptedTasksStore).
+    defaultMin: 30,
     buildTitle: (sender) => `Call ${sender} back`,
   },
   {

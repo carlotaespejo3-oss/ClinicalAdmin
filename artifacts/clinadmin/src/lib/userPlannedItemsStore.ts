@@ -104,6 +104,60 @@ export function addUserPlannedEvent(input: {
   return item;
 }
 
+export function updateUserPlannedTask(
+  id: string,
+  patch: { title?: string; date?: string; estMin?: number },
+): UserPlannedTask | null {
+  let updated: UserPlannedTask | null = null;
+  cache = cache.map((it) => {
+    if (it.id !== id || it.kind !== 'task') return it;
+    updated = {
+      ...it,
+      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...(patch.date !== undefined ? { date: patch.date } : {}),
+      ...(patch.estMin !== undefined
+        ? { estMin: Math.max(5, Math.round(patch.estMin)) }
+        : {}),
+    };
+    return updated;
+  });
+  if (updated) emit();
+  return updated;
+}
+
+export function updateUserPlannedEvent(
+  id: string,
+  patch: {
+    title?: string;
+    date?: string;
+    startTime?: string | null;
+    durationMin?: number;
+    notes?: string | null;
+  },
+): UserPlannedEvent | null {
+  let updated: UserPlannedEvent | null = null;
+  cache = cache.map((it) => {
+    if (it.id !== id || it.kind !== 'event') return it;
+    updated = {
+      ...it,
+      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...(patch.date !== undefined ? { date: patch.date } : {}),
+      ...(patch.startTime !== undefined
+        ? { startTime: patch.startTime?.trim() || null }
+        : {}),
+      ...(patch.durationMin !== undefined
+        ? { durationMin: Math.max(5, Math.round(patch.durationMin)) }
+        : {}),
+      ...(patch.notes !== undefined
+        ? { notes: patch.notes?.trim() || null }
+        : {}),
+    };
+    return updated;
+  });
+  if (updated) emit();
+  return updated;
+}
+
 export function deleteUserPlannedItem(id: string): void {
   const next = cache.filter((it) => it.id !== id);
   if (next.length === cache.length) return;

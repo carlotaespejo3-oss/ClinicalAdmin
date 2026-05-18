@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import AvailabilityPanel from '@/components/AvailabilityPanel';
 import LeavePanel from '@/components/LeavePanel';
+import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
 import {
   useLeaveBlocks,
   leaveBlocksForDay,
@@ -46,7 +47,17 @@ interface Props {
   onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>) => void;
 }
 
-function ItemChip({ item, onOpenEmail, dense }: { item: PlanItem; onOpenEmail: (id: number) => void; dense?: boolean }) {
+function ItemChip({
+  item,
+  onOpenEmail,
+  onOpenTask,
+  dense,
+}: {
+  item: PlanItem;
+  onOpenEmail: (id: number) => void;
+  onOpenTask: (item: PlanItem) => void;
+  dense?: boolean;
+}) {
   const tone = CATEGORY_TONE[item.category] ?? CATEGORY_TONE.ADMIN;
   const Icon =
     item.kind === 'event'
@@ -54,9 +65,20 @@ function ItemChip({ item, onOpenEmail, dense }: { item: PlanItem; onOpenEmail: (
       : item.kind === 'task'
         ? ClipboardList
         : Mail;
-  const clickable = item.kind === 'email' && typeof item.refId === 'number';
+  // Email items open the email; tasks and events open the detail
+  // modal where the clinician can edit or delete. Unclear-gate
+  // rows stay non-interactive — they're a status indicator, not a
+  // task with its own row in any store.
+  const clickable =
+    (item.kind === 'email' && typeof item.refId === 'number') ||
+    item.kind === 'task' ||
+    item.kind === 'event';
   const handleClick = () => {
-    if (clickable) onOpenEmail(item.refId as number);
+    if (item.kind === 'email' && typeof item.refId === 'number') {
+      onOpenEmail(item.refId);
+    } else if (item.kind === 'task' || item.kind === 'event') {
+      onOpenTask(item);
+    }
   };
   return (
     <button
@@ -89,11 +111,13 @@ function DayColumn({
   date,
   plan,
   onOpenEmail,
+  onOpenTask,
   leave,
 }: {
   date: Date;
   plan: DailyPlan | null;
   onOpenEmail: (id: number) => void;
+  onOpenTask: (item: PlanItem) => void;
   leave: LeaveBlock[];
 }) {
   const isToday = startOfDay(date).getTime() === startOfDay(new Date()).getTime();
@@ -153,7 +177,12 @@ function DayColumn({
           </p>
         )}
         {plan?.items.map((item, i) => (
-          <ItemChip key={`${item.kind}-${item.refId ?? i}`} item={item} onOpenEmail={onOpenEmail} />
+          <ItemChip
+            key={`${item.kind}-${item.refId ?? i}`}
+            item={item}
+            onOpenEmail={onOpenEmail}
+            onOpenTask={onOpenTask}
+          />
         ))}
       </div>
     </div>
@@ -261,6 +290,15 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
   const openEmail = (id: number) => {
     onOpenEmail(id);
     onNavigate('Emails');
+  };
+
+  // Task / event detail modal. We track the calendar date the item
+  // was rendered against so the modal can pre-fill the date picker
+  // even for items whose underlying store doesn't carry a date
+  // (e.g. linked-doc tasks).
+  const [selectedTask, setSelectedTask] = useState<{ item: PlanItem; date: string } | null>(null);
+  const openTaskOnDate = (date: string) => (item: PlanItem) => {
+    setSelectedTask({ item, date });
   };
   const [mode, setMode] = useState<RangeMode>('week');
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week
@@ -438,6 +476,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
               date={d}
               plan={runwayByDate.get(dateKey(d)) ?? null}
               onOpenEmail={openEmail}
+              onOpenTask={openTaskOnDate(dateKey(d))}
               leave={leaveBlocksForDay(dateKey(d), leaveBlocks)}
             />
           ))}
@@ -532,7 +571,12 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
                 {selectedPlan && selectedPlan.items.length > 0 && (
                   <div className="space-y-1.5">
                     {selectedPlan.items.map((item, i) => (
-                      <ItemChip key={`${item.kind}-${item.refId ?? i}`} item={item} onOpenEmail={openEmail} />
+                      <ItemChip
+                        key={`${item.kind}-${item.refId ?? i}`}
+                        item={item}
+                        onOpenEmail={openEmail}
+                        onOpenTask={openTaskOnDate(selectedPlan.date)}
+                      />
                     ))}
                   </div>
                 )}
@@ -552,6 +596,15 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
         onUpdateAvailability={onUpdateAvailability}
         onOpenWeeklySetup={onOpenWeeklySetup}
       />
+
+      {selectedTask && (
+        <CalendarTaskDetailModal
+          item={selectedTask.item}
+          scheduledDate={selectedTask.date}
+          onClose={() => setSelectedTask(null)}
+          onNavigateToTasks={() => onNavigate('Tasks')}
+        />
+      )}
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">

@@ -54,8 +54,12 @@ router.get("/prompted-tasks", async (_req, res) => {
 });
 
 // POST /api/prompted-tasks — accept (with the clinician's saved form
-// values). Idempotent on (clinicianId, outlookEmailId, kind) — re-posts
-// no-op so we don't overwrite the original accepted-at timestamp.
+// values). Idempotent on (clinicianId, outlookEmailId, kind). On
+// conflict we UPDATE the editable fields so the clinician can revise
+// the task later (calendar task-detail modal posts back here). We
+// deliberately preserve `taskId`, `response`, and `createdAt` so the
+// original accept-time identity / audit timestamps stay stable —
+// only the fields the form actually lets you change are touched.
 router.post("/prompted-tasks", async (req, res) => {
   const parsed = AcceptPromptedTaskBody.safeParse(req.body);
   if (!parsed.success) {
@@ -63,6 +67,12 @@ router.post("/prompted-tasks", async (req, res) => {
     return;
   }
   const t = parsed.data;
+  // Phone-call rule (server-enforced): a phone_call task always
+  // books 30 minutes regardless of what the client posted. This is
+  // the authoritative boundary — the client clamps too, but the
+  // server is the only place a crafted request can't bypass. Any
+  // other estMin value the client sends is silently coerced here.
+  const estMin = t.kind === "phone_call" ? 30 : t.estMin;
   await db
     .insert(promptedTasksTable)
     .values({
@@ -73,7 +83,7 @@ router.post("/prompted-tasks", async (req, res) => {
       taskId: t.taskId,
       title: t.title,
       type: t.type,
-      estMin: t.estMin,
+      estMin,
       priority: t.priority,
       patientName: t.patientName ?? null,
       dueDays: t.dueDays ?? null,
@@ -84,7 +94,25 @@ router.post("/prompted-tasks", async (req, res) => {
       medicationDose: t.medicationDose ?? null,
       travelMentioned: t.travelMentioned ?? null,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [
+        promptedTasksTable.clinicianId,
+        promptedTasksTable.outlookEmailId,
+        promptedTasksTable.kind,
+      ],
+      set: {
+        title: t.title,
+        type: t.type,
+        estMin,
+        priority: t.priority,
+        patientName: t.patientName ?? null,
+        dueDays: t.dueDays ?? null,
+        notes: t.notes,
+        // done is also editable via /done; keep it in sync if the
+        // client posts it explicitly with an accept.
+        done: t.done,
+      },
+    });
   res.status(204).send();
 });
 

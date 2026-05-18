@@ -78,7 +78,10 @@ async function hydrate(): Promise<void> {
       const emailId = Number(r.outlookEmailId);
       if (!Number.isFinite(emailId)) continue;
       if (existingIds.has(r.taskId)) continue;
-      cache.tasks.push({
+      // Re-apply the phone-call rule on hydrate. The server enforces
+      // it too (see promptedTasks route), but hydrating any legacy /
+      // pre-rule row picks up the clamp here as a final safety net.
+      cache.tasks.push(applyPhoneCallRule({
         id: r.taskId,
         emailId,
         kind: r.kind as PotentialTaskKind,
@@ -95,7 +98,7 @@ async function hydrate(): Promise<void> {
         medicationName: r.medicationName,
         medicationDose: r.medicationDose,
         travelMentioned: r.travelMentioned ?? undefined,
-      });
+      }));
     }
     for (const d of state.dismissed) {
       const emailId = Number(d.outlookEmailId);
@@ -149,17 +152,25 @@ export interface AddPromptedTaskInput {
   travelMentioned?: boolean;
 }
 
+// Phone-call rule: estimated minutes are always 30, regardless of
+// what the AI suggested or what the form contained. Even a "quick"
+// callback wraps in history-review and a follow-up note, so 30 is
+// the realistic minimum the clinician has standardised on.
+function applyPhoneCallRule<T extends { kind: PotentialTaskKind; estMin: number }>(t: T): T {
+  return t.kind === 'phone_call' ? { ...t, estMin: 30 } : t;
+}
+
 export function addPromptedTask(input: AddPromptedTaskInput): PromptedTask | null {
   // Dedupe key is (emailId, kind) — guards against rapid double-click
   // of "Add to my tasks" creating two identical tasks.
   if (hasPromptedTaskForKind(input.emailId, input.kind)) return null;
   const id = `pt_${input.emailId}_${input.kind}_${Date.now().toString(36)}`;
-  const task: PromptedTask = {
+  const task: PromptedTask = applyPhoneCallRule({
     ...input,
     id,
     createdAt: Date.now(),
     done: false,
-  };
+  });
   // Adding a task implicitly dismisses the prompt for that (email, kind).
   const k = key(input.emailId, input.kind);
   cache.tasks = [task, ...cache.tasks];
@@ -212,6 +223,56 @@ function persistDoneById(id: string) {
     // eslint-disable-next-line no-console
     console.warn('[promptedTasksStore] failed to persist done flag', err);
   });
+}
+
+export interface UpdatePromptedTaskInput {
+  title?: string;
+  estMin?: number;
+  dueDays?: number | null;
+  priority?: 'high' | 'medium' | 'low';
+  notes?: string;
+}
+
+// Edit an accepted prompted task. Fires a re-POST to /prompted-tasks
+// which now upserts on (clinician, email, kind) and updates the
+// editable fields server-side. Phone-call estMin is always clamped
+// back to 30 here too — the rule applies to any path that mutates
+// the task, not just the create path.
+export function updatePromptedTask(id: string, patch: UpdatePromptedTaskInput): PromptedTask | null {
+  const existing = cache.tasks.find((t) => t.id === id);
+  if (!existing) return null;
+  const merged = applyPhoneCallRule({
+    ...existing,
+    ...(patch.title !== undefined ? { title: patch.title } : {}),
+    ...(patch.estMin !== undefined ? { estMin: Math.max(5, Math.round(patch.estMin)) } : {}),
+    ...(patch.dueDays !== undefined ? { dueDays: patch.dueDays } : {}),
+    ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+    ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+  });
+  cache.tasks = cache.tasks.map((t) => (t.id === id ? merged : t));
+  emit();
+  apiAcceptPromptedTask({
+    taskId: merged.id,
+    outlookEmailId: String(merged.emailId),
+    kind: merged.kind,
+    title: merged.title,
+    type: merged.type,
+    estMin: merged.estMin,
+    priority: merged.priority,
+    patientName: merged.patientName,
+    dueDays: merged.dueDays,
+    notes: merged.notes,
+    done: merged.done,
+    controlledDrug: merged.controlledDrug ?? null,
+    medicationName: merged.medicationName ?? null,
+    medicationDose: merged.medicationDose ?? null,
+    travelMentioned: merged.travelMentioned ?? null,
+    createdAt: new Date(merged.createdAt).toISOString(),
+  }).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.warn('[promptedTasksStore] failed to persist task update', err);
+  });
+  return merged;
 }
 
 export function togglePromptedTaskDone(id: string) {
