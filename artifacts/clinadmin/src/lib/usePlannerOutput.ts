@@ -64,6 +64,7 @@ export function usePlannerOutput(
     () => ({
       rampMultipliers: appSettings.leavePlanner?.rampMultipliers ?? [0.5, 0.75, 1.0],
       recoveryReservedMin: appSettings.leavePlanner?.recoveryReservedMin ?? [60, 30, 0],
+      triageReservedMin: appSettings.leavePlanner?.triageReservedMin ?? [20, 0, 0],
       preLeaveWindDown: appSettings.leavePlanner?.preLeaveWindDown ?? [0.75, 0.5],
       triggerAfterDaysOff: appSettings.leavePlanner?.triggerAfterDaysOff ?? 3,
     }),
@@ -208,6 +209,7 @@ export function usePlannerOutput(
         const busy = busyMinutesByDate.get(day.date) ?? 0;
         day.minutesAvailable = Math.max(0, r.minutesAvailable - busy);
         day.recoveryReservedMin = r.recoveryReservedMin;
+        day.triageReservedMin = r.triageReservedMin;
       }
       effectiveArrivals = resolved.effectiveArrivalConfig;
       leaveContext = resolved.leaveContext;
@@ -272,14 +274,15 @@ export function usePlannerOutput(
         // numerator), making the day look tighter than it is.
         const totalPlannedMin = day.totalPlannedMin + eventsMin;
         const minutesAvailable = day.minutesAvailable + eventsMin;
-        // recoveryReservedMin must enter the status calc here the
-        // same way it does in planner.ts step 9 — otherwise a
-        // recovery day with no items would read 'safe' on the
-        // public runway even though the planner internally treated
-        // its reserved slot as already claimed. Mirror the planner's
-        // claimedMin = totalPlannedMin + recoveryReservedMin shape.
+        // recoveryReservedMin AND triageReservedMin must enter the
+        // status calc here the same way they do in planner.ts step
+        // 9 — otherwise a recovery day with no items would read
+        // 'safe' on the public runway even though the planner
+        // internally treated both reserved slots as already
+        // claimed. Mirror the planner's claimedMin shape exactly.
         const recoveryMin = day.recoveryReservedMin ?? 0;
-        const claimedMin = totalPlannedMin + recoveryMin;
+        const triageMin = day.triageReservedMin ?? 0;
+        const claimedMin = totalPlannedMin + recoveryMin + triageMin;
         const bufferMin = Math.max(0, minutesAvailable - claimedMin);
         // Same thresholds as planner.ts L876-892 + calendarHelpers
         // filterRunwayToTasks — keep them in lock-step so a re-filter

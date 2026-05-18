@@ -79,6 +79,13 @@ export interface AppSettings {
   //   recoveryReservedMin  — minutes reserved on those same days for
   //                          catch-up admin (untouchable by the
   //                          packer). Aligned 1:1 with rampMultipliers.
+  //   triageReservedMin    — minutes reserved on those same days for
+  //                          triage scanning (a separate cognitive
+  //                          task from admin catch-up — "scan for
+  //                          what escalated while away"). Also
+  //                          untouchable by the packer. Aligned 1:1
+  //                          with rampMultipliers; typically only
+  //                          non-zero on day 1 back.
   //   preLeaveWindDown     — capacity scalars on the last N working
   //                          days BEFORE leave, in order [day -1,
   //                          day -2, ...]. e.g. [0.75, 0.5] = wind
@@ -100,6 +107,7 @@ export interface AppSettings {
     rampUpMinutes: number;
     rampMultipliers: number[];
     recoveryReservedMin: number[];
+    triageReservedMin: number[];
     preLeaveWindDown: number[];
     triggerAfterDaysOff: number;
   };
@@ -128,6 +136,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     rampUpMinutes: 60,
     rampMultipliers: [0.5, 0.75, 1.0],
     recoveryReservedMin: [60, 30, 0],
+    triageReservedMin: [20, 0, 0],
     preLeaveWindDown: [0.75, 0.5],
     triggerAfterDaysOff: 3,
   },

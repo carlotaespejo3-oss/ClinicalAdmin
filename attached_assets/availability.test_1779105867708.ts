@@ -1,13 +1,9 @@
 // availability.test.ts
 //
-// Port of the user-provided Vitest spec to node:test (the repo's test
-// runner). The test BODIES are intentionally unchanged from the
-// upstream file — only the import surface + a tiny `expect` shim at
-// the top differ — so future revisions of the upstream spec can be
-// dropped in with minimal re-conversion.
+// Vitest-style tests for resolveAvailability. Should also run under Jest with
+// minimal changes (s/vitest/jest/).
 
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import {
   resolveAvailability,
   WorkingPattern,
@@ -15,48 +11,6 @@ import {
   ProjectedArrivalConfig,
   LeaveBlock,
 } from './availability';
-
-// ---- Vitest-shaped shim ------------------------------------------------------
-
-const describe = (_name: string, fn: () => void): void => fn();
-const it = test;
-
-interface Matchers {
-  toBe: (expected: unknown) => void;
-  toEqual: (expected: unknown) => void;
-  toMatchObject: (expected: Record<string, unknown>) => void;
-  toHaveLength: (n: number) => void;
-  toBeUndefined: () => void;
-  toBeGreaterThanOrEqual: (n: number) => void;
-}
-
-function expect(actual: unknown): Matchers {
-  return {
-    toBe: (expected) => assert.equal(actual, expected),
-    toEqual: (expected) => assert.deepEqual(actual, expected),
-    toMatchObject: (expected) => {
-      assert.ok(
-        actual !== null && typeof actual === 'object',
-        `toMatchObject: actual is not an object (got ${typeof actual})`,
-      );
-      const a = actual as Record<string, unknown>;
-      for (const k of Object.keys(expected)) {
-        assert.deepEqual(a[k], expected[k], `field ${k} mismatch`);
-      }
-    },
-    toHaveLength: (n) => {
-      const len = (actual as { length?: number })?.length;
-      assert.equal(len, n);
-    },
-    toBeUndefined: () => assert.equal(actual, undefined),
-    toBeGreaterThanOrEqual: (n) => {
-      assert.ok(
-        typeof actual === 'number' && actual >= n,
-        `expected ${String(actual)} >= ${n}`,
-      );
-    },
-  };
-}
 
 // ---- Fixtures ----------------------------------------------------------------
 

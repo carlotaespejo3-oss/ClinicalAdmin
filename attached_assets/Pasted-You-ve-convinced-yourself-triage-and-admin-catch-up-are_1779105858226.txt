@@ -1,0 +1,28 @@
+You've convinced yourself triage and admin catch-up are semantically different, and I agree — they really are. Triage is "scan for things that escalated, decide what's urgent." Admin catch-up is "work through the queue of notes/correspondence." Different cognitive tasks, different time scales (15-20 min vs 30-60 min), different value if they go uncompleted (missing triage = clinical risk; missing admin = stress + backlog).
+The argument against splitting them is just "fewer concepts to track." But once we add it, we'll never want to remove it, because the UI can render them as two distinct pills/blocks on the recovery day, which is genuinely clearer for the clinician.
+Let me add it.
+What changes
+RecoveryConfig gets a new array, triageReservedMin: number[]. Default [20, 0, 0] — 20 minutes on day 1 back, nothing after. The triage block only really matters on the first day back; after that you've already scanned.
+DailyAvailability gets a new field triageReservedMin: number alongside recoveryReservedMin.
+The planner-side rule for triage is the same as for admin catch-up: never consumed during packing, counted toward claimed capacity.
+Let me view the file and add it:2 archivos editados, visualizó un archivo2 archivos editados, visualizó un archivoNow update the internal day record and the recovery loop:Visualizó un archivo, archivo editadoVisualizó un archivo, archivo editadoNow the recovery walk — set triage minutes alongside admin minutes:Visualizó un archivo, archivo editadoVisualizó un archivo, archivo editadoNow finalize — emit triageReservedMin in the output:Visualizó un archivo, archivo editadoVisualizó un archivo, archivo editadoNow update the standalone test runner and Vitest tests:3 archivos editados3 archivos editadosNow add a dedicated triage test and an invariant check:2 archivos editados, ejecutó un comando2 archivos editados, ejecutó un comando42/42. Let me also update the Vitest file so it matches:3 archivos editados, ejecutó un comando, leyó un archivo3 archivos editados, ejecutó un comando, leyó un archivoDone. 42/42 passing. Replace the two files in your downloads with these.
+What changed
+RecoveryConfig now has a fourth array, triageReservedMin: number[]. Default [20, 0, 0] — 20 minutes on day 1 back, nothing on days 2 and 3.
+DailyAvailability carries a new field triageReservedMin: number next to recoveryReservedMin. Both are protected slots the planner can never pack into.
+On a typical day 1 back, the picture is now:
+
+90 minutes available (50% ramp)
+60 minutes admin catch-up (working through note backlog)
+20 minutes triage scanning (quick scan for things that escalated)
+10 minutes actually free for new scheduled work
+
+That's correctly tight — day 1 back shouldn't be a normal work day, and now the planner knows why the day is busy rather than just seeing a generic reserved blob.
+For the planner-side wiring
+When you brief your builder on connecting this up, the rule for triage is identical to admin catch-up. Same treatment everywhere:
+
+Step 1 of planner: unpack triageReservedMin into the internal day record alongside recoveryReservedMin and lowQuotaRemainingMin.
+Step 6 packing: triage minutes are never consumed by any item. Not by urgent. Not by overdue. Nothing.
+Step 7 status: count both reserved buckets toward "claimed capacity" when computing day status.
+
+The UI can render them as two pills on the recovery day — "Triage 20 min" and "Admin catch-up 60 min" — which is more informative than a single 80-min generic block.
+Ready for the diff function next, or want to keep adding refinements to the resolver first?AvailabilityTS Abrir en QuickTime PlayerAvailability.testTS Abrir en QuickTime PlayerDescargar todo

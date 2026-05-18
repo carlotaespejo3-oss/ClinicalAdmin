@@ -131,6 +131,12 @@ export interface DayAvailability {
    * even overdue work — and they count toward the day's "claimed
    * capacity" so a recovery day reads as tight rather than safe. */
   recoveryReservedMin?: number;
+  /** Minutes reserved for post-leave triage scanning (a separate
+   * cognitive task from admin catch-up: "scan for things that
+   * escalated while away"). Same packer rule as
+   * recoveryReservedMin — untouchable, counts toward claimed
+   * capacity. Typically only non-zero on day 1 back. */
+  triageReservedMin?: number;
 }
 
 export interface PlannerInput {
@@ -209,6 +215,12 @@ export interface DailyPlan {
    * overdue work), counted toward "claimed capacity" for the day's
    * status. Omitted on days with no recovery reserve. */
   recoveryReservedMin?: number;
+  /** Minutes set aside for post-leave triage scanning. Same packer
+   * rule as recoveryReservedMin (untouchable, counts toward claimed
+   * capacity). Surfaced as its own field so the UI can render it as
+   * a distinct pill — "Triage 20 min" + "Admin catch-up 60 min" is
+   * clearer to the clinician than one generic 80-min reserved blob. */
+  triageReservedMin?: number;
 }
 
 export type OverallStatus = 'green' | 'amber' | 'red';
@@ -483,7 +495,14 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //     it back.
   const runway: DailyPlanInternal[] = input.availability.map((a, i) => {
     const recoveryReservedMin = Math.max(0, a.recoveryReservedMin ?? 0);
-    const bookableMin = Math.max(0, a.minutesAvailable - recoveryReservedMin);
+    const triageReservedMin = Math.max(0, a.triageReservedMin ?? 0);
+    // Both reserved buckets come off the top of bookable. The packer
+    // sees a single shrunk pool; the two fields stay separate on the
+    // public output so the UI can render them as distinct pills.
+    const bookableMin = Math.max(
+      0,
+      a.minutesAvailable - recoveryReservedMin - triageReservedMin,
+    );
     return {
       dayIndex: i,
       date: a.date,
@@ -496,6 +515,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
       status: a.minutesAvailable > 0 ? 'safe' : 'idle',
       flags: [],
       recoveryReservedMin,
+      triageReservedMin,
       bookableMin,
       lowQuotaRemainingMin: 0,
     };
@@ -702,14 +722,15 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
       dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
     const remainingTotalCap = (d: DailyPlanInternal) => {
       const reservedFloor = dipIntoLowQuota ? 0 : d.lowQuotaRemainingMin;
-      // recoveryReservedMin is a hard floor — even the past-deadline
-      // fallback below can't dip into it. Subtract it so the cap
-      // matches what's truly placeable on the day.
+      // recoveryReservedMin and triageReservedMin are hard floors —
+      // even the past-deadline fallback below can't dip into them.
+      // Subtract both so the cap matches what's truly placeable.
       return (
         d.minutesAvailable -
         d.totalPlannedMin -
         reservedFloor -
-        (d.recoveryReservedMin ?? 0)
+        (d.recoveryReservedMin ?? 0) -
+        (d.triageReservedMin ?? 0)
       );
     };
 
@@ -931,14 +952,16 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // estimation errors (a 5-min email can't be the difference between
   // green and amber on a 60-min day).
   for (const d of runway) {
-    // recoveryReservedMin counts as already-claimed capacity: a day
-    // with 90 admin minutes and a 60-min recovery reserve only has
-    // 30 minutes left for new work, and that should read as 'tight'
-    // even when no items have been placed yet. Mirror the same
-    // reasoning into bufferMin so the buffer the clinician sees
-    // matches what they can actually book onto.
+    // recoveryReservedMin and triageReservedMin both count as
+    // already-claimed capacity: a day with 90 admin minutes, a
+    // 60-min recovery reserve, and a 20-min triage reserve only has
+    // 10 minutes left for new work, and that should read as 'tight'
+    // (or 'breach') even when no items have been placed yet. Mirror
+    // the same reasoning into bufferMin so the buffer the clinician
+    // sees matches what they can actually book onto.
     const recoveryMin = d.recoveryReservedMin ?? 0;
-    const claimedMin = d.totalPlannedMin + recoveryMin;
+    const triageMin = d.triageReservedMin ?? 0;
+    const claimedMin = d.totalPlannedMin + recoveryMin + triageMin;
     d.bufferMin = Math.max(0, d.minutesAvailable - claimedMin);
     if (d.minutesAvailable === 0) {
       d.status = 'idle';
