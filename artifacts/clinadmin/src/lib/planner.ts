@@ -1006,20 +1006,20 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
 
   if (overdueBreaches.length > 0) {
     overallStatus = 'red';
-    statusHeadline = `${overdueBreaches.length} ${overdueBreaches.length === 1 ? 'email is' : 'emails are'} already overdue`;
+    statusHeadline = `${overdueBreaches.length} ${overdueBreaches.length === 1 ? 'email has' : 'emails have'} slipped past their deadline`;
     statusDetail = safeguardingOverdue
-      ? 'Handle these today before anything else. One involves a safeguarding concern.'
-      : 'Handle these today before anything else.';
+      ? "Best to clear these first thing today — one of them touches a safeguarding concern, so it needs your eyes before anything else."
+      : "Best to clear these first thing today, then the rest of the week settles down.";
   } else if (futureBreaches.length > 0) {
     overallStatus = 'red';
-    statusHeadline = `${futureBreaches.length} ${futureBreaches.length === 1 ? 'email will' : 'emails will'} breach this week`;
+    statusHeadline = `${futureBreaches.length} ${futureBreaches.length === 1 ? 'email is on course to miss its deadline' : 'emails are on course to miss their deadlines'}`;
     const shortMin = Math.max(0, weeklyDemandMin - weeklyCapacityMin);
     statusDetail =
       shortMin > 0
-        ? `You have ${fmtH(weeklyDemandMin)} of work and ${fmtH(weeklyCapacityMin)} available.`
-        : "Some work won't fit before its deadline.";
+        ? `There is about ${fmtH(weeklyDemandMin)} of work to do and ${fmtH(weeklyCapacityMin)} set aside for it — a little short of where it needs to be.`
+        : "A few items won't quite land in time on the current plan.";
     recommendation =
-      'Add capacity, defer low-priority emails, or delegate admin items to reception.';
+      'A small top-up of time, or letting a low-priority email wait, would put this back on track — reception can also take the routine admin if helpful.';
   } else if (
     // Weekly slack-based amber/red, using the same 90% / 110% bands as
     // per-day status so the headline and the day chips stay consistent.
@@ -1029,28 +1029,28 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     weeklyCapacityMin > 0 && weeklyDemandMin > weeklyCapacityMin * 1.10
   ) {
     overallStatus = 'red';
-    statusHeadline = 'Your week is over capacity';
-    statusDetail = `You have ${fmtH(weeklyDemandMin)} of work and ${fmtH(weeklyCapacityMin)} available.`;
+    statusHeadline = 'A bit more on your plate than the week can hold';
+    statusDetail = `There is about ${fmtH(weeklyDemandMin)} of work and ${fmtH(weeklyCapacityMin)} set aside for it — a little short of where it needs to be.`;
     recommendation =
-      'Add capacity, defer low-priority emails, or delegate admin items to reception.';
+      'A small top-up of time, or letting a low-priority email wait, would settle things — reception can also take the routine admin if helpful.';
   } else if (
     week1Days.some((d) => d.status === 'tight') ||
     (weeklyCapacityMin > 0 && weeklyDemandMin >= weeklyCapacityMin * 0.90)
   ) {
     overallStatus = 'amber';
-    statusHeadline = 'Your week is tight';
+    statusHeadline = 'A close-run week, but doable';
     statusDetail =
-      'You can clear everything but there is no margin. If 2 or more urgent emails arrive, you will need extra time.';
-    recommendation = 'Add 30 minutes mid-week as a buffer.';
+      "Everything fits if the week goes to plan — just no slack if a couple of urgent emails land on top.";
+    recommendation = 'Tucking an extra 30 minutes in mid-week would give you a bit of breathing room.';
   } else {
     overallStatus = 'green';
-    statusHeadline = 'You are on track';
+    statusHeadline = 'Nicely on top of things';
     const nextAdminDay = runway.find(
       (d) => d.dayIndex > 0 && d.minutesAvailable > 0,
     );
     statusDetail = nextAdminDay
-      ? `Your inbox is manageable this week. Complete today's plan and you are safe until ${nextAdminDay.dayLabel}.`
-      : 'Your inbox is manageable this week.';
+      ? `This week is well within reach — clear today's list and you can ease off until ${nextAdminDay.dayLabel}.`
+      : 'Your inbox is steady — nothing else needs your attention this week.';
   }
 
   // Step 9b — Annotate items with prior-deferral history. An email

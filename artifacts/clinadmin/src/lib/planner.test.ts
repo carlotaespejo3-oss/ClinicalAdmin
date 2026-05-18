@@ -472,7 +472,7 @@ describe('buildPlan — breach detection', () => {
     );
     assert.equal(out.overallStatus, 'green');
     assert.equal(out.breaches.length, 0);
-    assert.match(out.statusHeadline, /on track/i);
+    assert.match(out.statusHeadline, /nicely on top of things/i);
   });
 });
 

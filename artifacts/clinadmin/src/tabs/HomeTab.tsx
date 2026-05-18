@@ -255,7 +255,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
     green: { bg: 'bg-green-100', icon: 'text-green-600', text: 'text-green-600', Ico: CheckCircle2   },
   }[status];
   const StatusIcon = statusStyles.Ico;
-  const youAre = status === 'red' ? 'Behind' : status === 'amber' ? 'Tight' : 'On track';
 
   // ---- "Emails handled for you this week" hero ----
   // Union of three sets, deduped on emailId, scoped to "this week":
@@ -528,7 +527,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
             <div className="space-y-1.5">
               <p className="text-sm text-muted-foreground font-medium">You're currently:</p>
               <p className={cn('text-xl font-bold', statusStyles.text)} data-testid="status-banner-headline">
-                {youAre} — {plannerOutput.statusHeadline}
+                {plannerOutput.statusHeadline}
               </p>
               <p className="text-sm text-foreground" data-testid="status-banner-detail">
                 {plannerOutput.statusDetail}
