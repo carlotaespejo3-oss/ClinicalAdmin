@@ -33,6 +33,7 @@
 //   it means deferring some medium priority items."
 
 import type { AiCategory } from './types';
+import type { LeaveContext } from './availability';
 
 // ============================================================================
 // Configuration
@@ -124,6 +125,12 @@ export interface DayAvailability {
   dayLabel: string;      // 'Mon', 'Tue', ...
   displayLabel: string;  // 'Mon 11 May'
   minutesAvailable: number;
+  /** Minutes the availability resolver has reserved on this day for
+   * post-leave catch-up admin. Optional; absent or 0 = no reserve.
+   * The packer will never consume these minutes for any item — not
+   * even overdue work — and they count toward the day's "claimed
+   * capacity" so a recovery day reads as tight rather than safe. */
+  recoveryReservedMin?: number;
 }
 
 export interface PlannerInput {
@@ -197,6 +204,11 @@ export interface DailyPlan {
   bufferMin: number;
   status: DayStatus;
   flags: string[];
+  /** Minutes set aside by the availability resolver for post-leave
+   * catch-up admin. Never consumed by any planner item (not even
+   * overdue work), counted toward "claimed capacity" for the day's
+   * status. Omitted on days with no recovery reserve. */
+  recoveryReservedMin?: number;
 }
 
 export type OverallStatus = 'green' | 'amber' | 'red';
@@ -238,6 +250,12 @@ export interface PlannerOutput {
   reservation: ProjectedReservation;
   weeklyCapacityMin: number;
   weeklyDemandMin: number;
+  /** Populated by usePlannerOutput from the availability resolver —
+   * lets UI surfaces render "on leave today" / "back tomorrow" /
+   * "leave starts in N days" banners without re-doing the leave
+   * arithmetic. Optional because buildPlan itself does not produce
+   * it; only hook consumers will see a value here. */
+  leaveContext?: LeaveContext;
 }
 
 // ============================================================================
@@ -455,21 +473,33 @@ function planItemFromWork(wi: WorkItem): PlanItem {
 export function buildPlan(input: PlannerInput): PlannerOutput {
   const arrivals = input.arrivals ?? DEFAULT_ARRIVAL_CONFIG;
 
-  // 1 — Initialise runway
-  const runway: DailyPlanInternal[] = input.availability.map((a, i) => ({
-    dayIndex: i,
-    date: a.date,
-    dayLabel: a.dayLabel,
-    displayLabel: a.displayLabel,
-    minutesAvailable: a.minutesAvailable,
-    items: [],
-    totalPlannedMin: 0,
-    bufferMin: 0,
-    status: a.minutesAvailable > 0 ? 'safe' : 'idle',
-    flags: [],
-    bookableMin: a.minutesAvailable,
-    lowQuotaRemainingMin: 0,
-  }));
+  // 1 — Initialise runway. recoveryReservedMin (from the availability
+  //     resolver) is unpacked here in the same shape as
+  //     lowQuotaRemainingMin — fixed protected minutes that the
+  //     packer must not consume. We reserve them out of bookableMin
+  //     up-front so every later capacity check naturally ignores
+  //     them; the field itself is preserved on the public output so
+  //     UI surfaces (and the day-status logic at step 9) can read
+  //     it back.
+  const runway: DailyPlanInternal[] = input.availability.map((a, i) => {
+    const recoveryReservedMin = Math.max(0, a.recoveryReservedMin ?? 0);
+    const bookableMin = Math.max(0, a.minutesAvailable - recoveryReservedMin);
+    return {
+      dayIndex: i,
+      date: a.date,
+      dayLabel: a.dayLabel,
+      displayLabel: a.displayLabel,
+      minutesAvailable: a.minutesAvailable,
+      items: [],
+      totalPlannedMin: 0,
+      bufferMin: 0,
+      status: a.minutesAvailable > 0 ? 'safe' : 'idle',
+      flags: [],
+      recoveryReservedMin,
+      bookableMin,
+      lowQuotaRemainingMin: 0,
+    };
+  });
 
   // 2 — UNCLEAR gate: if any unclear emails exist, that's the first
   //    item on today's plan. Doesn't consume real capacity — it's a
@@ -672,7 +702,15 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
       dipIntoLowQuota ? d.bookableMin + d.lowQuotaRemainingMin : d.bookableMin;
     const remainingTotalCap = (d: DailyPlanInternal) => {
       const reservedFloor = dipIntoLowQuota ? 0 : d.lowQuotaRemainingMin;
-      return d.minutesAvailable - d.totalPlannedMin - reservedFloor;
+      // recoveryReservedMin is a hard floor — even the past-deadline
+      // fallback below can't dip into it. Subtract it so the cap
+      // matches what's truly placeable on the day.
+      return (
+        d.minutesAvailable -
+        d.totalPlannedMin -
+        reservedFloor -
+        (d.recoveryReservedMin ?? 0)
+      );
     };
 
     let placedOnIdx = -1;
@@ -893,12 +931,20 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   // estimation errors (a 5-min email can't be the difference between
   // green and amber on a 60-min day).
   for (const d of runway) {
-    d.bufferMin = Math.max(0, d.minutesAvailable - d.totalPlannedMin);
+    // recoveryReservedMin counts as already-claimed capacity: a day
+    // with 90 admin minutes and a 60-min recovery reserve only has
+    // 30 minutes left for new work, and that should read as 'tight'
+    // even when no items have been placed yet. Mirror the same
+    // reasoning into bufferMin so the buffer the clinician sees
+    // matches what they can actually book onto.
+    const recoveryMin = d.recoveryReservedMin ?? 0;
+    const claimedMin = d.totalPlannedMin + recoveryMin;
+    d.bufferMin = Math.max(0, d.minutesAvailable - claimedMin);
     if (d.minutesAvailable === 0) {
       d.status = 'idle';
-    } else if (d.totalPlannedMin > d.minutesAvailable * 1.10) {
+    } else if (claimedMin > d.minutesAvailable * 1.10) {
       d.status = 'breach';
-    } else if (d.totalPlannedMin >= d.minutesAvailable * 0.90) {
+    } else if (claimedMin >= d.minutesAvailable * 0.90) {
       d.status = 'tight';
     } else {
       d.status = 'safe';

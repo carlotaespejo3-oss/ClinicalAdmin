@@ -37,6 +37,12 @@ export const leaveBlocksTable = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Bumped server-side on every upsert. Lets the UI sort "recently
+    // edited" and supports future last-write-wins reconciliation
+    // across devices without pulling the row.
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.clinicianId, table.id] })],
 );

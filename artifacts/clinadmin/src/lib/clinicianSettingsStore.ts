@@ -66,13 +66,42 @@ export interface AppSettings {
     draftReady: boolean;
     desktopSound: boolean;
   };
-  // Planner behaviour around leave. `rampUpMinutes` is held back from
-  // bookable time on the clinician's first working day back from a
-  // fully-on-leave run — catch-up, triage, mailbox unburying. Set to 0
-  // to disable. Default 60 min. Stored in the open JSON column, so no
-  // schema migration is needed.
+  // Planner behaviour around leave. Drives the availability resolver
+  // (lib/availability.ts) which is consulted before buildPlan to
+  // shape per-day minutes and recovery reservations.
+  //
+  // Field meanings:
+  //   rampMultipliers      — capacity scalars applied to the first N
+  //                          working days back from leave, in order.
+  //                          e.g. [0.5, 0.75, 1.0] = half capacity on
+  //                          day 1 back, three-quarters on day 2, full
+  //                          on day 3.
+  //   recoveryReservedMin  — minutes reserved on those same days for
+  //                          catch-up admin (untouchable by the
+  //                          packer). Aligned 1:1 with rampMultipliers.
+  //   preLeaveWindDown     — capacity scalars on the last N working
+  //                          days BEFORE leave, in order [day -1,
+  //                          day -2, ...]. e.g. [0.75, 0.5] = wind
+  //                          down to 75% the day before, 50% two
+  //                          days before.
+  //   triggerAfterDaysOff  — total calendar-day duration (inclusive of
+  //                          weekends inside the stretch) the leave
+  //                          must reach before any wind-down or
+  //                          recovery applies. e.g. 3 = a one-day sick
+  //                          day doesn't trigger; a long weekend +
+  //                          Monday does.
+  //
+  // `rampUpMinutes` is the v1 dial that the now-removed in-hook
+  // ramp-up injection consulted; preserved here for back-compat with
+  // any LeavePanel control that still writes it. The resolver
+  // supersedes it via recoveryReservedMin and a richer ramp curve.
+  // All of this lives in the open JSON column — no schema migration.
   leavePlanner: {
     rampUpMinutes: number;
+    rampMultipliers: number[];
+    recoveryReservedMin: number[];
+    preLeaveWindDown: number[];
+    triggerAfterDaysOff: number;
   };
 }
 
@@ -97,6 +126,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   leavePlanner: {
     rampUpMinutes: 60,
+    rampMultipliers: [0.5, 0.75, 1.0],
+    recoveryReservedMin: [60, 30, 0],
+    preLeaveWindDown: [0.75, 0.5],
+    triggerAfterDaysOff: 3,
   },
 };
 

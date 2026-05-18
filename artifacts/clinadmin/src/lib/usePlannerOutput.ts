@@ -15,8 +15,13 @@ import {
 } from './deferralStore';
 import { useUserPlannedItems } from './userPlannedItemsStore';
 import { usePromptedTasksState } from './promptedTasksStore';
-import { useLeaveBlocks, computeReturnFromLeave } from './leaveBlocksStore';
+import { useLeaveBlocks } from './leaveBlocksStore';
 import { useAppSettingsCache } from './clinicianSettingsStore';
+import {
+  resolveAvailability,
+  type WorkingPattern,
+  type LeaveBlock as ResolverLeaveBlock,
+} from './availability';
 import { useUnclearGateOverrides } from './unclearGateOverridesStore';
 import type { PotentialTaskKind } from './potentialTaskDetect';
 import { buildPlannerInput } from './plannerAdapter';
@@ -51,7 +56,19 @@ export function usePlannerOutput(
   const leaveBlocks = useLeaveBlocks();
   const unclearGateOverrides = useUnclearGateOverrides();
   const appSettings = useAppSettingsCache();
-  const rampUpMinutes = Math.max(0, appSettings.leavePlanner?.rampUpMinutes ?? 0);
+  // Recovery dial from settings. Each subfield falls back to its
+  // documented default so a freshly-installed user (or one whose
+  // JSON column predates these fields) gets the resolver behaviour
+  // out of the box rather than a no-op recovery curve.
+  const recoveryConfig = useMemo(
+    () => ({
+      rampMultipliers: appSettings.leavePlanner?.rampMultipliers ?? [0.5, 0.75, 1.0],
+      recoveryReservedMin: appSettings.leavePlanner?.recoveryReservedMin ?? [60, 30, 0],
+      preLeaveWindDown: appSettings.leavePlanner?.preLeaveWindDown ?? [0.75, 0.5],
+      triggerAfterDaysOff: appSettings.leavePlanner?.triggerAfterDaysOff ?? 3,
+    }),
+    [appSettings.leavePlanner],
+  );
 
   const weekMondayKey = isoMondayOf(new Date());
 
@@ -116,41 +133,12 @@ export function usePlannerOutput(
       );
     }
 
-    // Post-leave ramp-up: on the clinician's first working day back
-    // from a fully-on-leave run, hold rampUpMinutes back from bookable
-    // time. This is advisory (the user picks the number, default 60
-    // min; 0 disables) and matches the "Day back" pill the clinician
-    // already sees — both surfaces are driven by computeReturnFromLeave.
-    // We have to recompute the return-from-leave map over the planning
-    // window here because the planner takes a flat busy-minutes map
-    // and the CalendarTab's own map is scoped to the columns in view.
-    if (rampUpMinutes > 0 && leaveBlocks.length > 0 && weekSetup && weekSetup.days.length > 0) {
-      const horizonDays = 14;
-      const horizonKeys: string[] = [];
-      for (let i = 0; i < horizonDays; i++) {
-        const d = new Date(todayStart.getTime() + i * 86_400_000);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        horizonKeys.push(key);
-      }
-      const workingWeekdays = new Set(weekSetup.days);
-      // Per-weekday working minutes so half-day leave on the day
-      // BEFORE isn't wrongly counted as a full leave day (and so a
-      // partially-on-leave day after isn't wrongly counted as "back").
-      const totalMins = Math.round(weekSetup.hours * 60);
-      const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
-      const minsByWkd = new Map<string, number>();
-      for (const day of weekSetup.days) {
-        const override = weekSetup.minutesByDay?.[day];
-        minsByWkd.set(day, override != null ? override : evenSplit);
-      }
-      const returnMap = computeReturnFromLeave(horizonKeys, leaveBlocks, workingWeekdays, minsByWkd);
-      for (const dayKey of returnMap.keys()) {
-        busyMinutesByDate.set(
-          dayKey,
-          (busyMinutesByDate.get(dayKey) ?? 0) + rampUpMinutes,
-        );
-      }
-    }
+    // The post-leave ramp-up that used to live here has been replaced
+    // by the availability resolver (see below). Recovery days now
+    // come through as recoveryReservedMin on each runway day, handled
+    // inside planner.ts rather than via a busy-minutes injection — so
+    // the packer never tries to place work on the protected slot in
+    // the first place.
 
     const input = buildPlannerInput({
       today,
@@ -164,9 +152,70 @@ export function usePlannerOutput(
       busyMinutesByDate,
       leaveBlocks,
     });
+
+    // Run the availability resolver over the same window the planner
+    // is about to build. It produces:
+    //   · dailyAvailability[i].minutesAvailable — what the planner
+    //     should treat as bookable on day i (already accounting for
+    //     leave, public holidays, pre-leave wind-down, recovery ramp).
+    //   · dailyAvailability[i].recoveryReservedMin — the catch-up
+    //     admin slot the packer must not consume (carried through
+    //     buildPlan via DayAvailability and into the day status at
+    //     step 9).
+    //   · effectiveArrivalConfig — projected arrivals scaled down
+    //     when this week is shortened by leave.
+    //   · leaveContext — surfaced on the hook return so UI banners
+    //     can render without re-doing the leave arithmetic.
+    //
+    // We overwrite the per-day fields on input.availability (rather
+    // than rebuilding it) so the dayLabel / displayLabel computed by
+    // buildPlannerInput is preserved exactly.
+    let leaveContext: ReturnType<typeof resolveAvailability>['leaveContext'] = {};
+    let effectiveArrivals = arrivals;
+    if (weekSetup && weekSetup.days.length > 0 && input.availability.length > 0) {
+      const workingPattern = workingPatternFromWeekSetup(weekSetup);
+      const todayIso = input.availability[0].date;
+      const resolverBlocks: ResolverLeaveBlock[] = leaveBlocks.map((b) => ({
+        id: b.id,
+        startAt: b.startAt,
+        endAt: b.endAt,
+        type: b.leaveType,
+        notes: b.notes ?? undefined,
+      }));
+      const resolved = resolveAvailability({
+        today: todayIso,
+        workingPattern,
+        leaveBlocks: resolverBlocks,
+        publicHolidays: [],
+        recoveryConfig,
+        arrivalConfig: arrivals,
+        runwayDays: input.availability.length,
+      });
+      // Replace per-day minutes + stamp recovery reserve. Length
+      // matches by construction (runwayDays === availability.length).
+      //
+      // We must re-subtract busyMinutesByDate here. buildPlannerInput
+      // already subtracted fixed events from minutesAvailable so the
+      // packer doesn't overfill the day, but our overwrite with the
+      // resolver's value discards that. The resolver knows about leave
+      // / public holidays / recovery — it does NOT know about the
+      // clinician's pinned events. Apply both: leave-aware capacity
+      // minus event time. Recovery reserve is unaffected by events.
+      for (let i = 0; i < input.availability.length; i++) {
+        const r = resolved.dailyAvailability[i];
+        if (!r) continue;
+        const day = input.availability[i];
+        const busy = busyMinutesByDate.get(day.date) ?? 0;
+        day.minutesAvailable = Math.max(0, r.minutesAvailable - busy);
+        day.recoveryReservedMin = r.recoveryReservedMin;
+      }
+      effectiveArrivals = resolved.effectiveArrivalConfig;
+      leaveContext = resolved.leaveContext;
+    }
+
     const planned = buildPlan({
       ...input,
-      arrivals,
+      arrivals: effectiveArrivals,
       unclearGateOverrides,
       // Only counts weeks STRICTLY before this week. Records made
       // for the current week (by the effect below) are deliberately
@@ -175,6 +224,7 @@ export function usePlannerOutput(
       // adds capacity and it gets placed.
       deferralHistory: deferralCountMap(deferralHistory, weekMondayKey),
     });
+    planned.leaveContext = leaveContext;
 
     // Inject events into the runway days they belong to. Events are
     // PINNED to their date — the planner never moves them, it only
@@ -222,16 +272,24 @@ export function usePlannerOutput(
         // numerator), making the day look tighter than it is.
         const totalPlannedMin = day.totalPlannedMin + eventsMin;
         const minutesAvailable = day.minutesAvailable + eventsMin;
-        const bufferMin = Math.max(0, minutesAvailable - totalPlannedMin);
+        // recoveryReservedMin must enter the status calc here the
+        // same way it does in planner.ts step 9 — otherwise a
+        // recovery day with no items would read 'safe' on the
+        // public runway even though the planner internally treated
+        // its reserved slot as already claimed. Mirror the planner's
+        // claimedMin = totalPlannedMin + recoveryReservedMin shape.
+        const recoveryMin = day.recoveryReservedMin ?? 0;
+        const claimedMin = totalPlannedMin + recoveryMin;
+        const bufferMin = Math.max(0, minutesAvailable - claimedMin);
         // Same thresholds as planner.ts L876-892 + calendarHelpers
         // filterRunwayToTasks — keep them in lock-step so a re-filter
         // doesn't disagree about the day's status.
         let status: DailyPlan['status'];
         if (minutesAvailable === 0) {
           status = 'idle';
-        } else if (totalPlannedMin > minutesAvailable * 1.10) {
+        } else if (claimedMin > minutesAvailable * 1.10) {
           status = 'breach';
-        } else if (totalPlannedMin >= minutesAvailable * 0.90) {
+        } else if (claimedMin >= minutesAvailable * 0.90) {
           status = 'tight';
         } else {
           status = 'safe';
@@ -269,7 +327,7 @@ export function usePlannerOutput(
     promptedTasks,
     leaveBlocks,
     unclearGateOverrides,
-    rampUpMinutes,
+    recoveryConfig,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's
@@ -309,6 +367,32 @@ function promptedTaskCategory(kind: PotentialTaskKind): AiCategory {
     case 'deadline':
       return 'ADMIN';
   }
+}
+
+// Derive a 7-day WorkingPattern (in minutes) from the WeekSetup the
+// rest of the app uses. weekSetup carries weekday labels ('Mon'..)
+// and either a flat `hours` total split evenly across days or a
+// per-day `minutesByDay` override. We always keep saturday/sunday at
+// 0 — the planner has never modelled weekend work, and the resolver
+// uses zero-minute days as "non-working" for stretch-finding.
+function workingPatternFromWeekSetup(weekSetup: WeekSetup): WorkingPattern {
+  const totalMins = Math.round(weekSetup.hours * 60);
+  const evenSplit =
+    weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+  const minsByLabel = new Map<string, number>();
+  for (const day of weekSetup.days) {
+    const override = weekSetup.minutesByDay?.[day];
+    minsByLabel.set(day, override != null ? override : evenSplit);
+  }
+  return {
+    monday: minsByLabel.get('Mon') ?? 0,
+    tuesday: minsByLabel.get('Tue') ?? 0,
+    wednesday: minsByLabel.get('Wed') ?? 0,
+    thursday: minsByLabel.get('Thu') ?? 0,
+    friday: minsByLabel.get('Fri') ?? 0,
+    saturday: 0,
+    sunday: 0,
+  };
 }
 
 // Parse a 'YYYY-MM-DD' local date string into a local Date at midnight.

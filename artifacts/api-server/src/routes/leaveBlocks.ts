@@ -47,6 +47,7 @@ router.post("/leave-blocks/:id", async (req, res) => {
     res.status(400).json({ error: "endAt must be after startAt" });
     return;
   }
+  const now = new Date();
   await db
     .insert(leaveBlocksTable)
     .values({
@@ -56,6 +57,7 @@ router.post("/leave-blocks/:id", async (req, res) => {
       endAt,
       leaveType: b.leaveType,
       notes: b.notes ?? null,
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [leaveBlocksTable.clinicianId, leaveBlocksTable.id],
@@ -64,6 +66,7 @@ router.post("/leave-blocks/:id", async (req, res) => {
         endAt,
         leaveType: b.leaveType,
         notes: b.notes ?? null,
+        updatedAt: now,
       },
     });
   res.status(204).send();
