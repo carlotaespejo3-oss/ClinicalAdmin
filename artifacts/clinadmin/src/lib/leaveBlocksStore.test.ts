@@ -94,6 +94,9 @@ test('leaveBlocksForDay — returns only blocks that touch the calendar day', ()
 import {
   computeReturnFromLeave,
   nextWorkingDayAfter,
+  currentLeaveStatus,
+  dayWithinLeave,
+  itemsAtRiskBeforeLeave,
 } from './leaveBlocksStore';
 
 const MON_TO_FRI = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
@@ -173,4 +176,190 @@ test('nextWorkingDayAfter — skips a second leave block that immediately follow
   const second = block([2026, 5, 18, 9], [2026, 5, 18, 17]);
   const next = nextWorkingDayAfter(endAt, MON_TO_FRI, [second]);
   assert.equal(next, '2026-05-19');
+});
+
+// ---- T002 half-day correctness ---------------------------------------------
+
+test('computeReturnFromLeave — half-day morning leave does NOT count as fully on leave', () => {
+  // Mon morning 09–13 = 4h, working day has 4h admin. Leave covers
+  // 4h × 4h/8h = 2h share — half the day. With workingMinutesByWeekday
+  // supplied, Tue should NOT be flagged as "day back from Mon" because
+  // Mon afternoon was still bookable.
+  const halfDay = block([2026, 5, 11, 9], [2026, 5, 11, 13]);
+  const mins = new Map([
+    ['Mon', 240], ['Tue', 240], ['Wed', 240], ['Thu', 240], ['Fri', 240],
+  ]);
+  const map = computeReturnFromLeave(['2026-05-12'], [halfDay], MON_TO_FRI, mins);
+  assert.equal(map.has('2026-05-12'), false);
+});
+
+test('computeReturnFromLeave — full-day leave still flagged when minutes map is provided', () => {
+  const fullDay = block([2026, 5, 11, 9], [2026, 5, 11, 17]);
+  const mins = new Map([
+    ['Mon', 240], ['Tue', 240], ['Wed', 240], ['Thu', 240], ['Fri', 240],
+  ]);
+  const map = computeReturnFromLeave(['2026-05-12'], [fullDay], MON_TO_FRI, mins);
+  assert.equal(map.get('2026-05-12')?.daysAway, 1);
+});
+
+// ---- T001 currentLeaveStatus ----------------------------------------------
+
+test('currentLeaveStatus — on leave today', () => {
+  const b = block([2026, 5, 18, 9], [2026, 5, 22, 17]);
+  const status = currentLeaveStatus(new Date(2026, 5 - 1, 20, 11), [b], MON_TO_FRI);
+  assert.equal(status.state, 'on-leave-today');
+  if (status.state === 'on-leave-today') {
+    assert.equal(status.block.id, b.id);
+    assert.equal(status.dayBackKey, '2026-05-25'); // next Mon
+  }
+});
+
+test('currentLeaveStatus — back today (Mon after Fri leave)', () => {
+  const b = block([2026, 5, 15, 9], [2026, 5, 15, 17]);
+  const status = currentLeaveStatus(new Date(2026, 5 - 1, 18, 9), [b], MON_TO_FRI);
+  assert.equal(status.state, 'back-today');
+  if (status.state === 'back-today') {
+    assert.equal(status.daysAway, 1);
+    assert.deepEqual(status.leaveTypes, ['annual']);
+  }
+});
+
+test('currentLeaveStatus — leave starts in 3 days', () => {
+  const b = block([2026, 5, 21, 9], [2026, 5, 22, 17]);
+  const status = currentLeaveStatus(new Date(2026, 5 - 1, 18, 9), [b], MON_TO_FRI);
+  assert.equal(status.state, 'leave-starts-soon');
+  if (status.state === 'leave-starts-soon') {
+    assert.equal(status.daysUntil, 3);
+    assert.equal(status.block.id, b.id);
+  }
+});
+
+test('currentLeaveStatus — no upcoming leave → none', () => {
+  const b = block([2026, 6, 1, 9], [2026, 6, 1, 17]); // > 7 days away
+  const status = currentLeaveStatus(new Date(2026, 5 - 1, 18, 9), [b], MON_TO_FRI);
+  assert.equal(status.state, 'none');
+});
+
+test('currentLeaveStatus — empty blocks → none', () => {
+  const status = currentLeaveStatus(new Date(2026, 5 - 1, 18), [], MON_TO_FRI);
+  assert.equal(status.state, 'none');
+});
+
+test('currentLeaveStatus — half-day morning today with minutes map → NOT on-leave-today', () => {
+  // Mon 18 May 09:00–13:00 — afternoon still bookable. Without the
+  // minutes-map gate this would wrongly flag "on leave today" and
+  // tell the clinician their admin time is paused.
+  const halfDay = block([2026, 5, 18, 9], [2026, 5, 18, 13]);
+  const mins = new Map<string, number>([
+    ['Mon', 480], ['Tue', 480], ['Wed', 480], ['Thu', 480], ['Fri', 480],
+  ]);
+  const status = currentLeaveStatus(
+    new Date(2026, 5 - 1, 18, 14),
+    [halfDay],
+    MON_TO_FRI,
+    mins,
+  );
+  assert.notEqual(status.state, 'on-leave-today');
+});
+
+test('currentLeaveStatus — full-day today with minutes map → on-leave-today', () => {
+  // Same day, but a full 09:00–17:00 block this time. Should still
+  // raise the banner with the minutes-map gate in place.
+  const fullDay = block([2026, 5, 18, 9], [2026, 5, 18, 17]);
+  const mins = new Map<string, number>([
+    ['Mon', 480], ['Tue', 480], ['Wed', 480], ['Thu', 480], ['Fri', 480],
+  ]);
+  const status = currentLeaveStatus(
+    new Date(2026, 5 - 1, 18, 11),
+    [fullDay],
+    MON_TO_FRI,
+    mins,
+  );
+  assert.equal(status.state, 'on-leave-today');
+});
+
+test('currentLeaveStatus — half-day morning, NO minutes map → on-leave-today (v1 fallback)', () => {
+  // Backwards-compat: callers that don't pass a minutes map keep the
+  // permissive v1 behaviour so they don't silently regress.
+  const halfDay = block([2026, 5, 18, 9], [2026, 5, 18, 13]);
+  const status = currentLeaveStatus(
+    new Date(2026, 5 - 1, 18, 14),
+    [halfDay],
+    MON_TO_FRI,
+  );
+  assert.equal(status.state, 'on-leave-today');
+});
+
+// ---- T006 dayWithinLeave ---------------------------------------------------
+
+test('dayWithinLeave — middle of a 5-day block returns index/total', () => {
+  // Mon 18 → Fri 22. Wed is day 3 of 5.
+  const b = block([2026, 5, 18, 9], [2026, 5, 22, 17]);
+  const info = dayWithinLeave('2026-05-20', [b]);
+  assert.ok(info);
+  assert.equal(info!.index, 3);
+  assert.equal(info!.total, 5);
+  assert.equal(info!.block.id, b.id);
+});
+
+test('dayWithinLeave — single-day block returns null', () => {
+  const b = block([2026, 5, 18, 9], [2026, 5, 18, 17]);
+  assert.equal(dayWithinLeave('2026-05-18', [b]), null);
+});
+
+test('dayWithinLeave — day not within any block returns null', () => {
+  const b = block([2026, 5, 18, 9], [2026, 5, 19, 17]);
+  assert.equal(dayWithinLeave('2026-05-25', [b]), null);
+});
+
+test('dayWithinLeave — picks the longest covering block when overlapping', () => {
+  const short = block([2026, 5, 18, 9], [2026, 5, 19, 17]); // 2 days
+  const long = block([2026, 5, 15, 9], [2026, 5, 22, 17]); // 8 days
+  const info = dayWithinLeave('2026-05-18', [short, long]);
+  assert.equal(info?.total, 8);
+  assert.equal(info?.block.id, long.id);
+});
+
+// ---- T004 itemsAtRiskBeforeLeave -------------------------------------------
+
+test('itemsAtRiskBeforeLeave — task due during upcoming leave is flagged', () => {
+  // Today = Mon 11 May 2026. Leave covers Mon 18–Fri 22.
+  const today = new Date(2026, 5 - 1, 11);
+  const leave = block([2026, 5, 18, 9], [2026, 5, 22, 17]);
+  const items = [
+    { id: 't1', title: 'Report due Wed 20th', deadlineDate: '2026-05-20' },
+    { id: 't2', title: 'Email due tomorrow', deadlineDays: 1 },
+  ];
+  const out = itemsAtRiskBeforeLeave(today, [leave], items);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].item.id, 't1');
+  assert.equal(out[0].block.id, leave.id);
+});
+
+test('itemsAtRiskBeforeLeave — overdue items are not flagged here', () => {
+  const today = new Date(2026, 5 - 1, 18);
+  const leave = block([2026, 5, 20, 9], [2026, 5, 22, 17]);
+  const items = [{ id: 't1', title: 'Overdue', deadlineDays: -2 }];
+  assert.equal(itemsAtRiskBeforeLeave(today, [leave], items).length, 0);
+});
+
+test('itemsAtRiskBeforeLeave — leave already in progress is not "upcoming"', () => {
+  // Today = Wed 20th, leave started Mon 18th, task due Thu 21st.
+  // Doesn't count — the clinician is already away, not approaching.
+  const today = new Date(2026, 5 - 1, 20);
+  const leave = block([2026, 5, 18, 9], [2026, 5, 22, 17]);
+  const items = [{ id: 't1', title: 'Due Thu', deadlineDate: '2026-05-21' }];
+  assert.equal(itemsAtRiskBeforeLeave(today, [leave], items).length, 0);
+});
+
+test('itemsAtRiskBeforeLeave — sorts by deadline soonest-first', () => {
+  const today = new Date(2026, 5 - 1, 11);
+  const leave = block([2026, 5, 18, 9], [2026, 5, 22, 17]);
+  const items = [
+    { id: 'late', title: 'Late', deadlineDate: '2026-05-22' },
+    { id: 'early', title: 'Early', deadlineDate: '2026-05-18' },
+  ];
+  const out = itemsAtRiskBeforeLeave(today, [leave], items);
+  assert.equal(out[0].item.id, 'early');
+  assert.equal(out[1].item.id, 'late');
 });

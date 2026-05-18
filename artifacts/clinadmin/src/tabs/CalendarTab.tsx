@@ -20,6 +20,7 @@ import {
   useLeaveBlocks,
   leaveBlocksForDay,
   computeReturnFromLeave,
+  dayWithinLeave,
   LEAVE_TYPE_LABEL,
   type LeaveBlock,
   type ReturnFromLeaveInfo,
@@ -172,14 +173,22 @@ function DayColumn({
         )}
       </div>
       <div className="flex-1 p-2 space-y-1.5 min-h-[120px]">
-        {leave.length > 0 && (
-          <div
-            className="rounded-md border border-sky-200 bg-sky-50 text-sky-800 px-2 py-1.5 text-[11px] font-semibold"
-            data-testid="day-leave-pill"
-          >
-            On leave · {LEAVE_TYPE_LABEL[leave[0].leaveType]}
-          </div>
-        )}
+        {leave.length > 0 && (() => {
+          const within = dayWithinLeave(dateKey(date), leave);
+          return (
+            <div
+              className="rounded-md border border-sky-200 bg-sky-50 text-sky-800 px-2 py-1.5 text-[11px] font-semibold"
+              data-testid="day-leave-pill"
+            >
+              On leave · {LEAVE_TYPE_LABEL[leave[0].leaveType]}
+              {within && (
+                <span className="ml-1 font-normal text-sky-700" data-testid="day-leave-pill-progress">
+                  · day {within.index} of {within.total}
+                </span>
+              )}
+            </div>
+          );
+        })()}
         {leave.length === 0 && returnFromLeave && (
           <div
             className="rounded-md border border-amber-200 bg-amber-50 text-amber-900 px-2 py-1.5 text-[11px] font-semibold flex items-start gap-1.5"
@@ -365,14 +374,29 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
     () => new Set(weekSetup?.days ?? []),
     [weekSetup?.days],
   );
+  // Per-weekday working minutes — passed through to computeReturnFromLeave
+  // so a half-day morning leave doesn't get treated as a full leave day
+  // (which would then wrongly flag the next morning as "back").
+  const workingMinutesByWeekday = useMemo(() => {
+    if (!weekSetup || weekSetup.days.length === 0) return undefined;
+    const totalMins = Math.round(weekSetup.hours * 60);
+    const evenSplit = Math.round(totalMins / weekSetup.days.length);
+    const m = new Map<string, number>();
+    for (const day of weekSetup.days) {
+      const override = weekSetup.minutesByDay?.[day];
+      m.set(day, override != null ? override : evenSplit);
+    }
+    return m;
+  }, [weekSetup]);
   const returnFromLeaveByDate = useMemo(
     () =>
       computeReturnFromLeave(
         columnDays.map((d) => dateKey(d)),
         leaveBlocks,
         workingWeekdays,
+        workingMinutesByWeekday,
       ),
-    [columnDays, leaveBlocks, workingWeekdays],
+    [columnDays, leaveBlocks, workingWeekdays, workingMinutesByWeekday],
   );
 
   // Month grid

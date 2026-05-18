@@ -15,7 +15,8 @@ import {
 } from './deferralStore';
 import { useUserPlannedItems } from './userPlannedItemsStore';
 import { usePromptedTasksState } from './promptedTasksStore';
-import { useLeaveBlocks } from './leaveBlocksStore';
+import { useLeaveBlocks, computeReturnFromLeave } from './leaveBlocksStore';
+import { useAppSettingsCache } from './clinicianSettingsStore';
 import { useUnclearGateOverrides } from './unclearGateOverridesStore';
 import type { PotentialTaskKind } from './potentialTaskDetect';
 import { buildPlannerInput } from './plannerAdapter';
@@ -49,6 +50,8 @@ export function usePlannerOutput(
   const { tasks: promptedTasks } = usePromptedTasksState();
   const leaveBlocks = useLeaveBlocks();
   const unclearGateOverrides = useUnclearGateOverrides();
+  const appSettings = useAppSettingsCache();
+  const rampUpMinutes = Math.max(0, appSettings.leavePlanner?.rampUpMinutes ?? 0);
 
   const weekMondayKey = isoMondayOf(new Date());
 
@@ -111,6 +114,42 @@ export function usePlannerOutput(
         it.date,
         (busyMinutesByDate.get(it.date) ?? 0) + it.durationMin,
       );
+    }
+
+    // Post-leave ramp-up: on the clinician's first working day back
+    // from a fully-on-leave run, hold rampUpMinutes back from bookable
+    // time. This is advisory (the user picks the number, default 60
+    // min; 0 disables) and matches the "Day back" pill the clinician
+    // already sees — both surfaces are driven by computeReturnFromLeave.
+    // We have to recompute the return-from-leave map over the planning
+    // window here because the planner takes a flat busy-minutes map
+    // and the CalendarTab's own map is scoped to the columns in view.
+    if (rampUpMinutes > 0 && leaveBlocks.length > 0 && weekSetup && weekSetup.days.length > 0) {
+      const horizonDays = 14;
+      const horizonKeys: string[] = [];
+      for (let i = 0; i < horizonDays; i++) {
+        const d = new Date(todayStart.getTime() + i * 86_400_000);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        horizonKeys.push(key);
+      }
+      const workingWeekdays = new Set(weekSetup.days);
+      // Per-weekday working minutes so half-day leave on the day
+      // BEFORE isn't wrongly counted as a full leave day (and so a
+      // partially-on-leave day after isn't wrongly counted as "back").
+      const totalMins = Math.round(weekSetup.hours * 60);
+      const evenSplit = weekSetup.days.length > 0 ? Math.round(totalMins / weekSetup.days.length) : 0;
+      const minsByWkd = new Map<string, number>();
+      for (const day of weekSetup.days) {
+        const override = weekSetup.minutesByDay?.[day];
+        minsByWkd.set(day, override != null ? override : evenSplit);
+      }
+      const returnMap = computeReturnFromLeave(horizonKeys, leaveBlocks, workingWeekdays, minsByWkd);
+      for (const dayKey of returnMap.keys()) {
+        busyMinutesByDate.set(
+          dayKey,
+          (busyMinutesByDate.get(dayKey) ?? 0) + rampUpMinutes,
+        );
+      }
     }
 
     const input = buildPlannerInput({
@@ -230,6 +269,7 @@ export function usePlannerOutput(
     promptedTasks,
     leaveBlocks,
     unclearGateOverrides,
+    rampUpMinutes,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's

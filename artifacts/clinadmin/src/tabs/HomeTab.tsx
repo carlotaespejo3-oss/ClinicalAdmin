@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock, Plane } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, type Priority } from '@/lib/utils';
@@ -8,6 +8,13 @@ import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
+import {
+  useLeaveBlocks,
+  currentLeaveStatus,
+  itemsAtRiskBeforeLeave,
+  LEAVE_TYPE_LABEL,
+  type AtRiskInput,
+} from '@/lib/leaveBlocksStore';
 import TodaysPlan from '@/components/TodaysPlan';
 import TaskList from '@/components/TaskList';
 import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
@@ -30,6 +37,13 @@ const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 // (interruptions, context-switching).
 const projectedExtra = 45;
 
+function formatDayKey(dayKey: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return dayKey;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 function fmtMins(min: number) {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -43,6 +57,48 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const plannerOutput = usePlannerOutput(manualTasks, weekSetup);
+  const leaveBlocks = useLeaveBlocks();
+
+  // Leave context for the dashboard banner. Pure derivation from the
+  // leave store + the current weekday pattern; advisory, never
+  // behaviour-changing. We pass per-weekday working minutes so a
+  // half-day leave isn't misreported as "fully on leave today" — must
+  // stay in lockstep with CalendarTab + usePlannerOutput.
+  const workingMinutesByWeekday = useMemo(() => {
+    if (!weekSetup || weekSetup.days.length === 0) return undefined;
+    const totalMins = Math.round(weekSetup.hours * 60);
+    const evenSplit = Math.round(totalMins / weekSetup.days.length);
+    const m = new Map<string, number>();
+    for (const day of weekSetup.days) {
+      const override = weekSetup.minutesByDay?.[day];
+      m.set(day, override != null ? override : evenSplit);
+    }
+    return m;
+  }, [weekSetup]);
+  const leaveStatus = useMemo(
+    () => currentLeaveStatus(
+      new Date(),
+      leaveBlocks,
+      new Set(weekSetup?.days ?? []),
+      workingMinutesByWeekday,
+    ),
+    [leaveBlocks, weekSetup?.days, workingMinutesByWeekday],
+  );
+
+  // Pre-leave finish-line warning: items whose deadline lands inside
+  // an upcoming leave block within the next 14 days. We feed manual
+  // tasks (they carry a `deadline` in days-from-today via the planner
+  // pipeline) — sidebar tasks have no deadline so they're excluded.
+  const atRiskItems = useMemo(() => {
+    const inputs: AtRiskInput[] = manualTasks
+      .filter((t) => !t.done)
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        deadlineDays: t.deadline,
+      }));
+    return itemsAtRiskBeforeLeave(new Date(), leaveBlocks, inputs, 14);
+  }, [manualTasks, leaveBlocks]);
 
   // Day navigation in the Home dashboard — clinician can step through the
   // runway with prev/next chevrons to see how the AI organised the week.
@@ -277,6 +333,94 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan for today. Follow it and you're on top of your admin.</p>
         </div>
       </div>
+
+      {/* Leave-context banner. Sky for on-leave / back-today / leave-soon;
+          advisory only. Sits above the weekly-handled card so the
+          clinician sees their leave state before anything else. */}
+      {leaveStatus.state !== 'none' && (
+        <div
+          className={cn(
+            'rounded-xl border px-5 py-3.5 flex items-start gap-3',
+            leaveStatus.state === 'back-today'
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-sky-200 bg-sky-50 text-sky-900',
+          )}
+          data-testid={`home-leave-banner-${leaveStatus.state}`}
+        >
+          <Plane size={18} className="mt-0.5 flex-shrink-0" />
+          <div className="min-w-0 text-sm leading-snug">
+            {leaveStatus.state === 'on-leave-today' && (
+              <>
+                <p className="font-bold">
+                  You're on {LEAVE_TYPE_LABEL[leaveStatus.block.leaveType].toLowerCase()} today.
+                </p>
+                <p className="text-xs mt-0.5">
+                  The planner has paused admin time until you're back
+                  {leaveStatus.dayBackKey && (
+                    <> on <strong>{formatDayKey(leaveStatus.dayBackKey)}</strong></>
+                  )}.
+                </p>
+              </>
+            )}
+            {leaveStatus.state === 'back-today' && (
+              <>
+                <p className="font-bold">
+                  Welcome back — first day back after {leaveStatus.daysAway}{' '}
+                  {leaveStatus.daysAway === 1 ? 'day' : 'days'} off.
+                </p>
+                <p className="text-xs mt-0.5">
+                  Today's plan has a catch-up buffer at the top. Expect the inbox to feel heavier than usual.
+                </p>
+              </>
+            )}
+            {leaveStatus.state === 'leave-starts-soon' && (
+              <>
+                <p className="font-bold">
+                  {LEAVE_TYPE_LABEL[leaveStatus.block.leaveType]} starts{' '}
+                  {leaveStatus.daysUntil === 0
+                    ? 'later today'
+                    : leaveStatus.daysUntil === 1
+                    ? 'tomorrow'
+                    : `in ${leaveStatus.daysUntil} days`}
+                  .
+                </p>
+                <p className="text-xs mt-0.5">
+                  Anything you can finish this week won't pile up while you're away.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Pre-leave finish-line warning — distinct from the leave-context
+          banner above. Lists tasks whose deadlines land while the
+          clinician is away so they can decide to do them early, defer
+          formally, or accept the breach. Advisory; never auto-moves. */}
+      {atRiskItems.length > 0 && leaveStatus.state !== 'on-leave-today' && (
+        <div
+          className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-3.5 flex items-start gap-3"
+          data-testid="home-leave-at-risk-banner"
+        >
+          <AlertTriangle size={18} className="text-amber-700 mt-0.5 flex-shrink-0" />
+          <div className="min-w-0 text-sm leading-snug text-amber-900">
+            <p className="font-bold">
+              {atRiskItems.length}{' '}
+              {atRiskItems.length === 1 ? 'task is' : 'tasks are'} due while you're away.
+            </p>
+            <ul className="text-xs mt-1.5 space-y-0.5">
+              {atRiskItems.slice(0, 4).map((r) => (
+                <li key={r.item.id} className="truncate">
+                  <strong>{formatDayKey(r.deadlineKey)}</strong> — {r.item.title}
+                </li>
+              ))}
+              {atRiskItems.length > 4 && (
+                <li className="text-amber-700/80">+ {atRiskItems.length - 4} more</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {/* Weekly handled + priority triage card. Sits above the status
           banner so the clinician sees what's been handled and what's

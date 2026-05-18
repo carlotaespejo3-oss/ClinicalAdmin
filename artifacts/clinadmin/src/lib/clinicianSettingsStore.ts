@@ -66,6 +66,14 @@ export interface AppSettings {
     draftReady: boolean;
     desktopSound: boolean;
   };
+  // Planner behaviour around leave. `rampUpMinutes` is held back from
+  // bookable time on the clinician's first working day back from a
+  // fully-on-leave run — catch-up, triage, mailbox unburying. Set to 0
+  // to disable. Default 60 min. Stored in the open JSON column, so no
+  // schema migration is needed.
+  leavePlanner: {
+    rampUpMinutes: number;
+  };
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -86,6 +94,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     weeklySummary: false,
     draftReady: true,
     desktopSound: false,
+  },
+  leavePlanner: {
+    rampUpMinutes: 60,
   },
 };
 
@@ -112,6 +123,10 @@ function normaliseAppSettings(s: Partial<AppSettings>): AppSettings {
     notifications: {
       ...DEFAULT_APP_SETTINGS.notifications,
       ...(s.notifications ?? {}),
+    },
+    leavePlanner: {
+      ...DEFAULT_APP_SETTINGS.leavePlanner,
+      ...(s.leavePlanner ?? {}),
     },
   };
 }
