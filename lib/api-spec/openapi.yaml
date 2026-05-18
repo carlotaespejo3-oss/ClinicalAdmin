@@ -803,6 +803,61 @@ paths:
       responses:
         "204":
           description: Deleted
+  /leave-blocks:
+    get:
+      operationId: listLeaveBlocks
+      tags: [leaveBlocks]
+      summary: List clinician leave / time-off blocks
+      responses:
+        "200":
+          description: Leave blocks ordered by startAt ascending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveBlock"
+  /leave-blocks/{id}:
+    post:
+      operationId: upsertLeaveBlock
+      tags: [leaveBlocks]
+      summary: Create or replace a leave block
+      description: >-
+        Idempotent upsert keyed on (clinicianId, id). Body is the full
+        row. Half-days are expressed via datetimes (e.g. startAt 09:00,
+        endAt 13:00); endAt is exclusive.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Client-generated id ("lv<timestamp>_<rand>")
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeaveBlockInput"
+      responses:
+        "204":
+          description: Saved
+        "400":
+          description: Invalid body (e.g. endAt not after startAt)
+    delete:
+      operationId: deleteLeaveBlock
+      tags: [leaveBlocks]
+      summary: Remove a leave block
+      description: Idempotent — returns 204 even when no row existed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
   /evidence-sources:
     get:
       operationId: listEvidenceSources
@@ -1621,6 +1676,56 @@ components:
         - estMin
         - priority
         - done
+        - createdAt
+    LeaveBlockInput:
+      type: object
+      description: POST upsert body for a leave block.
+      properties:
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+          description: Exclusive end. Must be strictly after startAt.
+        leaveType:
+          type: string
+          enum: [annual, sick, conference, pd, unpaid]
+        notes:
+          type: string
+          nullable: true
+          maxLength: 500
+      required:
+        - startAt
+        - endAt
+        - leaveType
+      additionalProperties: false
+    LeaveBlock:
+      type: object
+      description: GET response — leave block with its server-assigned createdAt.
+      properties:
+        id:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        leaveType:
+          type: string
+          enum: [annual, sick, conference, pd, unpaid]
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - startAt
+        - endAt
+        - leaveType
         - createdAt
     EvidenceSource:
       type: object

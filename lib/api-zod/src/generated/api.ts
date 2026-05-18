@@ -757,6 +757,52 @@ export const DeleteSidebarTaskParams = zod.object({
 });
 
 /**
+ * @summary List clinician leave / time-off blocks
+ */
+export const ListLeaveBlocksResponseItem = zod
+  .object({
+    id: zod.string(),
+    startAt: zod.coerce.date(),
+    endAt: zod.coerce.date(),
+    leaveType: zod.enum(["annual", "sick", "conference", "pd", "unpaid"]),
+    notes: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe("GET response — leave block with its server-assigned createdAt.");
+export const ListLeaveBlocksResponse = zod.array(ListLeaveBlocksResponseItem);
+
+/**
+ * Idempotent upsert keyed on (clinicianId, id). Body is the full row. Half-days are expressed via datetimes (e.g. startAt 09:00, endAt 13:00); endAt is exclusive.
+ * @summary Create or replace a leave block
+ */
+export const UpsertLeaveBlockParams = zod.object({
+  id: zod.coerce
+    .string()
+    .describe('Client-generated id (\"lv<timestamp>_<rand>\")'),
+});
+
+export const upsertLeaveBlockBodyNotesMax = 500;
+
+export const UpsertLeaveBlockBody = zod
+  .object({
+    startAt: zod.coerce.date(),
+    endAt: zod.coerce
+      .date()
+      .describe("Exclusive end. Must be strictly after startAt."),
+    leaveType: zod.enum(["annual", "sick", "conference", "pd", "unpaid"]),
+    notes: zod.string().max(upsertLeaveBlockBodyNotesMax).nullish(),
+  })
+  .describe("POST upsert body for a leave block.");
+
+/**
+ * Idempotent — returns 204 even when no row existed.
+ * @summary Remove a leave block
+ */
+export const DeleteLeaveBlockParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
  * Returns metadata pointers only — tier, source name, title, year, URL, AU flag, publicly_accessible, last_verified_url. The guideline content itself is never stored; Stage 3 fetches the live document from the URL at query time.
  * @summary List every entry in the clinical-source registry
  */

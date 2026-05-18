@@ -14,6 +14,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import AvailabilityPanel from '@/components/AvailabilityPanel';
+import LeavePanel from '@/components/LeavePanel';
+import {
+  useLeaveBlocks,
+  leaveBlocksForDay,
+  LEAVE_TYPE_LABEL,
+  type LeaveBlock,
+} from '@/lib/leaveBlocksStore';
 import type { ManualTask, AiCategory, TabType } from '@/lib/types';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import type { WeekSetup } from '@/pages/ClinAdmin';
@@ -82,10 +89,12 @@ function DayColumn({
   date,
   plan,
   onOpenEmail,
+  leave,
 }: {
   date: Date;
   plan: DailyPlan | null;
   onOpenEmail: (id: number) => void;
+  leave: LeaveBlock[];
 }) {
   const isToday = startOfDay(date).getTime() === startOfDay(new Date()).getTime();
   const weekday = date.toLocaleDateString('en-GB', { weekday: 'short' });
@@ -129,8 +138,16 @@ function DayColumn({
         )}
       </div>
       <div className="flex-1 p-2 space-y-1.5 min-h-[120px]">
+        {leave.length > 0 && (
+          <div
+            className="rounded-md border border-sky-200 bg-sky-50 text-sky-800 px-2 py-1.5 text-[11px] font-semibold"
+            data-testid="day-leave-pill"
+          >
+            On leave · {LEAVE_TYPE_LABEL[leave[0].leaveType]}
+          </div>
+        )}
         {!plan && <p className="text-[11px] text-muted-foreground italic px-1 py-2">Beyond planning horizon</p>}
-        {plan && plan.items.length === 0 && (
+        {plan && plan.items.length === 0 && leave.length === 0 && (
           <p className="text-[11px] text-muted-foreground italic px-1 py-2">
             {plan.minutesAvailable === 0 ? 'No admin time scheduled' : 'Nothing planned'}
           </p>
@@ -150,6 +167,7 @@ function MonthCell({
   isToday,
   onClick,
   isSelected,
+  leave,
 }: {
   date: Date;
   plan: DailyPlan | null;
@@ -157,6 +175,7 @@ function MonthCell({
   isToday: boolean;
   onClick: () => void;
   isSelected: boolean;
+  leave: LeaveBlock[];
 }) {
   const status = plan?.status ?? 'idle';
   const tone = STATUS_TONE[status];
@@ -204,9 +223,11 @@ function MonthCell({
         <span className={cn('text-sm font-bold', !inMonth && 'text-muted-foreground/50', isToday && 'text-primary')}>
           {date.getDate()}
         </span>
-        {plan && plan.items.length > 0 && (
+        {leave.length > 0 ? (
+          <span className="text-[9px] font-bold px-1 rounded bg-sky-100 text-sky-800" aria-hidden="true">Leave</span>
+        ) : plan && plan.items.length > 0 ? (
           <span className={cn('text-[9px] font-bold px-1 rounded', tone.pillBg, tone.pillText)} aria-hidden="true">{plan.items.length}</span>
-        )}
+        ) : null}
       </div>
       {plan && plan.items.length > 0 && (
         <>
@@ -236,6 +257,7 @@ function MonthCell({
 
 export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNavigate, onOpenWeeklySetup, onUpdateAvailability }: Props) {
   const planner = usePlannerOutput(manualTasks, weekSetup);
+  const leaveBlocks = useLeaveBlocks();
   const openEmail = (id: number) => {
     onOpenEmail(id);
     onNavigate('Emails');
@@ -416,6 +438,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
               date={d}
               plan={runwayByDate.get(dateKey(d)) ?? null}
               onOpenEmail={openEmail}
+              leave={leaveBlocksForDay(dateKey(d), leaveBlocks)}
             />
           ))}
         </div>
@@ -457,6 +480,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
                       isToday={isToday}
                       onClick={() => setSelectedDate(isSelected ? null : d)}
                       isSelected={isSelected}
+                      leave={leaveBlocksForDay(dateKey(d), leaveBlocks)}
                     />
                   );
                 })}
@@ -521,6 +545,8 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
       {/* Availability adjustment — lives on Calendar so the clinician
           can tweak this week's hours next to the view that visualises
           the impact. Moved here from Home to keep the dashboard calm. */}
+      <LeavePanel />
+
       <AvailabilityPanel
         weekSetup={weekSetup}
         onUpdateAvailability={onUpdateAvailability}

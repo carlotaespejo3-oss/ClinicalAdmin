@@ -42,6 +42,8 @@ import type {
   EvidenceFetchResult,
   EvidenceSource,
   HealthStatus,
+  LeaveBlock,
+  LeaveBlockInput,
   LinkedDocTaskRecord,
   ManualTaskOverride,
   ManualTaskOverridePatch,
@@ -3573,6 +3575,254 @@ export const useDeleteSidebarTask = <
   TContext
 > => {
   return useMutation(getDeleteSidebarTaskMutationOptions(options));
+};
+
+/**
+ * @summary List clinician leave / time-off blocks
+ */
+export const getListLeaveBlocksUrl = () => {
+  return `/api/leave-blocks`;
+};
+
+export const listLeaveBlocks = async (
+  options?: RequestInit,
+): Promise<LeaveBlock[]> => {
+  return customFetch<LeaveBlock[]>(getListLeaveBlocksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListLeaveBlocksQueryKey = () => {
+  return [`/api/leave-blocks`] as const;
+};
+
+export const getListLeaveBlocksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLeaveBlocks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLeaveBlocks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListLeaveBlocksQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeaveBlocks>>> = ({
+    signal,
+  }) => listLeaveBlocks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLeaveBlocks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLeaveBlocksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLeaveBlocks>>
+>;
+export type ListLeaveBlocksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List clinician leave / time-off blocks
+ */
+
+export function useListLeaveBlocks<
+  TData = Awaited<ReturnType<typeof listLeaveBlocks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLeaveBlocks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLeaveBlocksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent upsert keyed on (clinicianId, id). Body is the full row. Half-days are expressed via datetimes (e.g. startAt 09:00, endAt 13:00); endAt is exclusive.
+ * @summary Create or replace a leave block
+ */
+export const getUpsertLeaveBlockUrl = (id: string) => {
+  return `/api/leave-blocks/${id}`;
+};
+
+export const upsertLeaveBlock = async (
+  id: string,
+  leaveBlockInput: LeaveBlockInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertLeaveBlockUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(leaveBlockInput),
+  });
+};
+
+export const getUpsertLeaveBlockMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertLeaveBlock>>,
+    TError,
+    { id: string; data: BodyType<LeaveBlockInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertLeaveBlock>>,
+  TError,
+  { id: string; data: BodyType<LeaveBlockInput> },
+  TContext
+> => {
+  const mutationKey = ["upsertLeaveBlock"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertLeaveBlock>>,
+    { id: string; data: BodyType<LeaveBlockInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return upsertLeaveBlock(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertLeaveBlockMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertLeaveBlock>>
+>;
+export type UpsertLeaveBlockMutationBody = BodyType<LeaveBlockInput>;
+export type UpsertLeaveBlockMutationError = ErrorType<void>;
+
+/**
+ * @summary Create or replace a leave block
+ */
+export const useUpsertLeaveBlock = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertLeaveBlock>>,
+    TError,
+    { id: string; data: BodyType<LeaveBlockInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertLeaveBlock>>,
+  TError,
+  { id: string; data: BodyType<LeaveBlockInput> },
+  TContext
+> => {
+  return useMutation(getUpsertLeaveBlockMutationOptions(options));
+};
+
+/**
+ * Idempotent — returns 204 even when no row existed.
+ * @summary Remove a leave block
+ */
+export const getDeleteLeaveBlockUrl = (id: string) => {
+  return `/api/leave-blocks/${id}`;
+};
+
+export const deleteLeaveBlock = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteLeaveBlockUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteLeaveBlockMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLeaveBlock>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLeaveBlock>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteLeaveBlock"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteLeaveBlock>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteLeaveBlock(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLeaveBlockMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteLeaveBlock>>
+>;
+
+export type DeleteLeaveBlockMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a leave block
+ */
+export const useDeleteLeaveBlock = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLeaveBlock>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLeaveBlock>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteLeaveBlockMutationOptions(options));
 };
 
 /**

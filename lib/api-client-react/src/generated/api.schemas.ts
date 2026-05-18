@@ -442,6 +442,52 @@ export interface SidebarTask {
   createdAt: string;
 }
 
+export type LeaveBlockInputLeaveType =
+  (typeof LeaveBlockInputLeaveType)[keyof typeof LeaveBlockInputLeaveType];
+
+export const LeaveBlockInputLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  conference: "conference",
+  pd: "pd",
+  unpaid: "unpaid",
+} as const;
+
+/**
+ * POST upsert body for a leave block.
+ */
+export interface LeaveBlockInput {
+  startAt: string;
+  /** Exclusive end. Must be strictly after startAt. */
+  endAt: string;
+  leaveType: LeaveBlockInputLeaveType;
+  /** @maxLength 500 */
+  notes?: string | null;
+}
+
+export type LeaveBlockLeaveType =
+  (typeof LeaveBlockLeaveType)[keyof typeof LeaveBlockLeaveType];
+
+export const LeaveBlockLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  conference: "conference",
+  pd: "pd",
+  unpaid: "unpaid",
+} as const;
+
+/**
+ * GET response — leave block with its server-assigned createdAt.
+ */
+export interface LeaveBlock {
+  id: string;
+  startAt: string;
+  endAt: string;
+  leaveType: LeaveBlockLeaveType;
+  notes?: string | null;
+  createdAt: string;
+}
+
 export type EvidenceSourceTier =
   (typeof EvidenceSourceTier)[keyof typeof EvidenceSourceTier];
 

@@ -19,6 +19,7 @@ import {
   type PlannerInput,
   type PlannerTask,
 } from './planner';
+import { leaveMinutesForDay, type LeaveBlock } from './leaveBlocksStore';
 
 // ---- Category mapping ------------------------------------------------------
 
@@ -169,6 +170,12 @@ export interface AdapterArgs {
   // runs. Used to make fixed events (clinic, meeting) eat the day's
   // bookable time so the planner schedules around them.
   busyMinutesByDate?: ReadonlyMap<string, number>;
+  // Clinician leave / time-off. The adapter subtracts overlapping
+  // leave minutes from each day's availability BEFORE buildPlan, so
+  // the planner just sees reduced (often zero) admin time and
+  // replans around the absence. v1 minimal — no recovery ramp or
+  // pre-leave wind-down, those live in a future resolver pass.
+  leaveBlocks?: readonly LeaveBlock[];
 }
 
 export function buildPlannerInput(args: AdapterArgs): PlannerInput {
@@ -231,6 +238,16 @@ export function buildPlannerInput(args: AdapterArgs): PlannerInput {
       return {
         ...a,
         minutesAvailable: Math.max(0, a.minutesAvailable - busy),
+      };
+    });
+  }
+  if (args.leaveBlocks && args.leaveBlocks.length > 0) {
+    availability = availability.map((a) => {
+      const leaveMin = leaveMinutesForDay(a.date, args.leaveBlocks!, a.minutesAvailable);
+      if (leaveMin <= 0) return a;
+      return {
+        ...a,
+        minutesAvailable: Math.max(0, a.minutesAvailable - leaveMin),
       };
     });
   }

@@ -18,6 +18,7 @@ import evidenceSourcesRouter from "./evidenceSources";
 import emailEvidenceRouter from "./emailEvidence";
 import draftAuditRouter from "./draftAudit";
 import evidenceFetchRouter from "./evidenceFetch";
+import leaveBlocksRouter from "./leaveBlocks";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(evidenceSourcesRouter);
 router.use(emailEvidenceRouter);
 router.use(draftAuditRouter);
 router.use(evidenceFetchRouter);
+router.use(leaveBlocksRouter);
 
 export default router;

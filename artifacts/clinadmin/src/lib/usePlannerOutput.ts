@@ -15,6 +15,7 @@ import {
 } from './deferralStore';
 import { useUserPlannedItems } from './userPlannedItemsStore';
 import { usePromptedTasksState } from './promptedTasksStore';
+import { useLeaveBlocks } from './leaveBlocksStore';
 import type { PotentialTaskKind } from './potentialTaskDetect';
 import { buildPlannerInput } from './plannerAdapter';
 import type { AiCategory } from './types';
@@ -45,6 +46,7 @@ export function usePlannerOutput(
   const deferralHistory = useDeferralHistory();
   const userPlannedItems = useUserPlannedItems();
   const { tasks: promptedTasks } = usePromptedTasksState();
+  const leaveBlocks = useLeaveBlocks();
 
   const weekMondayKey = isoMondayOf(new Date());
 
@@ -119,6 +121,7 @@ export function usePlannerOutput(
       excludeEmailId: (id) => acknowledged.has(id) || archived.has(id),
       extraTasks,
       busyMinutesByDate,
+      leaveBlocks,
     });
     const planned = buildPlan({
       ...input,
@@ -222,6 +225,7 @@ export function usePlannerOutput(
     weekMondayKey,
     userPlannedItems,
     promptedTasks,
+    leaveBlocks,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's
