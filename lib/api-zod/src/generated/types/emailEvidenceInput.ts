@@ -14,4 +14,6 @@ export interface EmailEvidenceInput {
   /** @nullable */
   prescribingWarning: string | null;
   citations: EmailEvidenceCitation[];
+  /** Set to true to record that the AI matcher ran and found no relevant source. Required when citations is empty. */
+  aiCheckedNoMatch: boolean;
 }

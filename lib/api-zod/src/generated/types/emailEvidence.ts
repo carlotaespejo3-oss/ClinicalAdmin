@@ -15,6 +15,8 @@ export interface EmailEvidence {
   /** @nullable */
   prescribingWarning: string | null;
   citations: EmailEvidenceCitation[];
+  /** True when the AI source-matcher (Stage 3) ran for this email and honestly found no relevant source in the registry. When true, citations is permitted to be empty and the matcher will not re-ask. Defaults to false for seeded / clinician- authored rows. */
+  aiCheckedNoMatch: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

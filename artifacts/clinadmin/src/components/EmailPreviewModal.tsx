@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { X, Mail, Clock, ExternalLink } from 'lucide-react';
 import { emails as seedEmails } from '@/lib/data';
 import { cn } from '@/lib/utils';
+import { useEnsureEvidenceMatch } from '@/lib/useEnsureEvidenceMatch';
 
 interface Props {
   open: boolean;
@@ -34,6 +35,12 @@ export default function EmailPreviewModal({
     if (emailId === null) return null;
     return seedEmails.find((e) => e.id === emailId) ?? null;
   }, [emailId]);
+
+  // Stage 3: when this quick-look modal opens onto a CLINICAL email,
+  // trigger the on-demand AI source-match. Idempotent — the store's
+  // pending/no-match/matched sets coalesce concurrent calls and
+  // skip repeats across sessions.
+  useEnsureEvidenceMatch(open ? emailId : null);
 
   // Close on Escape — standard modal behaviour.
   useEffect(() => {

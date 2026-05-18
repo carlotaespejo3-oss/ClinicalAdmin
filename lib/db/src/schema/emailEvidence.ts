@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, timestamp, boolean, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -24,6 +24,12 @@ export const emailEvidenceTable = pgTable(
     outlookEmailId: text("outlook_email_id").notNull(),
     prescribingWarning: text("prescribing_warning"),
     citations: jsonb("citations").$type<CitationLink[]>().notNull(),
+    // Stage 3: AI source-matching writes a row with `citations: []` and
+    // `aiCheckedNoMatch: true` when it honestly finds no relevant source
+    // in the registry. This is the persistence flag that prevents the
+    // matcher from re-asking the same email every session. The PUT
+    // endpoint allows empty citations IFF this flag is true.
+    aiCheckedNoMatch: boolean("ai_checked_no_match").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

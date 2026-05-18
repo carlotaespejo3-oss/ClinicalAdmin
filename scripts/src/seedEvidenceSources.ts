@@ -190,6 +190,7 @@ async function main() {
       outlookEmailId: link.outlookEmailId,
       prescribingWarning: link.prescribingWarning,
       citations,
+      aiCheckedNoMatch: false,
     });
   }
 

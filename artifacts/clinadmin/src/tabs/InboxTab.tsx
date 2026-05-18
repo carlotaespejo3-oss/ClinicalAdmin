@@ -29,7 +29,8 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
-import { useEmailEvidenceMap } from '@/lib/evidenceStore';
+import { useEmailEvidenceMap, useEvidencePending } from '@/lib/evidenceStore';
+import { useEnsureEvidenceMatch } from '@/lib/useEnsureEvidenceMatch';
 import { EvidenceBlockView, NoEvidenceRefusal } from '@/components/EvidenceBlockView';
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
@@ -134,6 +135,11 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const classifications = useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
   const evidenceMap = useEmailEvidenceMap();
+  const evidencePending = useEvidencePending();
+  // Stage 3: on-demand AI source-matcher for CLINICAL emails. Fires
+  // at most once per email per session; URGENT_CLINICAL +
+  // SAFEGUARDING are already handled by the boot-time matcher.
+  useEnsureEvidenceMatch(selectedId);
   // Helper: an email is "out of the inbox" if it has been acknowledged or
   // archived (acknowledged or marked done). Both flow into the Archive tab.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
@@ -1215,6 +1221,23 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     // source in the approved hierarchy must not get an AI
                     // draft. Show a neutral refusal panel instead.
                     if (cls.category === 'CLINICAL' && !evidence) {
+                      // Stage 3: AI source-match in flight — show a
+                      // neutral lookup state instead of jumping
+                      // straight to the refusal. Resolves to either
+                      // an evidence block or the refusal panel.
+                      if (evidencePending.has(selectedEmail.id)) {
+                        return (
+                          <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                            <div
+                              className="bg-slate-50 border border-slate-200 text-slate-600 text-xs p-4 rounded-lg flex items-center gap-2"
+                              data-testid="evidence-lookup-pending"
+                            >
+                              <div className="h-3 w-3 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+                              <span>Looking up evidence…</span>
+                            </div>
+                          </div>
+                        );
+                      }
                       return (
                         <div className="space-y-4 animate-in zoom-in-95 duration-300">
                           <NoEvidenceRefusal />

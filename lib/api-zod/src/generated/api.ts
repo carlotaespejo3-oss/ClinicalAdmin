@@ -820,6 +820,11 @@ export const ListEmailEvidenceResponseItem = zod
           "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
         ),
     ),
+    aiCheckedNoMatch: zod
+      .boolean()
+      .describe(
+        "True when the AI source-matcher (Stage 3) ran for this email and honestly found no relevant source in the registry. When true, citations is permitted to be empty and the matcher will not re-ask. Defaults to false for seeded \/ clinician- authored rows.",
+      ),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
   })
@@ -861,6 +866,11 @@ export const GetEmailEvidenceResponse = zod
           "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
         ),
     ),
+    aiCheckedNoMatch: zod
+      .boolean()
+      .describe(
+        "True when the AI source-matcher (Stage 3) ran for this email and honestly found no relevant source in the registry. When true, citations is permitted to be empty and the matcher will not re-ask. Defaults to false for seeded \/ clinician- authored rows.",
+      ),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
   })
@@ -899,5 +909,10 @@ export const UpsertEmailEvidenceBody = zod
           "One citation entry — a reference into the source registry plus the per-link concordance flag for this email.",
         ),
     ),
+    aiCheckedNoMatch: zod
+      .boolean()
+      .describe(
+        "Set to true to record that the AI matcher ran and found no relevant source. Required when citations is empty.",
+      ),
   })
   .describe("Upsert body for PUT \/email-evidence\/{outlookEmailId}.");

@@ -1602,6 +1602,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EmailEvidenceCitation"
+        aiCheckedNoMatch:
+          type: boolean
+          description: >-
+            True when the AI source-matcher (Stage 3) ran for this email
+            and honestly found no relevant source in the registry. When
+            true, citations is permitted to be empty and the matcher
+            will not re-ask. Defaults to false for seeded / clinician-
+            authored rows.
         createdAt:
           type: string
           format: date-time
@@ -1612,6 +1620,7 @@ components:
         - outlookEmailId
         - prescribingWarning
         - citations
+        - aiCheckedNoMatch
         - createdAt
         - updatedAt
     EmailEvidenceInput:
@@ -1624,6 +1633,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EmailEvidenceCitation"
+        aiCheckedNoMatch:
+          type: boolean
+          description: >-
+            Set to true to record that the AI matcher ran and found no
+            relevant source. Required when citations is empty.
       required:
         - prescribingWarning
         - citations
+        - aiCheckedNoMatch

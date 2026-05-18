@@ -32,6 +32,7 @@ import InboxTab from '../tabs/InboxTab';
 import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import { useClassifyBootstrap } from '@/lib/useClassifyBootstrap';
+import { useMatchEvidenceBootstrap } from '@/lib/useMatchEvidenceBootstrap';
 import { useClinicianSettingsHydration } from '@/lib/clinicianSettingsStore';
 import TimelineTab from '../tabs/TimelineTab';
 import CalendarTab from '../tabs/CalendarTab';
@@ -98,6 +99,12 @@ export default function ClinAdmin() {
   // matter which tab the user opens first. High-Risk and any future
   // classification-driven tab depend on this running early.
   useClassifyBootstrap();
+  // Stage 3: AI source-matcher. Boots up the urgent subset
+  // (URGENT_CLINICAL + SAFEGUARDING) once both the classification
+  // store and the evidence store have hydrated. Routine CLINICAL
+  // emails match on-demand via `useEnsureEvidenceMatch` in the
+  // email-open container.
+  useMatchEvidenceBootstrap();
   // Hydrate clinician-wide settings (arrivals, style profile,
   // signatures) once, at app root, so synchronous prompt builders
   // see real values rather than defaults by the time the user

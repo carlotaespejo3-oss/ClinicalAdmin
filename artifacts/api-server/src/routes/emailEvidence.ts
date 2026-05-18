@@ -19,6 +19,7 @@ router.get("/email-evidence", async (_req, res) => {
       outlookEmailId: r.outlookEmailId,
       prescribingWarning: r.prescribingWarning,
       citations: r.citations,
+      aiCheckedNoMatch: r.aiCheckedNoMatch,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),
@@ -52,6 +53,7 @@ router.get("/email-evidence/:outlookEmailId", async (req, res) => {
     outlookEmailId: r.outlookEmailId,
     prescribingWarning: r.prescribingWarning,
     citations: r.citations,
+    aiCheckedNoMatch: r.aiCheckedNoMatch,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   });
@@ -73,31 +75,38 @@ router.put("/email-evidence/:outlookEmailId", async (req, res) => {
   }
   const body = parsed.data;
   // Three-bucket + never-invent integrity: an email_evidence record
-  // with zero citations would satisfy the client's "evidence exists"
-  // check but resolve to no verified sources — the exact failure mode
-  // the gate is meant to prevent. Reject at the boundary.
-  if (body.citations.length === 0) {
+  // with zero citations would normally satisfy the client's "evidence
+  // exists" check while resolving to no verified sources — the exact
+  // failure mode the gate prevents. Carve-out (Stage 3): empty
+  // citations are allowed IFF aiCheckedNoMatch === true, which is the
+  // explicit "AI ran and honestly found nothing" marker. That keeps
+  // the matcher from re-asking every session without ever creating a
+  // row that pretends to cite something.
+  if (body.citations.length === 0 && body.aiCheckedNoMatch !== true) {
     res.status(400).json({ error: "At least one citation is required" });
     return;
   }
   // Every sourceId must reference a real row in evidence_sources. jsonb
   // can't carry an FK so validation lives here.
   const sourceIds = Array.from(new Set(body.citations.map((c) => c.sourceId)));
-  const known = await db
-    .select({ id: evidenceSourcesTable.id })
-    .from(evidenceSourcesTable)
-    .where(inArray(evidenceSourcesTable.id, sourceIds));
-  const knownIds = new Set(known.map((k) => k.id));
-  const orphans = sourceIds.filter((id) => !knownIds.has(id));
-  if (orphans.length > 0) {
-    res.status(400).json({ error: `Unknown source IDs: ${orphans.join(", ")}` });
-    return;
+  if (sourceIds.length > 0) {
+    const known = await db
+      .select({ id: evidenceSourcesTable.id })
+      .from(evidenceSourcesTable)
+      .where(inArray(evidenceSourcesTable.id, sourceIds));
+    const knownIds = new Set(known.map((k) => k.id));
+    const orphans = sourceIds.filter((id) => !knownIds.has(id));
+    if (orphans.length > 0) {
+      res.status(400).json({ error: `Unknown source IDs: ${orphans.join(", ")}` });
+      return;
+    }
   }
   const citations: CitationLink[] = body.citations.map((c) => ({
     sourceId: c.sourceId,
     flag: c.flag ?? null,
     flagText: c.flagText ?? null,
   }));
+  const aiCheckedNoMatch = body.aiCheckedNoMatch === true;
   const now = new Date();
   await db
     .insert(emailEvidenceTable)
@@ -106,12 +115,14 @@ router.put("/email-evidence/:outlookEmailId", async (req, res) => {
       outlookEmailId: id,
       prescribingWarning: body.prescribingWarning ?? null,
       citations,
+      aiCheckedNoMatch,
     })
     .onConflictDoUpdate({
       target: [emailEvidenceTable.clinicianId, emailEvidenceTable.outlookEmailId],
       set: {
         prescribingWarning: body.prescribingWarning ?? null,
         citations,
+        aiCheckedNoMatch,
         updatedAt: now,
       },
     });
