@@ -67,6 +67,26 @@ A clinical admin dashboard for an NHS CAMHS consultant — triages incoming Outl
 - Client stores currently key by numeric seed IDs (`Number(outlookEmailId)`). When real Graph IDs replace the seed data, the cache key type must become `string` end-to-end and the `Number()`/`String()` coercion shims removed.
 - Restart the `artifacts/api-server: API Server` workflow after adding new routes — esbuild rebuilds, but the running process needs a restart to pick them up.
 
+## Future work (deferred design notes)
+
+- **Public-holiday feed.** The availability resolver already accepts
+  `publicHolidays: string[]` and zeros those days out + tags them
+  `dayKind: 'public_holiday'`. Today `usePlannerOutput` passes `[]` —
+  nothing populates the list. When this is wired up, pull from a free
+  source (data.gov.au or nager.at; neither needs an API key), cache
+  server-side in a `public_holidays` table keyed by region (NSW / VIC
+  / QLD matter — state-specific days differ), and let the clinician
+  pick their region in settings. The resolver itself needs no change.
+- **Holidays must remain overrideable per-date.** The default
+  assumption is "the clinician isn't working a public holiday" (zero
+  minutes), but they sometimes will. Provide a way for the clinician
+  to mark an individual holiday as a working day — e.g. an
+  `overriddenHolidays: string[]` setting the hook subtracts from the
+  feed-derived list before passing it to `resolveAvailability`. Do
+  NOT remove the date from the cached feed table — keep "official
+  holiday" and "I'm working it" as separate concepts so the override
+  is visible in the UI and reversible.
+
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
