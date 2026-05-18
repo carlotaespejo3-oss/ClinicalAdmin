@@ -20,6 +20,7 @@ import TaskList from '@/components/TaskList';
 import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
 import UnclearTriageDialog from '@/components/UnclearTriageDialog';
 import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
+import OnLeaveDashboard from '@/components/OnLeaveDashboard';
 import type { PlanItem } from '@/lib/planner';
 
 interface Props {
@@ -334,9 +335,26 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         </div>
       </div>
 
-      {/* Leave-context banner. Sky for on-leave / back-today / leave-soon;
+      {/* On-leave-today short-circuits the whole dashboard body. The
+          rest of the page (banners, weekly handled card, status,
+          today's plan, my tasks, week ahead) is hidden in favour of
+          a single calm panel — the planner has nothing useful to
+          say while the clinician is off, and an empty plan looks
+          alarming. Other tabs are unchanged so navigation still works. */}
+      {leaveStatus.state === 'on-leave-today' && (
+        <OnLeaveDashboard
+          block={leaveStatus.block}
+          dayBackKey={leaveStatus.dayBackKey}
+        />
+      )}
+
+      {leaveStatus.state !== 'on-leave-today' && (<>
+
+      {/* Leave-context banner. Sky for back-today / leave-soon;
           advisory only. Sits above the weekly-handled card so the
-          clinician sees their leave state before anything else. */}
+          clinician sees their leave state before anything else. The
+          on-leave-today variant is folded into OnLeaveDashboard
+          above. */}
       {leaveStatus.state !== 'none' && (
         <div
           className={cn(
@@ -349,19 +367,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         >
           <Plane size={18} className="mt-0.5 flex-shrink-0" />
           <div className="min-w-0 text-sm leading-snug">
-            {leaveStatus.state === 'on-leave-today' && (
-              <>
-                <p className="font-bold">
-                  You're on {LEAVE_TYPE_LABEL[leaveStatus.block.leaveType].toLowerCase()} today.
-                </p>
-                <p className="text-xs mt-0.5">
-                  The planner has paused admin time until you're back
-                  {leaveStatus.dayBackKey && (
-                    <> on <strong>{formatDayKey(leaveStatus.dayBackKey)}</strong></>
-                  )}.
-                </p>
-              </>
-            )}
             {leaveStatus.state === 'back-today' && (
               <>
                 <p className="font-bold">
@@ -397,7 +402,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           banner above. Lists tasks whose deadlines land while the
           clinician is away so they can decide to do them early, defer
           formally, or accept the breach. Advisory; never auto-moves. */}
-      {atRiskItems.length > 0 && leaveStatus.state !== 'on-leave-today' && (
+      {atRiskItems.length > 0 && (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-3.5 flex items-start gap-3"
           data-testid="home-leave-at-risk-banner"
@@ -712,6 +717,8 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         onOpenEmail={onOpenEmail}
         onOpenTaskDetail={(item, dateIso) => setSelectedTask({ item, date: dateIso })}
       />
+
+      </>)}
 
       {selectedTask && (
         <CalendarTaskDetailModal
