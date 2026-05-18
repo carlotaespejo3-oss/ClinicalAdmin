@@ -29,6 +29,8 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
+import { getEvidenceBlock } from '@/lib/evidence';
+import { EvidenceBlockView, NoEvidenceRefusal } from '@/components/EvidenceBlockView';
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
@@ -277,7 +279,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       // controlled-drug + travel notes). Wins over the generic
       // CLINICAL prompt when the deterministic detector fired.
       if (cls.prescriptionRequest) return buildPrescriptionPrompt(email, cls);
-      if (cls.category === 'CLINICAL') return buildClinicalPrompt(email);
+      if (cls.category === 'CLINICAL') {
+        // "Never invent" rule: do not generate an AI clinical draft
+        // unless verified evidence exists in the approved tier
+        // hierarchy. Gates the auto-draft effect AND the manual
+        // Regenerate button (both route through promptFor).
+        if (!getEvidenceBlock(email.id)) return null;
+        return buildClinicalPrompt(email);
+      }
       if (cls.category === 'PROFESSIONAL') return buildProfessionalPrompt(email, cls);
       if (cls.category === 'ADMIN') return buildAdminPrompt(email);
     }
@@ -1170,8 +1179,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       ADMIN: { label: 'Admin reply', sub: 'Brief, decisive admin response' },
                     };
                     const meta = labelByCat[cls.category] ?? { label: 'Suggested draft', sub: 'Edit, regenerate or write your own.' };
+                    const evidence = cls.category === 'CLINICAL' ? getEvidenceBlock(selectedEmail.id) : undefined;
+                    // "Never invent" rule: a CLINICAL email with no verified
+                    // source in the approved hierarchy must not get an AI
+                    // draft. Show a neutral refusal panel instead.
+                    if (cls.category === 'CLINICAL' && !evidence) {
+                      return (
+                        <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                          <NoEvidenceRefusal />
+                        </div>
+                      );
+                    }
                     return (
                       <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                        {evidence && <EvidenceBlockView block={evidence} />}
                         {/* PROFESSIONAL document_request: surface document hint */}
                         {cls.category === 'PROFESSIONAL' && cls.professionalSubType === 'document_request' && cls.documentRequested && (
                           <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs p-3 rounded-lg flex items-start gap-2">
