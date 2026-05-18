@@ -1,0 +1,27 @@
+/* ClinAdmin design tokens, scoped to .home-redesign-scope so they don't leak
+   into other mockup groups in the sandbox. Mirrors clinadmin/src/index.css. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+.home-redesign-scope {
+  --background: 0 0% 100%;
+  --foreground: 220 9% 18%;
+  --border: 220 9% 88%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 9% 18%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 9% 18%;
+  --primary: 210 79% 46%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 9% 96%;
+  --secondary-foreground: 220 9% 40%;
+  --muted: 220 9% 96%;
+  --muted-foreground: 220 9% 50%;
+  --accent: 220 9% 93%;
+  --accent-foreground: 220 9% 20%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 220 9% 80%;
+  --ring: 210 79% 46%;
+  --radius: 0.5rem;
+  font-family: 'Inter', system-ui, sans-serif;
+}
