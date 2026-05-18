@@ -1042,25 +1042,28 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       >
                         <MoveToFolderButton outlookEmailId={e.id} />
                       </div>
-                      {/* Outlook-style compact row: sender on top,
-                          subject + time on the second line, preview
-                          underneath. No avatar — keeps the column
-                          slim and readable when there's a lot to
-                          scan. */}
+                      {/* Outlook-style compact row: sender + time on
+                          the top line, subject on the second line,
+                          a one-line preview underneath, then badges.
+                          The preview uses `truncate` so anything
+                          that overflows the row width ends in an
+                          ellipsis rather than wrapping or being
+                          chopped mid-character. No avatar — keeps
+                          the column slim. */}
                       <div className="overflow-hidden">
-                        <p className="text-sm font-bold truncate mb-0.5">{e.from}</p>
                         <div className="flex items-baseline gap-2 mb-0.5">
-                          <p className="text-xs font-semibold truncate flex-1">{e.subject}</p>
+                          <p className="text-sm font-bold truncate flex-1">{e.from}</p>
                           {meta.rowLabel && (
                             <span
-                              className="text-[11px] text-muted-foreground font-medium tabular-nums flex-shrink-0"
+                              className="text-[11px] text-muted-foreground font-medium tabular-nums flex-shrink-0 group-hover:invisible"
                               data-testid={`email-row-time-${e.id}`}
                             >
                               {meta.rowLabel}
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
+                        <p className="text-xs font-semibold truncate mb-0.5">{e.subject}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{e.preview}</p>
                         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                         {cls ? (
                           <>
