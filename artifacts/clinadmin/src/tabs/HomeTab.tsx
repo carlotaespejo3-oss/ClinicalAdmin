@@ -536,6 +536,9 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
           />
         </div>
         <div className="xl:col-span-2">
+          {/* Diary view — tasks/events only, mirrors the full Calendar
+              tab. Email work is shown in Today's Plan beside it; we
+              don't double-count it on the calendar. */}
           <MiniWorkloadCalendar
             runway={plannerOutput.runway}
             onJumpToDay={(idx) => setDayIndex(idx)}

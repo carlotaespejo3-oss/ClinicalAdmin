@@ -23,6 +23,7 @@ import {
   addDays,
   dateKey,
   indexRunway,
+  filterRunwayToTasks,
 } from '@/lib/calendarHelpers';
 
 type RangeMode = 'week' | 'twoweeks' | 'month';
@@ -211,8 +212,15 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
   const [monthAnchor, setMonthAnchor] = useState<Date>(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  const runwayByDate = useMemo(() => indexRunway(planner.runway), [planner.runway]);
-  const horizonEnd = addDays(today, planner.runway.length - 1);
+  // Calendar shows tasks/events only (reports, CPD, meetings, manual +
+  // linked-doc tasks). Emails live in the Inbox/Today's Plan surfaces,
+  // not the diary. filterRunwayToTasks recomputes per-day load + status
+  // from the filtered items so the colour swatches honestly reflect
+  // events-only load — kept in one helper so the mini calendar on Home
+  // and this full view stay in lockstep.
+  const tasksOnlyRunway = useMemo(() => filterRunwayToTasks(planner.runway), [planner.runway]);
+  const runwayByDate = useMemo(() => indexRunway(tasksOnlyRunway), [tasksOnlyRunway]);
+  const horizonEnd = addDays(today, tasksOnlyRunway.length - 1);
 
   // Days shown in week / two-week mode
   const startOffset = mode === 'week' ? weekOffset * 7 : 0;
@@ -242,7 +250,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
     mode === 'week' ? weekOffset > 0 : mode === 'month' ? monthFirst > todayMonthFirst : false;
   const canGoForward =
     mode === 'week'
-      ? weekOffset < Math.ceil(planner.runway.length / 7) - 1
+      ? weekOffset < Math.ceil(tasksOnlyRunway.length / 7) - 1
       : mode === 'month'
         ? monthLast < horizonEnd || monthFirst < horizonMonthFirst
         : false;
@@ -253,7 +261,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
   };
   const goNext = () => {
     if (mode === 'week')
-      setWeekOffset(Math.min(Math.ceil(planner.runway.length / 7) - 1, weekOffset + 1));
+      setWeekOffset(Math.min(Math.ceil(tasksOnlyRunway.length / 7) - 1, weekOffset + 1));
     else if (mode === 'month') setMonthAnchor(new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1));
   };
   const goToday = () => {

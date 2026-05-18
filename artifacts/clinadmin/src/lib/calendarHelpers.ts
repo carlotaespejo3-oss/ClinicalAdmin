@@ -63,3 +63,32 @@ export function indexRunway(runway: DailyPlan[]): Map<string, DailyPlan> {
   }
   return m;
 }
+
+// Strip emails from a runway so the calendar shows only scheduled work
+// the clinician thinks of as "events" — manual tasks, reports, CPD,
+// meetings, linked-doc tasks. Emails live in the Inbox/Today's Plan
+// surfaces; the calendar is for the diary, not the queue.
+//
+// We rebuild totalPlannedMin from the filtered items and re-derive the
+// day status with the same 90/110 % thresholds the planner uses
+// (planner.ts L876-892), so the colour swatch and load bar honestly
+// reflect tasks-only load — not the email+task figure the planner
+// computed.
+export function filterRunwayToTasks(runway: DailyPlan[]): DailyPlan[] {
+  return runway.map(day => {
+    const items = day.items.filter(i => i.kind !== 'email');
+    const totalPlannedMin = items.reduce((s, i) => s + i.estMin, 0);
+    const bufferMin = Math.max(0, day.minutesAvailable - totalPlannedMin);
+    let status: DailyPlan['status'];
+    if (day.minutesAvailable === 0) {
+      status = 'idle';
+    } else if (totalPlannedMin > day.minutesAvailable * 1.10) {
+      status = 'breach';
+    } else if (totalPlannedMin >= day.minutesAvailable * 0.90) {
+      status = 'tight';
+    } else {
+      status = 'safe';
+    }
+    return { ...day, items, totalPlannedMin, bufferMin, status };
+  });
+}

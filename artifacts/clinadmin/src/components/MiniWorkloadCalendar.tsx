@@ -10,6 +10,7 @@ import {
   addDays,
   dateKey,
   indexRunway,
+  filterRunwayToTasks,
 } from '@/lib/calendarHelpers';
 import type { AiCategory } from '@/lib/types';
 
@@ -31,8 +32,13 @@ interface Props {
 export default function MiniWorkloadCalendar({ runway, onJumpToDay }: Props) {
   const [mode, setMode] = useState<ViewMode>('week');
   const today = useMemo(() => startOfDay(new Date()), []);
-  const runwayByDate = useMemo(() => indexRunway(runway), [runway]);
-  const horizonEnd = useMemo(() => addDays(today, runway.length - 1), [today, runway.length]);
+  // Calendar is the clinician's diary view — only show tasks/events
+  // (reports, CPD, meetings, manual + linked-doc tasks). Emails belong
+  // to the inbox/Today's Plan surfaces. Load + status are recomputed
+  // from the filtered set so the colour bar isn't misleading.
+  const tasksOnlyRunway = useMemo(() => filterRunwayToTasks(runway), [runway]);
+  const runwayByDate = useMemo(() => indexRunway(tasksOnlyRunway), [tasksOnlyRunway]);
+  const horizonEnd = useMemo(() => addDays(today, tasksOnlyRunway.length - 1), [today, tasksOnlyRunway.length]);
 
   // For month view we let the clinician page month-by-month, but the
   // status colouring only fills in for days inside the runway horizon.
