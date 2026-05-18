@@ -497,12 +497,12 @@ export default function TodaysPlan({
 
       {/* Body */}
       {isWeekMode && runway ? (
-        <div className="p-4">
+        <div className="p-3">
+          {/* Narrow screens (<760px) wrap to two rows of 4 + 3 so
+              the last day never gets clipped off-screen. From 760px
+              upwards, fan out into a single row of 7 equal columns. */}
           <div
-            className="grid gap-3"
-            style={{
-              gridTemplateColumns: `repeat(${runway.length}, minmax(180px, 1fr))`,
-            }}
+            className="grid gap-1.5 grid-cols-4 min-[760px]:gap-2 min-[760px]:grid-cols-7"
             data-testid="week-columns-grid"
           >
             {runway.map((day, i) => (
