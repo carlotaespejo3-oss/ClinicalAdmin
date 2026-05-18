@@ -12,6 +12,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
+import AvailabilityPanel from '@/components/AvailabilityPanel';
 import type { ManualTask, AiCategory, TabType } from '@/lib/types';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import type { WeekSetup } from '@/pages/ClinAdmin';
@@ -33,6 +34,8 @@ interface Props {
   manualTasks: ManualTask[];
   onOpenEmail: (id: number) => void;
   onNavigate: (tab: TabType) => void;
+  onOpenWeeklySetup: () => void;
+  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>) => void;
 }
 
 function ItemChip({ item, onOpenEmail, dense }: { item: PlanItem; onOpenEmail: (id: number) => void; dense?: boolean }) {
@@ -200,7 +203,7 @@ function MonthCell({
   );
 }
 
-export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNavigate }: Props) {
+export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNavigate, onOpenWeeklySetup, onUpdateAvailability }: Props) {
   const planner = usePlannerOutput(manualTasks, weekSetup);
   const openEmail = (id: number) => {
     onOpenEmail(id);
@@ -450,6 +453,15 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
           </CardContent>
         </Card>
       )}
+
+      {/* Availability adjustment — lives on Calendar so the clinician
+          can tweak this week's hours next to the view that visualises
+          the impact. Moved here from Home to keep the dashboard calm. */}
+      <AvailabilityPanel
+        weekSetup={weekSetup}
+        onUpdateAvailability={onUpdateAvailability}
+        onOpenWeeklySetup={onOpenWeeklySetup}
+      />
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
