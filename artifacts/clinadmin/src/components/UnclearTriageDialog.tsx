@@ -154,12 +154,18 @@ export default function UnclearTriageDialog({
   // Re-derive the "still unclear" queue from live classifications,
   // intersected with the incoming list. As soon as the user picks a
   // category, that ID disappears here and the dialog auto-advances.
+  //
+  // MUST match plannerAdapter.mapEmail's `unclear` rule exactly,
+  // otherwise the planner's "X emails need classifying" count
+  // disagrees with what the dialog actually shows. The planner
+  // marks an email unclear when EITHER category OR priority is
+  // UNCLEAR — e.g. the AI placed it in CLINICAL but couldn't
+  // decide urgency.
   const remaining = useMemo(() => {
     return emailIds.filter((id) => {
       const c = classifications.get(id);
-      // No classification yet OR still UNCLEAR → still needs the
-      // clinician's eyes.
-      return !c || c.category === 'UNCLEAR';
+      if (!c) return true;
+      return c.category === 'UNCLEAR' || c.priority === 'UNCLEAR';
     });
   }, [emailIds, classifications]);
 
