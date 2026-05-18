@@ -1,0 +1,82 @@
+Good — that simplifies the design considerably. No coverage routing, no cross-clinician notifications, no approval workflow. Leave is something the clinician declares about their own time, and the system replans around it.
+Here's the concrete shape.
+LeaveBlock
+tstype LeaveType = 'annual' | 'sick' | 'conference' | 'pd' | 'unpaid';
+
+interface LeaveBlock {
+  id: string;
+  startAt: string;      // ISO datetime
+  endAt: string;        // ISO datetime, exclusive
+  type: LeaveType;
+  notes?: string;
+}
+No clinicianId, no status. The clinician is implicit (solo), and there's no one to approve against — saved means active. If sick leave is entered retroactively (started yesterday), startAt simply lies in the past; the resolver handles that without special casing.
+Half-days work because they're datetimes. A morning-only sick leave is startAt: 9am, endAt: 1pm.
+RecoveryConfig
+Per-clinician, stored once, edited rarely:
+tsinterface RecoveryConfig {
+  rampMultipliers: number[];           // e.g. [0.5, 0.75, 1.0] — days 1, 2, 3 back
+  recoveryReservedMin: number[];       // e.g. [60, 30, 0]      — protected admin
+  preLeaveWindDown: number[];          // e.g. [0.75, 0.5]      — last 1, 2 days before
+  triggerAfterDaysOff: number;         // e.g. 3 — recovery only kicks in after ≥3 consecutive days off
+}
+The triggerAfterDaysOff knob matters — you don't want a 1-day annual leave triggering a 3-day ramp. A long weekend isn't a holiday recovery situation.
+Resolver function signature
+tsfunction resolveAvailability(input: {
+  today: string;                       // ISO date, day 0
+  workingPattern: WorkingPattern;      // baseline mins per weekday
+  leaveBlocks: LeaveBlock[];
+  publicHolidays: string[];            // ISO dates
+  recoveryConfig: RecoveryConfig;
+  arrivalConfig: ProjectedArrivalConfig;
+}): {
+  dailyAvailability: DailyAvailability[];   // length 14
+  effectiveArrivalConfig: ProjectedArrivalConfig;
+  leaveContext: LeaveContext;               // for UI banners + breach reasons
+};
+
+interface DailyAvailability {
+  date: string;
+  minutesAvailable: number;            // already net of leave + ramp + wind-down
+  recoveryReservedMin: number;         // new protected pool
+  dayKind: 'normal' | 'pre_leave' | 'leave' | 'recovery' | 'public_holiday';
+}
+
+interface LeaveContext {
+  activeBlock?: LeaveBlock;            // if today is inside a leave block
+  upcomingBlock?: LeaveBlock;          // if a block starts within the 14-day window
+  returningOn?: string;                // ISO date of first working day after leave
+}
+buildPlan then takes dailyAvailability instead of (or alongside) the current minutesAvailable[14]. Step 1 of the planner unpacks recoveryReservedMin into the internal day record exactly the way it currently unpacks lowQuotaRemainingMin. That's the only internal change.
+Resolver algorithm
+
+Seed — for each of the 14 days, set minutesAvailable from workingPattern[weekday], zero out public holidays, mark dayKind = 'normal' or 'public_holiday'.
+Apply leave blocks — for each block overlapping the window, zero out minutesAvailable on the covered days (handle half-days by reducing rather than zeroing), set dayKind = 'leave'.
+Apply wind-down — find the last 1–2 working days before each leave block's start. Multiply minutesAvailable by the corresponding preLeaveWindDown factor. Set dayKind = 'pre_leave'. Skip if the leave is too short to warrant it (apply the same triggerAfterDaysOff threshold).
+Apply recovery ramp — find the first 1–3 working days after each qualifying leave block (one where total off-time ≥ triggerAfterDaysOff). Multiply minutesAvailable by rampMultipliers, set recoveryReservedMin from the config array, set dayKind = 'recovery'.
+Scale arrivals — effectiveArrivalConfig rescales emailsPerWeek, highPerWeek, mediumPerWeek by (workingDaysInWindow1to6 / 6). Today (day 0) excluded as in the current planner. If today is itself a leave day, also scale the urgent daily reserve denominators accordingly.
+Build LeaveContext — single pass through leaveBlocks to find activeBlock (covers day 0), upcomingBlock (starts in days 1–13), returningOn (first non-leave, non-holiday working day after activeBlock if present).
+
+Pure function. Same input → same output. Same testing posture as planner.ts.
+Planner-side changes — minimal
+In planner.ts:
+
+Step 1 (initialise runway): also unpack recoveryReservedMin into the internal day record alongside bookableMin and lowQuotaRemainingMin.
+Step 6 packing waterfall: recoveryReservedMin is never consumed during packing. Not by overdue, not by urgent, not by anything. It's reserved admin time the clinician will fill themselves with backlog work.
+Step 7 day status: planned + recoveryReservedMin is what gets compared against available. So a recovery day with 180 min available, 60 min reserved, 100 min planned reads as tight (planned-effective 160/180 = 89%, but recoveryReserved counts toward "claimed" capacity), not safe. This is honest — the day isn't actually free.
+Step 10 strip: also strip recoveryReservedMin from the public DailyPlan only if you don't want the UI to display it. I'd keep it — the UI can render a "recovery admin time" pill on those days.
+
+New BreachInfo reason:
+tstype BreachReason =
+  | 'no_capacity_before_sla'
+  | 'already_overdue'
+  | 'leave_displaced';   // new
+A leave_displaced breach is set when an item's SLA falls inside an active leave block. The UI can render this specifically ("can't deliver before SLA — you're on leave through Nov 4") rather than the generic "no capacity before SLA" message.
+Leave-entry UX flow
+
+Clinician picks dates + type in a leave entry form.
+Before saving: call resolveAvailability and buildPlan with the proposed leave. Diff against current PlannerOutput.
+Review screen surfaces: items that move day, items that become breaches, items newly deferred. Headline counts.
+Confirm → persist LeaveBlock. Next regular buildPlan call picks it up automatically (it's now part of state, fed through the usual usePlannerOutput.ts hook).
+
+The diff logic is generic — it works for any availability change. Worth building as diffPlannerOutputs(before, after): PlannerDiff and reusing it.
