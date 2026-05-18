@@ -33,6 +33,7 @@ import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto'
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
 import AutoCreatedTasksStrip from '@/components/AutoCreatedTasksStrip';
+import UnresolvedTaskStrip from '@/components/UnresolvedTaskStrip';
 import { useAutoTaskCreator } from '@/lib/autoTaskCreator';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
@@ -1222,12 +1223,17 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                        mini chat box per spec. Auto-skipped for NONE,
                        CPD, LEGAL, UNCLEAR, and any email with a
                        documentDirection (handled by document detection). */}
-                {/* ---- Auto-created task strip: quiet acknowledgement
-                       that the AI added a task from this email's
-                       deadline. Tier 1 = slate (silent), tier 2 =
-                       amber ("date estimated"). Each strip exposes
-                       Undo (removes the task) — Edit is deferred. */}
+                {/* ---- Auto-created task strip: quiet "Task created"
+                       acknowledgement for Tier 1 (slate w/ green tick)
+                       and Tier 2 (amber w/ "date estimated"). Each
+                       strip exposes Undo. */}
                 <AutoCreatedTasksStrip email={selectedEmail} />
+
+                {/* ---- Unresolved strip: Tier 3 detections — the AI
+                       spotted something but date / intent were low
+                       confidence. "Classify" opens a 3-question
+                       modal that closes the loop in ~5 seconds. */}
+                <UnresolvedTaskStrip email={selectedEmail} />
 
                 <PotentialTaskPanel
                   email={selectedEmail}
