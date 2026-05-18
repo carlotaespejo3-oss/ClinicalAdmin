@@ -1192,7 +1192,6 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     }
                     return (
                       <div className="space-y-4 animate-in zoom-in-95 duration-300">
-                        {evidence && <EvidenceBlockView block={evidence} />}
                         {/* PROFESSIONAL document_request: surface document hint */}
                         {cls.category === 'PROFESSIONAL' && cls.professionalSubType === 'document_request' && cls.documentRequested && (
                           <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs p-3 rounded-lg flex items-start gap-2">
@@ -1203,6 +1202,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           </div>
                         )}
                         {renderDraftCard('single', meta.label, meta.sub)}
+                        {evidence && <EvidenceBlockView block={evidence} />}
                       </div>
                     );
                   }
