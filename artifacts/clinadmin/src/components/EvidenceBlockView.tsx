@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, BookOpen, ExternalLink, Lock } from 'lucide-react';
 import type { Citation, EvidenceBlock } from '@/lib/evidence';
 import { FLAG_ICON, FLAG_LABEL } from '@/lib/evidence';
@@ -127,7 +128,58 @@ export function EvidenceBlockView({ block }: Props) {
   );
 }
 
-export function NoEvidenceRefusal() {
+export interface ClinicianIdeasPanelProps {
+  // Current draft text in the ideas textarea (controlled by InboxTab so
+  // it survives tab switches in the same session).
+  value: string;
+  onChange: (next: string) => void;
+  // Fired when the clinician clicks "Draft from my ideas". Receives
+  // the trimmed ideas text; parent decides whether to gate on length.
+  onSubmit: (ideas: string) => void;
+  // Disable submit while a draft request is in flight so the same
+  // ideas can't be fired twice in quick succession.
+  submitting?: boolean;
+}
+
+// Shown for CLINICAL emails when no entry in the approved source
+// hierarchy could be linked to the question. Rather than refuse and
+// leave the clinician with a blank panel, we ask them to type the
+// main ideas they want the reply to make. The AI then wordsmiths
+// those ideas into a polite reply using buildClinicalFromIdeasPrompt
+// — it adds NO clinical content of its own.
+export function NoEvidenceRefusal(props?: ClinicianIdeasPanelProps) {
+  // Backwards-compatible: if called with no props, render a read-only
+  // refusal (legacy callers). New callers pass props to enable input.
+  if (!props) {
+    return (
+      <div
+        className="bg-slate-50 border-2 border-dashed border-slate-300 text-slate-700 text-xs p-5 rounded-xl"
+        data-testid="evidence-no-source"
+      >
+        <div className="flex items-start gap-3">
+          <BookOpen size={18} className="text-slate-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold uppercase tracking-tight text-[11px] text-slate-700 mb-1">
+              No relevant or safe guideline found
+            </p>
+            <p className="leading-relaxed text-slate-700/90">
+              No entry in the approved source hierarchy (eTG, AMH, MIMS, RACGP, RCH, RANZCP,
+              NHMRC, TGA, ACSQHC) covers this question. Please reply manually.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <ClinicianIdeasPanelImpl {...props} />;
+}
+
+function ClinicianIdeasPanelImpl({ value, onChange, onSubmit, submitting }: ClinicianIdeasPanelProps) {
+  const [touched, setTouched] = useState(false);
+  const trimmed = value.trim();
+  const tooShort = trimmed.length > 0 && trimmed.length < 5;
+  const empty = trimmed.length === 0;
+  const canSubmit = !empty && !tooShort && !submitting;
   return (
     <div
       className="bg-slate-50 border-2 border-dashed border-slate-300 text-slate-700 text-xs p-5 rounded-xl"
@@ -137,14 +189,42 @@ export function NoEvidenceRefusal() {
         <BookOpen size={18} className="text-slate-500 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
           <p className="font-bold uppercase tracking-tight text-[11px] text-slate-700 mb-1">
-            No verified clinical source available
+            Nil relevant or safe guideline found
           </p>
-          <p className="leading-relaxed text-slate-700/90">
-            Auto-drafting is disabled for this email because no entry in the approved source
-            hierarchy (eTG, AMH, MIMS, RACGP, RCH, RANZCP, NHMRC, TGA, ACSQHC) has been linked
-            to the question yet. Please consult the relevant guideline or specialist directly,
-            then reply manually.
+          <p className="leading-relaxed text-slate-700/90 mb-3">
+            No entry in the approved source hierarchy covers this question, so the AI
+            won't draft a clinical reply on its own. Type the main ideas or messages you
+            want the reply to make and the AI will wordsmith them into a polite reply —
+            it won't add clinical content of its own.
           </p>
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={() => setTouched(true)}
+            disabled={submitting}
+            placeholder={
+              "e.g.\n- Confirm the dose change is fine\n- Ask them to repeat bloods in 2 weeks\n- Offer a phone review if symptoms worsen"
+            }
+            rows={5}
+            className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded-lg p-2.5 leading-relaxed focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-60 placeholder:text-slate-400"
+            data-testid="input-clinician-ideas"
+          />
+          {touched && tooShort && (
+            <p className="mt-1 text-[11px] text-amber-700">
+              A few more words would help — the AI needs something to work with.
+            </p>
+          )}
+          <div className="mt-3 flex items-center justify-end">
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => onSubmit(trimmed)}
+              className="text-[11px] font-bold bg-slate-800 text-white px-3 py-1.5 rounded shadow hover:bg-slate-900 transition-colors uppercase tracking-tight disabled:bg-slate-300 disabled:cursor-not-allowed"
+              data-testid="button-draft-from-ideas"
+            >
+              {submitting ? "Drafting…" : "Draft from my ideas"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   buildUrgentClinicalFamilyPrompt,
   buildUrgentClinicalAdminPrompt,
   buildClinicalPrompt,
+  buildClinicalFromIdeasPrompt,
   buildPrescriptionPrompt,
   buildProfessionalPrompt,
   buildAdminPrompt,
@@ -239,6 +240,10 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   );
   const [aiAnalysis, setAiAnalysis] = useState<Record<number, string>>({});
   const [aiDrafts, setAiDrafts] = useState<Record<number, DraftState>>({});
+  // Per-email ideas the clinician has typed when no verified clinical
+  // source could be matched. Kept here (not in the panel) so switching
+  // away and back doesn't wipe an in-progress note.
+  const [clinicianIdeas, setClinicianIdeas] = useState<Record<number, string>>({});
   const [draftLoading, setDraftLoading] = useState<Record<number, Partial<Record<DraftSlot, boolean>>>>({});
   const [draftError, setDraftError] = useState<Record<number, Partial<Record<DraftSlot, boolean>>>>({});
   const [copiedSlot, setCopiedSlot] = useState<{ id: number; slot: DraftSlot } | null>(null);
@@ -483,8 +488,15 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         // EvidenceBlock with zero resolved citations (e.g. all source
         // IDs orphaned) does NOT satisfy the gate.
         const ev = evidenceMap.get(email.id);
-        if (!ev || ev.citations.length === 0) return null;
-        return buildClinicalPrompt(email);
+        if (ev && ev.citations.length > 0) return buildClinicalPrompt(email);
+        // No verified source — fall back to the clinician's own
+        // ideas if they have supplied any. Regenerate then re-runs
+        // against the same ideas. Returns null when neither evidence
+        // nor ideas are available, so auto-draft stays blocked and
+        // the ideas panel stays visible.
+        const ideas = (clinicianIdeas[email.id] ?? '').trim();
+        if (ideas.length >= 5) return buildClinicalFromIdeasPrompt(email, ideas);
+        return null;
       }
       if (cls.category === 'PROFESSIONAL') return buildProfessionalPrompt(email, cls);
       if (cls.category === 'ADMIN') return buildAdminPrompt(email);
@@ -644,6 +656,17 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmail?.id, classifications.get(selectedEmail?.id ?? -1)?.category]);
+
+  // CLINICAL fallback: no verified source found, so the clinician
+  // supplies the main ideas and the AI wordsmiths them into a polite
+  // reply. Runs through the same runDraft pipeline so the resulting
+  // draft surfaces in the standard draft card with edit/send/copy.
+  // No audit context — there is no evidence snapshot to record.
+  const handleDraftFromIdeas = (email: Email, ideas: string) => {
+    const trimmed = ideas.trim();
+    if (trimmed.length < 5) return;
+    void runDraft(email, 'single', buildClinicalFromIdeasPrompt(email, trimmed));
+  };
 
   const handleRegenerate = (slot: DraftSlot) => {
     if (!selectedEmail) return;
@@ -1703,7 +1726,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       // Stage 3: AI source-match in flight — show a
                       // neutral lookup state instead of jumping
                       // straight to the refusal. Resolves to either
-                      // an evidence block or the refusal panel.
+                      // an evidence block or the ideas panel.
                       if (evidencePending.has(selectedEmail.id)) {
                         return (
                           <div className="space-y-4 animate-in zoom-in-95 duration-300">
@@ -1717,9 +1740,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           </div>
                         );
                       }
+                      // Once the clinician has supplied ideas and the
+                      // AI has produced a draft (or is mid-flight, or
+                      // errored), fall through to the normal draft
+                      // card so they can edit / regenerate / send it.
+                      const ideasDraft = drafts.single;
+                      const ideasLoading = loading.single;
+                      const ideasError = errors.single;
+                      const hasDraftActivity = Boolean(ideasDraft) || ideasLoading || ideasError;
+                      if (!hasDraftActivity) {
+                        return (
+                          <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                            <NoEvidenceRefusal
+                              value={clinicianIdeas[selectedEmail.id] ?? ''}
+                              onChange={(next) =>
+                                setClinicianIdeas((prev) => ({ ...prev, [selectedEmail.id]: next }))
+                              }
+                              onSubmit={(ideas) => handleDraftFromIdeas(selectedEmail, ideas)}
+                              submitting={ideasLoading}
+                            />
+                          </div>
+                        );
+                      }
                       return (
                         <div className="space-y-4 animate-in zoom-in-95 duration-300">
-                          <NoEvidenceRefusal />
+                          {renderDraftCard('single', 'Clinical reply (from your ideas)', 'Drafted from the main points you supplied — no AI clinical content added')}
                         </div>
                       );
                     }

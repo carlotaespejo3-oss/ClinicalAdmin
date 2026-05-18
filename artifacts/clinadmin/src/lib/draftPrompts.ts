@@ -148,6 +148,41 @@ ${returnOnlyBody()}
 ${emailBodyBlock(email)}`;
 }
 
+// ---- CLINICAL from clinician-supplied ideas ----
+// Fallback path when no verified evidence source could be matched to the
+// email. The "never invent" rule blocks the normal evidence-backed
+// clinical draft, so instead we ask the clinician for the main points
+// they want to make and have the AI wordsmith them into a polite reply.
+// The clinical content is the clinician's; the AI's job is phrasing,
+// structure, and tone — NOT clinical decision-making.
+export function buildClinicalFromIdeasPrompt(email: Email, ideas: string): string {
+  return `${COMMON_HEADER}
+
+The clinician (Dr. A. Patterson) has reviewed this email and provided the main points for the reply themselves, because no verified clinical guideline was available to ground an AI-generated answer.
+
+Your job is ONLY to wordsmith the clinician's points into a polite, plain-language reply. You MUST NOT:
+- Add clinical content, advice, dosing, diagnoses, or recommendations that the clinician did not provide.
+- Second-guess, soften or re-interpret the clinical substance of what the clinician wrote.
+- Insert filler reassurance ("rest assured…") or qualifications the clinician did not include.
+
+You MAY:
+- Add greeting and sign-off.
+- Restructure the points into clear sentences and paragraphs.
+- Match the recipient's register (warm for families, collegial for professionals).
+
+End with EXACTLY this sign-off:
+${signOffFor(email)}${styleBlockFor(email)}
+
+${returnOnlyBody()}
+
+Clinician's main points for the reply (use these — do not invent additional clinical content):
+---
+${ideas.trim()}
+---
+
+${emailBodyBlock(email)}`;
+}
+
 // ---- PROFESSIONAL (colleagues — sub-type aware) ----
 export function buildProfessionalPrompt(email: Email, c?: AiClassification): string {
   const sub = c?.professionalSubType;
