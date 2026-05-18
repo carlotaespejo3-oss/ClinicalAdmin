@@ -496,6 +496,75 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
         </>
       )}
 
+      {/* Safely deferred to next week — grouped by the email's own
+          deadline so the clinician can see at a glance whether any
+          deferred items are getting close to their 14-day SLA window. */}
+      {plan?.deferredItems && plan.deferredItems.length > 0 && (() => {
+        type Bucket = { key: string; label: string; tone: string; items: typeof plan.deferredItems };
+        const buckets: Bucket[] = [
+          { key: 'soon', label: 'Due within 7 days', tone: 'border-red-200 bg-red-50/40 text-red-900', items: [] },
+          { key: 'next', label: 'Due in 8–14 days', tone: 'border-amber-200 bg-amber-50/40 text-amber-900', items: [] },
+          { key: 'later', label: 'Due later (>14 days)', tone: 'border-slate-200 bg-slate-50 text-slate-700', items: [] },
+          { key: 'none', label: 'No deadline', tone: 'border-slate-200 bg-slate-50 text-slate-700', items: [] },
+        ];
+        for (const it of plan.deferredItems) {
+          if (it.dueDays == null) buckets[3].items.push(it);
+          else if (it.dueDays <= 7) buckets[0].items.push(it);
+          else if (it.dueDays <= 14) buckets[1].items.push(it);
+          else buckets[2].items.push(it);
+        }
+        // Sort each bucket by dueDays ascending so the most urgent
+        // item in each group sits at the top.
+        for (const b of buckets) {
+          b.items.sort((a, c) => (a.dueDays ?? 99) - (c.dueDays ?? 99));
+        }
+        const nonEmpty = buckets.filter(b => b.items.length > 0);
+        const fmtDue = (d: number | null) => {
+          if (d == null) return 'No deadline';
+          if (d < 0) return `${Math.abs(d)}d overdue`;
+          if (d === 0) return 'Due today';
+          if (d === 1) return 'Due tomorrow';
+          return `Due in ${d}d`;
+        };
+        return (
+          <Card className="border-border/60" data-testid="forecast-deferred-list">
+            <CardHeader className="pb-3 border-b border-border/50">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-700" />
+                Safely deferred to next week
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {plan.deferredItems.length} item{plan.deferredItems.length === 1 ? '' : 's'} couldn't fit this week. Grouped by their own deadline so urgent ones stay visible.
+              </p>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              {nonEmpty.map(b => (
+                <div key={b.key}>
+                  <div className={cn('inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border', b.tone)}>
+                    {b.label} · {b.items.length}
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {b.items.map((it, i) => (
+                      <li key={`${b.key}-${i}`} className="flex items-start gap-3 text-sm">
+                        <span className="text-[11px] font-bold tabular-nums text-muted-foreground w-20 flex-shrink-0 pt-0.5">
+                          {fmtDue(it.dueDays)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-foreground leading-snug">{it.label}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            ~{it.estMin}min · {it.reason}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {/* SLA flag */}
       {willBreachLowSla && (
         <Card className="border-amber-200 bg-amber-50/40">

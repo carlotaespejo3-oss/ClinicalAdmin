@@ -36,7 +36,6 @@ import { useClinicianSettingsHydration } from '@/lib/clinicianSettingsStore';
 import TimelineTab from '../tabs/TimelineTab';
 import CalendarTab from '../tabs/CalendarTab';
 import ForecastTab from '../tabs/ForecastTab';
-import WeeklyPlanTab from '../tabs/WeeklyPlanTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
 import TasksTab from '../tabs/TasksTab';
@@ -68,7 +67,6 @@ export interface WeekSetup {
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
-  { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
   { id: 'Calendar', icon: CalendarDays, label: 'Calendar' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
   { id: 'Archive', icon: Archive, label: 'Archive' },
@@ -260,7 +258,9 @@ export default function ClinAdmin() {
     const setup: WeekSetup = { hours, days, plan, sessionLengthMin };
     setWeekSetupInternal(weekKey, setup);
     setShowWeeklySetup(false);
-    if (plan) setActiveTab('Weekly Plan');
+    // The Weekly Plan tab has been folded into Forecast — jump there
+    // so the clinician sees the freshly generated plan immediately.
+    if (plan) setActiveTab('Forecast');
   };
 
   // Use functional updaters here so two rapid edits to the same
@@ -326,7 +326,6 @@ export default function ClinAdmin() {
       case 'Backlog Recovery': return <CatchUpTab />;
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
-      case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} onNavigate={setActiveTab} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} />;
       case 'Tasks': return (
         <TasksTab

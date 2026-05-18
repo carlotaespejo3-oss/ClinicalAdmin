@@ -160,12 +160,26 @@ function MonthCell({
 }) {
   const status = plan?.status ?? 'idle';
   const tone = STATUS_TONE[status];
-  const counts: Partial<Record<AiCategory, number>> = {};
+  // Tally by kind so the cell can summarise "2 tasks · 1 meeting"
+  // instead of relying on dots alone. Emails are already excluded
+  // from tasksOnlyRunway upstream, so in practice this collapses to
+  // tasks + meetings (events).
+  let taskCount = 0;
+  let meetingCount = 0;
+  let otherCount = 0;
+  const categoryCounts: Partial<Record<AiCategory, number>> = {};
   if (plan) {
     for (const item of plan.items) {
-      counts[item.category] = (counts[item.category] ?? 0) + 1;
+      if (item.kind === 'event') meetingCount += 1;
+      else if (item.kind === 'task') taskCount += 1;
+      else otherCount += 1;
+      categoryCounts[item.category] = (categoryCounts[item.category] ?? 0) + 1;
     }
   }
+  const summaryParts: string[] = [];
+  if (taskCount > 0) summaryParts.push(`${taskCount} task${taskCount === 1 ? '' : 's'}`);
+  if (meetingCount > 0) summaryParts.push(`${meetingCount} mtg${meetingCount === 1 ? '' : 's'}`);
+  if (otherCount > 0) summaryParts.push(`${otherCount} email${otherCount === 1 ? '' : 's'}`);
   return (
     <button
       type="button"
@@ -177,7 +191,7 @@ function MonthCell({
       }
       aria-pressed={isSelected}
       className={cn(
-        'aspect-square min-h-[72px] p-2 text-left rounded-lg border transition-colors flex flex-col',
+        'min-h-[92px] p-2 text-left rounded-lg border transition-colors flex flex-col gap-1',
         inMonth ? 'bg-card' : 'bg-muted/20',
         isSelected
           ? 'border-primary ring-2 ring-primary/30'
@@ -195,15 +209,26 @@ function MonthCell({
         )}
       </div>
       {plan && plan.items.length > 0 && (
-        <div className="mt-auto flex flex-wrap gap-0.5" aria-hidden="true">
-          {Object.entries(counts).slice(0, 6).map(([cat]) => {
-            const t = CATEGORY_TONE[cat as AiCategory] ?? CATEGORY_TONE.ADMIN;
-            return <span key={cat} className={cn('w-1.5 h-1.5 rounded-full', t.dot)} />;
-          })}
-        </div>
+        <>
+          <p className="text-[10px] font-semibold text-foreground/80 leading-tight">
+            {summaryParts.join(' · ')}
+          </p>
+          <p className="text-[10px] text-muted-foreground tabular-nums leading-tight">
+            {fmtMin(plan.totalPlannedMin)}
+            {plan.minutesAvailable > 0 && (
+              <span className="text-muted-foreground/70"> / {fmtMin(plan.minutesAvailable)}</span>
+            )}
+          </p>
+          <div className="mt-auto flex flex-wrap gap-0.5" aria-hidden="true">
+            {Object.entries(categoryCounts).slice(0, 6).map(([cat]) => {
+              const t = CATEGORY_TONE[cat as AiCategory] ?? CATEGORY_TONE.ADMIN;
+              return <span key={cat} className={cn('w-1.5 h-1.5 rounded-full', t.dot)} />;
+            })}
+          </div>
+        </>
       )}
       {plan && plan.minutesAvailable > 0 && plan.items.length === 0 && (
-        <span className="text-[9px] text-muted-foreground mt-auto">{fmtMin(plan.minutesAvailable)} free</span>
+        <span className="text-[10px] text-muted-foreground mt-auto">{fmtMin(plan.minutesAvailable)} free</span>
       )}
     </button>
   );
@@ -396,50 +421,83 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
         </div>
       )}
 
-      {/* Month grid */}
+      {/* Month grid + side detail column.
+          When a day is selected, the grid shrinks and a detail panel
+          appears to the right (stacks below on narrow screens) so the
+          clinician can read the day without losing the month context. */}
       {mode === 'month' && (
-        <Card className="border-border/60">
-          <CardContent className="p-4">
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-                <div key={d} className="text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground py-1">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {monthGrid.map(d => {
-                const inMonth = d.getMonth() === monthAnchor.getMonth();
-                const inHorizon = d.getTime() >= today.getTime() && d.getTime() <= horizonEnd.getTime();
-                const plan = inHorizon ? runwayByDate.get(dateKey(d)) ?? null : null;
-                const isToday = d.getTime() === today.getTime();
-                const isSelected = !!selectedDate && d.getTime() === selectedDate.getTime();
-                return (
-                  <MonthCell
-                    key={dateKey(d)}
-                    date={d}
-                    plan={plan}
-                    inMonth={inMonth}
-                    isToday={isToday}
-                    onClick={() => setSelectedDate(isSelected ? null : d)}
-                    isSelected={isSelected}
-                  />
-                );
-              })}
-            </div>
+        <div
+          className={cn(
+            'grid gap-4',
+            selectedDate ? 'lg:grid-cols-[1fr_320px]' : 'grid-cols-1',
+          )}
+        >
+          <Card className="border-border/60">
+            <CardContent className="p-4">
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                  <div key={d} className="text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground py-1">
+                    {d}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {monthGrid.map(d => {
+                  const inMonth = d.getMonth() === monthAnchor.getMonth();
+                  const inHorizon = d.getTime() >= today.getTime() && d.getTime() <= horizonEnd.getTime();
+                  const plan = inHorizon ? runwayByDate.get(dateKey(d)) ?? null : null;
+                  const isToday = d.getTime() === today.getTime();
+                  const isSelected = !!selectedDate && d.getTime() === selectedDate.getTime();
+                  return (
+                    <MonthCell
+                      key={dateKey(d)}
+                      date={d}
+                      plan={plan}
+                      inMonth={inMonth}
+                      isToday={isToday}
+                      onClick={() => setSelectedDate(isSelected ? null : d)}
+                      isSelected={isSelected}
+                    />
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Selected day detail */}
-            {selectedDate && (
-              <div className="mt-4 pt-4 border-t border-border/60">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold">
-                    {selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                  </h3>
-                  {selectedPlan && (
-                    <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded', STATUS_TONE[selectedPlan.status].pillBg, STATUS_TONE[selectedPlan.status].pillText)}>
-                      {STATUS_TONE[selectedPlan.status].label}
-                    </span>
-                  )}
+          {/* Side detail column — only rendered while a day is selected */}
+          {selectedDate && (
+            <Card className="border-primary/40 lg:sticky lg:top-4 lg:self-start" data-testid="month-day-detail">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Day detail
+                    </p>
+                    <h3 className="text-sm font-bold leading-tight mt-0.5">
+                      {selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </h3>
+                    {selectedPlan && (
+                      <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
+                        {fmtMin(selectedPlan.totalPlannedMin)} planned · {fmtMin(selectedPlan.minutesAvailable)} available
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {selectedPlan && (
+                      <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded', STATUS_TONE[selectedPlan.status].pillBg, STATUS_TONE[selectedPlan.status].pillText)}>
+                        {STATUS_TONE[selectedPlan.status].label}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(null)}
+                      className="text-muted-foreground hover:text-foreground text-lg leading-none px-1"
+                      aria-label="Close day detail"
+                      data-testid="month-day-detail-close"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
                 {!selectedPlan && (
                   <p className="text-xs text-muted-foreground italic">Beyond the 14-day planning horizon — nothing scheduled yet.</p>
@@ -448,16 +506,16 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
                   <p className="text-xs text-muted-foreground italic">{selectedPlan.minutesAvailable === 0 ? 'No admin time scheduled.' : 'Nothing planned for this day.'}</p>
                 )}
                 {selectedPlan && selectedPlan.items.length > 0 && (
-                  <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
                     {selectedPlan.items.map((item, i) => (
                       <ItemChip key={`${item.kind}-${item.refId ?? i}`} item={item} onOpenEmail={openEmail} />
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Availability adjustment — lives on Calendar so the clinician
