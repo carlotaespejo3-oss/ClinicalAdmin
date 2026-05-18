@@ -434,7 +434,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       {/* Week ahead — the diary view. Replaces the old mini workload
           calendar: same purpose, but actually readable and you can
           add to it. */}
-      <WeeklyTaskOverview runway={plannerOutput.runway} />
+      <WeeklyTaskOverview runway={plannerOutput.runway} onOpenEmail={onOpenEmail} />
 
       {/* Inline unclear-email triage. Opens from Today's Plan when
           the clinician clicks an "emails need classifying" row. Keeps
