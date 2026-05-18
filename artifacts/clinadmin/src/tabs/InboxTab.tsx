@@ -8,6 +8,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAiComplete } from '@workspace/api-client-react';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
 import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
+import { FolderColumn, type SelectedFolder } from '@/components/FolderColumn';
+import { OutlookFolderView } from '@/components/OutlookFolderView';
+import { MoveToFolderButton } from '@/components/MoveToFolderMenu';
+import { CustomFolderView } from '@/components/CustomFolderView';
+import { useEmailFolderAssignments } from '@/lib/emailFolderAssignmentsStore';
 import { manualTasks as seedManualTasks } from '@/lib/data';
 import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
 import { findLinkedTaskForEmail, detectCompletionLanguage } from '@/lib/linkedTaskUtils';
@@ -266,27 +271,70 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // Inbox list = anything not yet archived/acknowledged. Archived items live
   // in the Archive tab — they don't appear here at all.
   const [searchQuery, setSearchQuery] = useState('');
+  // Outlook-style folder selection. 'system-inbox' is the existing
+  // triaged inbox; 'outlook' folders are Sent/Drafts and Outlook user
+  // folders (read live via the email-fetch adapter); 'custom' folders
+  // are ClinAdmin's own organisational layer stored in our DB.
+  const [selectedFolder, setSelectedFolder] = useState<SelectedFolder>({ kind: 'system-inbox' });
+  const folderAssignments = useEmailFolderAssignments();
+  const customAssignmentsByFolder = useMemo(() => {
+    const m = new Map<string, Set<number>>();
+    for (const a of folderAssignments) {
+      const idNum = Number(a.outlookEmailId);
+      if (!Number.isFinite(idNum)) continue;
+      if (!m.has(a.customFolderId)) m.set(a.customFolderId, new Set());
+      m.get(a.customFolderId)!.add(idNum);
+    }
+    return m;
+  }, [folderAssignments]);
+  const emailIdsInCurrentCustomFolder = useMemo(() => {
+    if (selectedFolder.kind !== 'custom') return null;
+    return customAssignmentsByFolder.get(selectedFolder.folderId) ?? new Set<number>();
+  }, [selectedFolder, customAssignmentsByFolder]);
 
   // Inbox list, sorted newest-first by parsed date, with each row
   // carrying its parsed meta so the render pass can group rows and
   // emit section headers (Today / Yesterday / Friday / 06 May).
   const orderedEmails = useMemo(() => {
-    const inInbox = emails.filter(e => !isOutOfInbox(e.id));
+    // Inbox folder: everything not yet archived/acknowledged AND not
+    // filed into a custom folder. Custom folder: just the emails
+    // assigned to it. Outlook folders use a separate read-only view.
+    let pool: typeof emails;
+    if (selectedFolder.kind === 'custom' && emailIdsInCurrentCustomFolder) {
+      pool = emails.filter(e => emailIdsInCurrentCustomFolder.has(e.id));
+    } else {
+      const filed = new Set<number>();
+      for (const ids of customAssignmentsByFolder.values()) {
+        for (const id of ids) filed.add(id);
+      }
+      pool = emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id));
+    }
     const q = searchQuery.trim().toLowerCase();
     const filtered = q
-      ? inInbox.filter(e =>
+      ? pool.filter(e =>
           e.subject.toLowerCase().includes(q) ||
           e.from.toLowerCase().includes(q) ||
           (e.preview ?? '').toLowerCase().includes(q) ||
           (e.body ?? '').toLowerCase().includes(q),
         )
-      : inInbox;
+      : pool;
     const now = new Date();
     return filtered
       .map(email => ({ email, meta: parseEmailDate(email.date, now, email.id) }))
       .sort((a, b) => b.meta.sortMs - a.meta.sortMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acknowledged, archived, searchQuery]);
+  }, [acknowledged, archived, searchQuery, selectedFolder, emailIdsInCurrentCustomFolder, customAssignmentsByFolder]);
+
+  // Count for the Inbox folder row in the left column — matches the
+  // "not archived / acknowledged / filed" rule above.
+  const inboxCount = useMemo(() => {
+    const filed = new Set<number>();
+    for (const ids of customAssignmentsByFolder.values()) {
+      for (const id of ids) filed.add(id);
+    }
+    return emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id)).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acknowledged, archived, customAssignmentsByFolder]);
 
   // Move to the next remaining inbox email so the list flows naturally
   // after the current one leaves.
@@ -896,8 +944,37 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   return (
     <div className="h-[calc(100vh-12rem)] flex gap-6 animate-in fade-in duration-500">
+      <FolderColumn
+        selected={selectedFolder}
+        onSelect={setSelectedFolder}
+        inboxCount={inboxCount}
+      />
+      {selectedFolder.kind === 'outlook' ? (
+        <OutlookFolderView
+          folderId={selectedFolder.folderId}
+          folderName={selectedFolder.folderName}
+        />
+      ) : selectedFolder.kind === 'custom' ? (
+        <CustomFolderView
+          folderId={selectedFolder.folderId}
+          folderName={selectedFolder.folderName}
+          onSelectSeedEmail={(id) => setSelectedId(id)}
+        />
+      ) : (
+        <InboxAndDetail />
+      )}
+    </div>
+  );
+
+  // Existing two-pane (email list + detail) layout, scoped to the
+  // currently-selected folder via `orderedEmails`. Wrapped in a local
+  // function so the Outlook-folder branch above can replace the right
+  // half entirely without duplicating the surrounding flex layout.
+  function InboxAndDetail() {
+    return (
+      <>
       {/* List Pane */}
-      <div className="w-1/3 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm">
+      <div className="flex-1 min-w-0 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm" style={{ maxWidth: '420px' }}>
         <div className="p-4 border-b border-border bg-muted/20">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
@@ -951,11 +1028,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     <div
                       onClick={() => setSelectedId(e.id)}
                       className={cn(
-                        "px-4 py-2.5 cursor-pointer transition-colors relative hover:bg-muted/30",
+                        "px-4 py-2.5 cursor-pointer transition-colors relative hover:bg-muted/30 group",
                         selectedId === e.id ? "bg-blue-50/50 border-l-4 border-primary" : "border-l-4 border-transparent"
                       )}
                       data-testid={`email-row-${e.id}`}
                     >
+                      {/* Row-level "Move to folder" — appears on hover
+                          so the row stays calm in normal scanning but
+                          the action is one click away when triaging. */}
+                      <div
+                        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <MoveToFolderButton outlookEmailId={e.id} />
+                      </div>
                       {/* Outlook-style compact row: sender on top,
                           subject + time on the second line, preview
                           underneath. No avatar — keeps the column
@@ -1361,15 +1447,18 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       <ArchiveIcon size={14} />
                       Mark as done
                     </button>
-                    <button
-                      onClick={handleClassify}
-                      disabled={aiComplete.isPending}
-                      className="flex items-center gap-2 bg-slate-50 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-50 ml-auto"
-                      data-testid="button-classify-ai"
-                    >
-                      {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      Re-classify
-                    </button>
+                    <div className="ml-auto flex items-center gap-2">
+                      <MoveToFolderButton outlookEmailId={selectedEmail.id} variant="text" />
+                      <button
+                        onClick={handleClassify}
+                        disabled={aiComplete.isPending}
+                        className="flex items-center gap-2 bg-slate-50 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                        data-testid="button-classify-ai"
+                      >
+                        {aiComplete.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                        Re-classify
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -1841,6 +1930,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
           </div>
         )}
       </div>
-    </div>
-  );
+      </>
+    );
+  }
 }

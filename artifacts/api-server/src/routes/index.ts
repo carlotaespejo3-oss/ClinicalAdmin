@@ -20,6 +20,8 @@ import draftAuditRouter from "./draftAudit";
 import chatAuditRouter from "./chatAudit";
 import evidenceFetchRouter from "./evidenceFetch";
 import leaveBlocksRouter from "./leaveBlocks";
+import customFoldersRouter from "./customFolders";
+import outlookFoldersRouter from "./outlookFolders";
 
 const router: IRouter = Router();
 
@@ -44,5 +46,7 @@ router.use(draftAuditRouter);
 router.use(chatAuditRouter);
 router.use(evidenceFetchRouter);
 router.use(leaveBlocksRouter);
+router.use(customFoldersRouter);
+router.use(outlookFoldersRouter);
 
 export default router;

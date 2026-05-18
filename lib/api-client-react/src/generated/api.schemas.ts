@@ -100,6 +100,85 @@ export interface AcknowledgeEmailInput {
   outlookEmailId: string;
 }
 
+/**
+ * A ClinAdmin custom folder definition. No email content.
+ */
+export interface CustomFolderRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface CreateCustomFolderInput {
+  /** Client-generated 'cf_<base36>_<rand>' */
+  id: string;
+  name: string;
+}
+
+export interface RenameCustomFolderInput {
+  name: string;
+}
+
+/**
+ * Reference-only mapping; never carries email content.
+ */
+export interface EmailFolderAssignmentRecord {
+  outlookEmailId: string;
+  customFolderId: string;
+  assignedAt: string;
+}
+
+export interface AssignEmailToFolderInput {
+  outlookEmailId: string;
+  customFolderId: string;
+}
+
+export type OutlookFolderKind =
+  (typeof OutlookFolderKind)[keyof typeof OutlookFolderKind];
+
+export const OutlookFolderKind = {
+  system: "system",
+  user: "user",
+} as const;
+
+export type OutlookSystemFolder =
+  (typeof OutlookSystemFolder)[keyof typeof OutlookSystemFolder];
+
+export const OutlookSystemFolder = {
+  inbox: "inbox",
+  sent: "sent",
+  drafts: "drafts",
+  other: "other",
+} as const;
+
+/**
+ * Folder metadata read live from the email-fetch adapter (Microsoft Graph in production, seed-backed today).
+ */
+export interface OutlookFolderRecord {
+  id: string;
+  name: string;
+  kind: OutlookFolderKind;
+  systemKind?: OutlookSystemFolder | null;
+  total: number;
+  unread: number;
+}
+
+/**
+ * Live read through the email-fetch adapter. Subject, sender, snippet, received date only — no body persisted by our app.
+ */
+export interface OutlookMessageRecord {
+  id: string;
+  from: string;
+  subject: string;
+  snippet: string;
+  receivedAt: string;
+}
+
+export interface MoveOutlookMessageInput {
+  outlookEmailId: string;
+  toFolderId: string;
+}
+
 export type UserTaskSource =
   (typeof UserTaskSource)[keyof typeof UserTaskSource];
 

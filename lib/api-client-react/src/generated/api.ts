@@ -30,9 +30,12 @@ import type {
   AnthropicMessageInput,
   ArchiveEmailInput,
   ArchivedRecord,
+  AssignEmailToFolderInput,
   ChatAuditTurn,
   ChatAuditTurnInput,
   ClinicianSettings,
+  CreateCustomFolderInput,
+  CustomFolderRecord,
   DeferralRecord,
   DismissPromptedTaskInput,
   DraftAuditInput,
@@ -40,6 +43,7 @@ import type {
   DraftAuditSentInput,
   EmailEvidence,
   EmailEvidenceInput,
+  EmailFolderAssignmentRecord,
   EvidenceFetchInput,
   EvidenceFetchResult,
   EvidenceSource,
@@ -49,9 +53,13 @@ import type {
   LinkedDocTaskRecord,
   ManualTaskOverride,
   ManualTaskOverridePatch,
+  MoveOutlookMessageInput,
+  OutlookFolderRecord,
+  OutlookMessageRecord,
   PromptedTaskRecord,
   PromptedTasksState,
   RecordDeferralsInput,
+  RenameCustomFolderInput,
   SentLogRecord,
   SetPromptedTaskDoneInput,
   SidebarTask,
@@ -1494,6 +1502,946 @@ export const useUnacknowledgeEmail = <
   TContext
 > => {
   return useMutation(getUnacknowledgeEmailMutationOptions(options));
+};
+
+/**
+ * Returns folder definitions only — name, id, created_at. No email content is stored or returned.
+ * @summary List the clinician's ClinAdmin custom folders
+ */
+export const getListCustomFoldersUrl = () => {
+  return `/api/custom-folders`;
+};
+
+export const listCustomFolders = async (
+  options?: RequestInit,
+): Promise<CustomFolderRecord[]> => {
+  return customFetch<CustomFolderRecord[]>(getListCustomFoldersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCustomFoldersQueryKey = () => {
+  return [`/api/custom-folders`] as const;
+};
+
+export const getListCustomFoldersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCustomFolders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCustomFolders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCustomFoldersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCustomFolders>>
+  > = ({ signal }) => listCustomFolders({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCustomFolders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCustomFoldersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCustomFolders>>
+>;
+export type ListCustomFoldersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the clinician's ClinAdmin custom folders
+ */
+
+export function useListCustomFolders<
+  TData = Awaited<ReturnType<typeof listCustomFolders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCustomFolders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCustomFoldersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on `id` (client-generated 'cf_<base36>_<rand>').
+ * @summary Create a ClinAdmin custom folder
+ */
+export const getCreateCustomFolderUrl = () => {
+  return `/api/custom-folders`;
+};
+
+export const createCustomFolder = async (
+  createCustomFolderInput: CreateCustomFolderInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getCreateCustomFolderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCustomFolderInput),
+  });
+};
+
+export const getCreateCustomFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCustomFolder>>,
+    TError,
+    { data: BodyType<CreateCustomFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCustomFolder>>,
+  TError,
+  { data: BodyType<CreateCustomFolderInput> },
+  TContext
+> => {
+  const mutationKey = ["createCustomFolder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCustomFolder>>,
+    { data: BodyType<CreateCustomFolderInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCustomFolder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCustomFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCustomFolder>>
+>;
+export type CreateCustomFolderMutationBody = BodyType<CreateCustomFolderInput>;
+export type CreateCustomFolderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a ClinAdmin custom folder
+ */
+export const useCreateCustomFolder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCustomFolder>>,
+    TError,
+    { data: BodyType<CreateCustomFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCustomFolder>>,
+  TError,
+  { data: BodyType<CreateCustomFolderInput> },
+  TContext
+> => {
+  return useMutation(getCreateCustomFolderMutationOptions(options));
+};
+
+/**
+ * @summary Rename a ClinAdmin custom folder
+ */
+export const getRenameCustomFolderUrl = (id: string) => {
+  return `/api/custom-folders/${id}`;
+};
+
+export const renameCustomFolder = async (
+  id: string,
+  renameCustomFolderInput: RenameCustomFolderInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRenameCustomFolderUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(renameCustomFolderInput),
+  });
+};
+
+export const getRenameCustomFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameCustomFolder>>,
+    TError,
+    { id: string; data: BodyType<RenameCustomFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof renameCustomFolder>>,
+  TError,
+  { id: string; data: BodyType<RenameCustomFolderInput> },
+  TContext
+> => {
+  const mutationKey = ["renameCustomFolder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof renameCustomFolder>>,
+    { id: string; data: BodyType<RenameCustomFolderInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return renameCustomFolder(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RenameCustomFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof renameCustomFolder>>
+>;
+export type RenameCustomFolderMutationBody = BodyType<RenameCustomFolderInput>;
+export type RenameCustomFolderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rename a ClinAdmin custom folder
+ */
+export const useRenameCustomFolder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameCustomFolder>>,
+    TError,
+    { id: string; data: BodyType<RenameCustomFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof renameCustomFolder>>,
+  TError,
+  { id: string; data: BodyType<RenameCustomFolderInput> },
+  TContext
+> => {
+  return useMutation(getRenameCustomFolderMutationOptions(options));
+};
+
+/**
+ * Cascades through all assignments pointing at this folder. Idempotent.
+ * @summary Delete a ClinAdmin custom folder
+ */
+export const getDeleteCustomFolderUrl = (id: string) => {
+  return `/api/custom-folders/${id}`;
+};
+
+export const deleteCustomFolder = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteCustomFolderUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteCustomFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCustomFolder>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCustomFolder>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteCustomFolder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCustomFolder>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteCustomFolder(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCustomFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCustomFolder>>
+>;
+
+export type DeleteCustomFolderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a ClinAdmin custom folder
+ */
+export const useDeleteCustomFolder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCustomFolder>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCustomFolder>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteCustomFolderMutationOptions(options));
+};
+
+/**
+ * Resolves every (email → custom folder) assignment for this folder back into a live message row via the email-fetch adapter (Microsoft Graph in production, server-side seed today). Three-bucket rule: subject / sender / snippet are read live, never persisted. Assignments whose source email the adapter cannot resolve (e.g. client-only seed inbox IDs) are returned as stub rows so the client can merge them with its own inbox seed.
+ * @summary List messages assigned to a ClinAdmin custom folder
+ */
+export const getListCustomFolderMessagesUrl = (id: string) => {
+  return `/api/custom-folders/${id}/messages`;
+};
+
+export const listCustomFolderMessages = async (
+  id: string,
+  options?: RequestInit,
+): Promise<OutlookMessageRecord[]> => {
+  return customFetch<OutlookMessageRecord[]>(
+    getListCustomFolderMessagesUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCustomFolderMessagesQueryKey = (id: string) => {
+  return [`/api/custom-folders/${id}/messages`] as const;
+};
+
+export const getListCustomFolderMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCustomFolderMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCustomFolderMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCustomFolderMessagesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCustomFolderMessages>>
+  > = ({ signal }) =>
+    listCustomFolderMessages(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCustomFolderMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCustomFolderMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCustomFolderMessages>>
+>;
+export type ListCustomFolderMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List messages assigned to a ClinAdmin custom folder
+ */
+
+export function useListCustomFolderMessages<
+  TData = Awaited<ReturnType<typeof listCustomFolderMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCustomFolderMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCustomFolderMessagesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Reference data only — no email content.
+ * @summary List every (email → custom folder) assignment for the clinician
+ */
+export const getListEmailFolderAssignmentsUrl = () => {
+  return `/api/email-folder-assignments`;
+};
+
+export const listEmailFolderAssignments = async (
+  options?: RequestInit,
+): Promise<EmailFolderAssignmentRecord[]> => {
+  return customFetch<EmailFolderAssignmentRecord[]>(
+    getListEmailFolderAssignmentsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEmailFolderAssignmentsQueryKey = () => {
+  return [`/api/email-folder-assignments`] as const;
+};
+
+export const getListEmailFolderAssignmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEmailFolderAssignments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailFolderAssignments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEmailFolderAssignmentsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEmailFolderAssignments>>
+  > = ({ signal }) => listEmailFolderAssignments({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailFolderAssignments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEmailFolderAssignmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEmailFolderAssignments>>
+>;
+export type ListEmailFolderAssignmentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every (email → custom folder) assignment for the clinician
+ */
+
+export function useListEmailFolderAssignments<
+  TData = Awaited<ReturnType<typeof listEmailFolderAssignments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEmailFolderAssignments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEmailFolderAssignmentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId) — reassigning overwrites the previous folder for that email (an email can be in at most one ClinAdmin custom folder).
+ * @summary Assign an email to a ClinAdmin custom folder
+ */
+export const getAssignEmailToFolderUrl = () => {
+  return `/api/email-folder-assignments`;
+};
+
+export const assignEmailToFolder = async (
+  assignEmailToFolderInput: AssignEmailToFolderInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getAssignEmailToFolderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(assignEmailToFolderInput),
+  });
+};
+
+export const getAssignEmailToFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignEmailToFolder>>,
+    TError,
+    { data: BodyType<AssignEmailToFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof assignEmailToFolder>>,
+  TError,
+  { data: BodyType<AssignEmailToFolderInput> },
+  TContext
+> => {
+  const mutationKey = ["assignEmailToFolder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof assignEmailToFolder>>,
+    { data: BodyType<AssignEmailToFolderInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return assignEmailToFolder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AssignEmailToFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof assignEmailToFolder>>
+>;
+export type AssignEmailToFolderMutationBody =
+  BodyType<AssignEmailToFolderInput>;
+export type AssignEmailToFolderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Assign an email to a ClinAdmin custom folder
+ */
+export const useAssignEmailToFolder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignEmailToFolder>>,
+    TError,
+    { data: BodyType<AssignEmailToFolderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof assignEmailToFolder>>,
+  TError,
+  { data: BodyType<AssignEmailToFolderInput> },
+  TContext
+> => {
+  return useMutation(getAssignEmailToFolderMutationOptions(options));
+};
+
+/**
+ * @summary Remove an email from its ClinAdmin custom folder
+ */
+export const getUnassignEmailFromFolderUrl = (outlookEmailId: string) => {
+  return `/api/email-folder-assignments/${outlookEmailId}`;
+};
+
+export const unassignEmailFromFolder = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUnassignEmailFromFolderUrl(outlookEmailId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getUnassignEmailFromFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignEmailFromFolder>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unassignEmailFromFolder>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  const mutationKey = ["unassignEmailFromFolder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unassignEmailFromFolder>>,
+    { outlookEmailId: string }
+  > = (props) => {
+    const { outlookEmailId } = props ?? {};
+
+    return unassignEmailFromFolder(outlookEmailId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnassignEmailFromFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unassignEmailFromFolder>>
+>;
+
+export type UnassignEmailFromFolderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove an email from its ClinAdmin custom folder
+ */
+export const useUnassignEmailFromFolder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignEmailFromFolder>>,
+    TError,
+    { outlookEmailId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unassignEmailFromFolder>>,
+  TError,
+  { outlookEmailId: string },
+  TContext
+> => {
+  return useMutation(getUnassignEmailFromFolderMutationOptions(options));
+};
+
+/**
+ * Live read through the email-fetch adapter. System folders (Inbox, Sent, Drafts) are always returned first; clinician's own Outlook-side folders follow. Counts are per-folder unread/total. Seed-backed today; Graph in production.
+ * @summary List system + user-made Outlook folders with counts
+ */
+export const getListOutlookFoldersUrl = () => {
+  return `/api/outlook-folders`;
+};
+
+export const listOutlookFolders = async (
+  options?: RequestInit,
+): Promise<OutlookFolderRecord[]> => {
+  return customFetch<OutlookFolderRecord[]>(getListOutlookFoldersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOutlookFoldersQueryKey = () => {
+  return [`/api/outlook-folders`] as const;
+};
+
+export const getListOutlookFoldersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOutlookFolders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOutlookFolders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListOutlookFoldersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listOutlookFolders>>
+  > = ({ signal }) => listOutlookFolders({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOutlookFolders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOutlookFoldersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOutlookFolders>>
+>;
+export type ListOutlookFoldersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List system + user-made Outlook folders with counts
+ */
+
+export function useListOutlookFolders<
+  TData = Awaited<ReturnType<typeof listOutlookFolders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOutlookFolders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOutlookFoldersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Live read through the email-fetch adapter. Returns subject, sender, snippet, received date — no body. Three-bucket rule: nothing on the wire here is persisted in our DB.
+ * @summary List messages in an Outlook folder
+ */
+export const getListOutlookFolderMessagesUrl = (folderId: string) => {
+  return `/api/outlook-folders/${folderId}/messages`;
+};
+
+export const listOutlookFolderMessages = async (
+  folderId: string,
+  options?: RequestInit,
+): Promise<OutlookMessageRecord[]> => {
+  return customFetch<OutlookMessageRecord[]>(
+    getListOutlookFolderMessagesUrl(folderId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListOutlookFolderMessagesQueryKey = (folderId: string) => {
+  return [`/api/outlook-folders/${folderId}/messages`] as const;
+};
+
+export const getListOutlookFolderMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOutlookFolderMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  folderId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listOutlookFolderMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListOutlookFolderMessagesQueryKey(folderId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listOutlookFolderMessages>>
+  > = ({ signal }) =>
+    listOutlookFolderMessages(folderId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!folderId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOutlookFolderMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOutlookFolderMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOutlookFolderMessages>>
+>;
+export type ListOutlookFolderMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List messages in an Outlook folder
+ */
+
+export function useListOutlookFolderMessages<
+  TData = Awaited<ReturnType<typeof listOutlookFolderMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  folderId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listOutlookFolderMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOutlookFolderMessagesQueryOptions(
+    folderId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Calls the email-fetch adapter's move (Graph in production). Seed-backed today; returns 204 once the in-memory adapter has applied the move.
+ * @summary Move an Outlook message between Outlook folders
+ */
+export const getMoveEmailBetweenOutlookFoldersUrl = () => {
+  return `/api/outlook-folders/move`;
+};
+
+export const moveEmailBetweenOutlookFolders = async (
+  moveOutlookMessageInput: MoveOutlookMessageInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getMoveEmailBetweenOutlookFoldersUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(moveOutlookMessageInput),
+  });
+};
+
+export const getMoveEmailBetweenOutlookFoldersMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>,
+    TError,
+    { data: BodyType<MoveOutlookMessageInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>,
+  TError,
+  { data: BodyType<MoveOutlookMessageInput> },
+  TContext
+> => {
+  const mutationKey = ["moveEmailBetweenOutlookFolders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>,
+    { data: BodyType<MoveOutlookMessageInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return moveEmailBetweenOutlookFolders(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MoveEmailBetweenOutlookFoldersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>
+>;
+export type MoveEmailBetweenOutlookFoldersMutationBody =
+  BodyType<MoveOutlookMessageInput>;
+export type MoveEmailBetweenOutlookFoldersMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Move an Outlook message between Outlook folders
+ */
+export const useMoveEmailBetweenOutlookFolders = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>,
+    TError,
+    { data: BodyType<MoveOutlookMessageInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof moveEmailBetweenOutlookFolders>>,
+  TError,
+  { data: BodyType<MoveOutlookMessageInput> },
+  TContext
+> => {
+  return useMutation(getMoveEmailBetweenOutlookFoldersMutationOptions(options));
 };
 
 /**

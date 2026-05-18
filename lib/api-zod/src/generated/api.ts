@@ -204,6 +204,155 @@ export const UnacknowledgeEmailParams = zod.object({
 });
 
 /**
+ * Returns folder definitions only — name, id, created_at. No email content is stored or returned.
+ * @summary List the clinician's ClinAdmin custom folders
+ */
+export const ListCustomFoldersResponseItem = zod
+  .object({
+    id: zod.string(),
+    name: zod.string(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe("A ClinAdmin custom folder definition. No email content.");
+export const ListCustomFoldersResponse = zod.array(
+  ListCustomFoldersResponseItem,
+);
+
+/**
+ * Idempotent on `id` (client-generated 'cf_<base36>_<rand>').
+ * @summary Create a ClinAdmin custom folder
+ */
+export const CreateCustomFolderBody = zod.object({
+  id: zod.string().describe("Client-generated 'cf_<base36>_<rand>'"),
+  name: zod.string(),
+});
+
+/**
+ * @summary Rename a ClinAdmin custom folder
+ */
+export const RenameCustomFolderParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RenameCustomFolderBody = zod.object({
+  name: zod.string(),
+});
+
+/**
+ * Cascades through all assignments pointing at this folder. Idempotent.
+ * @summary Delete a ClinAdmin custom folder
+ */
+export const DeleteCustomFolderParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * Resolves every (email → custom folder) assignment for this folder back into a live message row via the email-fetch adapter (Microsoft Graph in production, server-side seed today). Three-bucket rule: subject / sender / snippet are read live, never persisted. Assignments whose source email the adapter cannot resolve (e.g. client-only seed inbox IDs) are returned as stub rows so the client can merge them with its own inbox seed.
+ * @summary List messages assigned to a ClinAdmin custom folder
+ */
+export const ListCustomFolderMessagesParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ListCustomFolderMessagesResponseItem = zod
+  .object({
+    id: zod.string(),
+    from: zod.string(),
+    subject: zod.string(),
+    snippet: zod.string(),
+    receivedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Live read through the email-fetch adapter. Subject, sender, snippet, received date only — no body persisted by our app.",
+  );
+export const ListCustomFolderMessagesResponse = zod.array(
+  ListCustomFolderMessagesResponseItem,
+);
+
+/**
+ * Reference data only — no email content.
+ * @summary List every (email → custom folder) assignment for the clinician
+ */
+export const ListEmailFolderAssignmentsResponseItem = zod
+  .object({
+    outlookEmailId: zod.string(),
+    customFolderId: zod.string(),
+    assignedAt: zod.coerce.date(),
+  })
+  .describe("Reference-only mapping; never carries email content.");
+export const ListEmailFolderAssignmentsResponse = zod.array(
+  ListEmailFolderAssignmentsResponseItem,
+);
+
+/**
+ * Idempotent on (clinicianId, outlookEmailId) — reassigning overwrites the previous folder for that email (an email can be in at most one ClinAdmin custom folder).
+ * @summary Assign an email to a ClinAdmin custom folder
+ */
+export const AssignEmailToFolderBody = zod.object({
+  outlookEmailId: zod.string(),
+  customFolderId: zod.string(),
+});
+
+/**
+ * @summary Remove an email from its ClinAdmin custom folder
+ */
+export const UnassignEmailFromFolderParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+/**
+ * Live read through the email-fetch adapter. System folders (Inbox, Sent, Drafts) are always returned first; clinician's own Outlook-side folders follow. Counts are per-folder unread/total. Seed-backed today; Graph in production.
+ * @summary List system + user-made Outlook folders with counts
+ */
+export const ListOutlookFoldersResponseItem = zod
+  .object({
+    id: zod.string(),
+    name: zod.string(),
+    kind: zod.enum(["system", "user"]),
+    systemKind: zod.enum(["inbox", "sent", "drafts", "other"]).nullish(),
+    total: zod.number(),
+    unread: zod.number(),
+  })
+  .describe(
+    "Folder metadata read live from the email-fetch adapter (Microsoft Graph in production, seed-backed today).",
+  );
+export const ListOutlookFoldersResponse = zod.array(
+  ListOutlookFoldersResponseItem,
+);
+
+/**
+ * Live read through the email-fetch adapter. Returns subject, sender, snippet, received date — no body. Three-bucket rule: nothing on the wire here is persisted in our DB.
+ * @summary List messages in an Outlook folder
+ */
+export const ListOutlookFolderMessagesParams = zod.object({
+  folderId: zod.coerce.string(),
+});
+
+export const ListOutlookFolderMessagesResponseItem = zod
+  .object({
+    id: zod.string(),
+    from: zod.string(),
+    subject: zod.string(),
+    snippet: zod.string(),
+    receivedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Live read through the email-fetch adapter. Subject, sender, snippet, received date only — no body persisted by our app.",
+  );
+export const ListOutlookFolderMessagesResponse = zod.array(
+  ListOutlookFolderMessagesResponseItem,
+);
+
+/**
+ * Calls the email-fetch adapter's move (Graph in production). Seed-backed today; returns 204 once the in-memory adapter has applied the move.
+ * @summary Move an Outlook message between Outlook folders
+ */
+export const MoveEmailBetweenOutlookFoldersBody = zod.object({
+  outlookEmailId: zod.string(),
+  toFolderId: zod.string(),
+});
+
+/**
  * Returns the clinician's task list (CPD one-click adds today, manual entries in future). Stores their own organisational data only — no email body content. outlookEmailId is a reference back to the source email when the task was created from one.
  * @summary List every clinician-added task
  */

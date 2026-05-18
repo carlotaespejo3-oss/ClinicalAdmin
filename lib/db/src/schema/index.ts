@@ -36,3 +36,5 @@ export * from "./emailEvidence";
 export * from "./draftAudit";
 export * from "./chatAudit";
 export * from "./leaveBlocks";
+export * from "./customFolders";
+export * from "./emailFolderAssignments";

@@ -48,6 +48,10 @@ tags:
     description: Medico-legal audit trail of the freeform AI chat next to each email (de-identified). Audit-only carve-out from the three-bucket rule.
   - name: evidenceFetch
     description: Server-side live fetch of registered guideline URLs with allow-list + timeouts (no cross-domain redirects).
+  - name: customFolders
+    description: Clinician-created folders for organising the inbox (definitions and per-email assignments only — never email content).
+  - name: outlookFolders
+    description: Live Outlook folder tree (system folders + clinician's own Outlook folders) and live folder contents via the email-fetch adapter (seed-backed today; Microsoft Graph in production).
 paths:
   /healthz:
     get:
@@ -350,6 +354,209 @@ paths:
       responses:
         "204":
           description: Cleared (idempotent — 204 even if no record existed)
+  /custom-folders:
+    get:
+      operationId: listCustomFolders
+      tags: [customFolders]
+      summary: List the clinician's ClinAdmin custom folders
+      description: >-
+        Returns folder definitions only — name, id, created_at. No
+        email content is stored or returned.
+      responses:
+        "200":
+          description: All custom folders for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomFolderRecord"
+    post:
+      operationId: createCustomFolder
+      tags: [customFolders]
+      summary: Create a ClinAdmin custom folder
+      description: Idempotent on `id` (client-generated 'cf_<base36>_<rand>').
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomFolderInput"
+      responses:
+        "204":
+          description: Created
+  /custom-folders/{id}:
+    patch:
+      operationId: renameCustomFolder
+      tags: [customFolders]
+      summary: Rename a ClinAdmin custom folder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameCustomFolderInput"
+      responses:
+        "204":
+          description: Renamed (idempotent — 204 even if no record existed)
+    delete:
+      operationId: deleteCustomFolder
+      tags: [customFolders]
+      summary: Delete a ClinAdmin custom folder
+      description: >-
+        Cascades through all assignments pointing at this folder.
+        Idempotent.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted (idempotent — 204 even if no record existed)
+  /custom-folders/{id}/messages:
+    get:
+      operationId: listCustomFolderMessages
+      tags: [customFolders]
+      summary: List messages assigned to a ClinAdmin custom folder
+      description: >-
+        Resolves every (email → custom folder) assignment for this
+        folder back into a live message row via the email-fetch
+        adapter (Microsoft Graph in production, server-side seed
+        today). Three-bucket rule: subject / sender / snippet are
+        read live, never persisted. Assignments whose source email
+        the adapter cannot resolve (e.g. client-only seed inbox
+        IDs) are returned as stub rows so the client can merge them
+        with its own inbox seed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages assigned to this custom folder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OutlookMessageRecord"
+  /email-folder-assignments:
+    get:
+      operationId: listEmailFolderAssignments
+      tags: [customFolders]
+      summary: List every (email → custom folder) assignment for the clinician
+      description: Reference data only — no email content.
+      responses:
+        "200":
+          description: All assignments for the current clinician
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmailFolderAssignmentRecord"
+    post:
+      operationId: assignEmailToFolder
+      tags: [customFolders]
+      summary: Assign an email to a ClinAdmin custom folder
+      description: >-
+        Idempotent on (clinicianId, outlookEmailId) — reassigning
+        overwrites the previous folder for that email (an email can
+        be in at most one ClinAdmin custom folder).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignEmailToFolderInput"
+      responses:
+        "204":
+          description: Assigned
+  /email-folder-assignments/{outlookEmailId}:
+    delete:
+      operationId: unassignEmailFromFolder
+      tags: [customFolders]
+      summary: Remove an email from its ClinAdmin custom folder
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cleared (idempotent — 204 even if no record existed)
+  /outlook-folders:
+    get:
+      operationId: listOutlookFolders
+      tags: [outlookFolders]
+      summary: List system + user-made Outlook folders with counts
+      description: >-
+        Live read through the email-fetch adapter. System folders
+        (Inbox, Sent, Drafts) are always returned first; clinician's
+        own Outlook-side folders follow. Counts are per-folder
+        unread/total. Seed-backed today; Graph in production.
+      responses:
+        "200":
+          description: Live Outlook folder tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OutlookFolderRecord"
+  /outlook-folders/{folderId}/messages:
+    get:
+      operationId: listOutlookFolderMessages
+      tags: [outlookFolders]
+      summary: List messages in an Outlook folder
+      description: >-
+        Live read through the email-fetch adapter. Returns subject,
+        sender, snippet, received date — no body. Three-bucket rule:
+        nothing on the wire here is persisted in our DB.
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages in the requested Outlook folder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OutlookMessageRecord"
+  /outlook-folders/move:
+    post:
+      operationId: moveEmailBetweenOutlookFolders
+      tags: [outlookFolders]
+      summary: Move an Outlook message between Outlook folders
+      description: >-
+        Calls the email-fetch adapter's move (Graph in production).
+        Seed-backed today; returns 204 once the in-memory adapter
+        has applied the move.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveOutlookMessageInput"
+      responses:
+        "204":
+          description: Moved
   /user-tasks:
     get:
       operationId: listUserTasks
@@ -1255,6 +1462,128 @@ components:
           type: string
       required:
         - outlookEmailId
+    CustomFolderRecord:
+      type: object
+      description: A ClinAdmin custom folder definition. No email content.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - createdAt
+    CreateCustomFolderInput:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Client-generated 'cf_<base36>_<rand>'
+        name:
+          type: string
+      required:
+        - id
+        - name
+    RenameCustomFolderInput:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+    EmailFolderAssignmentRecord:
+      type: object
+      description: Reference-only mapping; never carries email content.
+      properties:
+        outlookEmailId:
+          type: string
+        customFolderId:
+          type: string
+        assignedAt:
+          type: string
+          format: date-time
+      required:
+        - outlookEmailId
+        - customFolderId
+        - assignedAt
+    AssignEmailToFolderInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        customFolderId:
+          type: string
+      required:
+        - outlookEmailId
+        - customFolderId
+    OutlookFolderKind:
+      type: string
+      enum: [system, user]
+    OutlookSystemFolder:
+      type: string
+      enum: [inbox, sent, drafts, other]
+    OutlookFolderRecord:
+      type: object
+      description: >-
+        Folder metadata read live from the email-fetch adapter
+        (Microsoft Graph in production, seed-backed today).
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: "#/components/schemas/OutlookFolderKind"
+        systemKind:
+          $ref: "#/components/schemas/OutlookSystemFolder"
+          nullable: true
+        total:
+          type: integer
+        unread:
+          type: integer
+      required:
+        - id
+        - name
+        - kind
+        - total
+        - unread
+    OutlookMessageRecord:
+      type: object
+      description: >-
+        Live read through the email-fetch adapter. Subject, sender,
+        snippet, received date only — no body persisted by our app.
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+        subject:
+          type: string
+        snippet:
+          type: string
+        receivedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - from
+        - subject
+        - snippet
+        - receivedAt
+    MoveOutlookMessageInput:
+      type: object
+      properties:
+        outlookEmailId:
+          type: string
+        toFolderId:
+          type: string
+      required:
+        - outlookEmailId
+        - toFolderId
     UserTaskSource:
       type: string
       enum: [cpd, manual]
