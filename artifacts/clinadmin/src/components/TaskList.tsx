@@ -12,7 +12,6 @@ import {
 } from '@/lib/promptedTasksStore';
 import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { emails as seedEmails } from '@/lib/data';
-import { useManualTasksWithOverrides } from '@/lib/manualTaskOverridesStore';
 import { detectPotentialTasks } from '@/lib/potentialTaskDetect';
 import {
   useAutoTaskSeenSet,
@@ -21,15 +20,16 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtMin, dateKey, startOfDay } from '@/lib/calendarHelpers';
 import AddPlannedItemDialog from './AddPlannedItemDialog';
-import EmailPreviewModal from './EmailPreviewModal';
-import TaskDetailModal, { type TaskDetail } from './TaskDetailModal';
 
 interface Props {
   runway: DailyPlan[];
   // Optional click-through that takes the clinician to the
-  // originating email in the Inbox tab. Used by ghost rows and by
-  // the "Open in Inbox" button inside the email preview modal.
+  // originating email in the Inbox tab. Used by ghost rows.
   onOpenEmail?: (emailId: number) => void;
+  // Open the shared detail/edit popup owned by HomeTab. Called for
+  // every task row that resolves to something the popup can show
+  // (planner items + orphan prompted tasks).
+  onOpenTaskDetail?: (item: PlanItem, dateIso: string) => void;
 }
 
 // A row in "My tasks" is something the clinician needs to do that
@@ -86,15 +86,12 @@ type Row =
 // the inline Add dialog. Linked-doc, manual, and AI-prompt rows
 // are owned by their respective tabs (Tasks / Inbox) and edited
 // there.
-export default function TaskList({ runway, onOpenEmail }: Props) {
+export default function TaskList({ runway, onOpenEmail, onOpenTaskDetail }: Props) {
   const userPlanned = useUserPlannedItems();
   const { tasks: promptedTasks } = usePromptedTasksState();
   const classifications = useAiClassifications();
   const seenSet = useAutoTaskSeenSet();
-  const manualTasks = useManualTasksWithOverrides();
   const [addOpen, setAddOpen] = useState(false);
-  const [previewEmailId, setPreviewEmailId] = useState<number | null>(null);
-  const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayKey = useMemo(() => dateKey(today), [today]);
@@ -106,15 +103,6 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
     () => new Set(userPlanned.map((u) => u.id)),
     [userPlanned],
   );
-
-  // Quick lookup for the seed manual-task source row so the detail
-  // modal can show notes / type / risk for plan rows whose refId
-  // points back to a manual task.
-  const manualTasksById = useMemo(() => {
-    const m = new Map<string, (typeof manualTasks)[number]>();
-    for (const t of manualTasks) m.set(t.id, t);
-    return m;
-  }, [manualTasks]);
 
   const rows: Row[] = useMemo(() => {
     // Collect planner-scheduled task refIds first so we can avoid
@@ -215,43 +203,38 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
   }, [rows]);
 
   // ---- Click handlers shared with TaskRow ----------------------
-  // Decides which modal to open for a given row. Rules:
-  //   · prompt rows → email modal (linkedEmailId).
-  //   · plan rows whose item links back to an email (linked-doc
-  //     task) → email modal.
-  //   · plan rows for user-added or seed manual tasks → task
-  //     detail modal.
-  //   · ghost rows → leave inline behaviour (jumps to Inbox).
+  // All task rows open the shared detail/edit popup owned by
+  // HomeTab — same behaviour as clicking a task in the calendar.
+  // Ghost rows are the lone exception: they aren't tasks yet, just
+  // an "unresolved" hint pointing the clinician back to the Inbox.
   const handleRowClick = (row: Row) => {
     if (row.kind === 'ghost') {
       if (onOpenEmail) onOpenEmail(row.emailId);
       return;
     }
+    if (!onOpenTaskDetail) return;
     if (row.kind === 'prompt') {
       if (!seenSet.has(row.id)) markAutoTaskSeen(row.id);
-      setPreviewEmailId(row.linkedEmailId);
+      // Construct a synthetic PlanItem so the shared modal can
+      // resolve the underlying promptedTask via its pt_ refId.
+      // Only refId is load-bearing — the modal pulls all real
+      // metadata (notes, priority, patient) from the store.
+      const synthetic: PlanItem = {
+        kind: 'task',
+        refId: row.id,
+        title: row.title,
+        detail: '',
+        category: 'ADMIN',
+        estMin: row.estMin,
+        reason: 'linked_task',
+        reasonText: row.typeLabel,
+        linkedToEmailId: row.linkedEmailId,
+      };
+      onOpenTaskDetail(synthetic, row.date);
       return;
     }
     // ---- row.kind === 'plan' ----
-    const item = row.item;
-    if (typeof item.linkedToEmailId === 'number') {
-      setPreviewEmailId(item.linkedToEmailId);
-      return;
-    }
-    // Try to resolve to a seed manual task for richer details.
-    const refId = typeof item.refId === 'string' ? item.refId : null;
-    const seed = refId ? manualTasksById.get(refId) : undefined;
-    const isUser = refId !== null && userIds.has(refId);
-    setDetailTask({
-      title: item.title,
-      sourceLabel: isUser ? 'Manually added' : 'Scheduled task',
-      dueLabel: formatDateLabel(row.date, todayKey),
-      estMin: item.estMin,
-      typeLabel: seed?.type ?? null,
-      risk: seed?.risk,
-      patientName: null,
-      notes: seed?.noteAfterEmailDone ?? null,
-    });
+    onOpenTaskDetail(row.item, row.date);
   };
 
   return (
@@ -356,17 +339,6 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
         open={addOpen}
         defaultDate={todayKey}
         onClose={() => setAddOpen(false)}
-      />
-      <EmailPreviewModal
-        open={previewEmailId !== null}
-        emailId={previewEmailId}
-        onClose={() => setPreviewEmailId(null)}
-        onOpenInInbox={onOpenEmail}
-      />
-      <TaskDetailModal
-        open={detailTask !== null}
-        detail={detailTask}
-        onClose={() => setDetailTask(null)}
       />
     </div>
   );

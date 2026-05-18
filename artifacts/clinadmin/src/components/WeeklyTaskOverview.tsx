@@ -26,10 +26,7 @@ import {
   useUserPlannedItems,
   deleteUserPlannedItem,
 } from '@/lib/userPlannedItemsStore';
-import { useManualTasksWithOverrides } from '@/lib/manualTaskOverridesStore';
 import AddPlannedItemDialog from './AddPlannedItemDialog';
-import EmailPreviewModal from './EmailPreviewModal';
-import TaskDetailModal, { type TaskDetail } from './TaskDetailModal';
 
 type Layout = 'columns' | 'agenda';
 type Range = 'week' | 'fortnight' | 'month';
@@ -46,6 +43,9 @@ interface Props {
   // up from HomeTab so clicking an email-linked task here behaves
   // exactly the same as in the "My tasks" box.
   onOpenEmail?: (emailId: number) => void;
+  // Opens the shared task detail / edit popup owned by HomeTab so
+  // every dashboard surface behaves like the calendar.
+  onOpenTaskDetail?: (item: PlanItem, dateIso: string) => void;
 }
 
 // Weekly task + event overview, mounted on Home below Today's Plan
@@ -58,7 +58,7 @@ interface Props {
 // columns layout keeps 7 across and wraps onto extra rows for the
 // bigger ranges, so the box just grows downwards. Prev / next nudge
 // the window by the current range size; "Today" snaps it back.
-export default function WeeklyTaskOverview({ runway, onOpenEmail }: Props) {
+export default function WeeklyTaskOverview({ runway, onOpenEmail, onOpenTaskDetail }: Props) {
   const [layout, setLayout] = useState<Layout>('columns');
   const [range, setRange] = useState<Range>('week');
   const [addOpen, setAddOpen] = useState(false);
@@ -67,8 +67,6 @@ export default function WeeklyTaskOverview({ runway, onOpenEmail }: Props) {
   // offset in days from today so the today indicator stays correct
   // across midnight without us re-rendering.
   const [offsetDays, setOffsetDays] = useState(0);
-  const [previewEmailId, setPreviewEmailId] = useState<number | null>(null);
-  const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayKey = useMemo(() => dateKey(today), [today]);
@@ -86,55 +84,16 @@ export default function WeeklyTaskOverview({ runway, onOpenEmail }: Props) {
   const tasksOnlyRunway = useMemo(() => filterRunwayToTasks(runway), [runway]);
   const runwayByDate = useMemo(() => indexRunway(tasksOnlyRunway), [tasksOnlyRunway]);
 
-  // For richer click-through details: resolve a plan row whose refId
-  // points at a seed manual task back to its metadata (notes, type,
-  // risk), exactly like TaskList does.
-  const manualTasks = useManualTasksWithOverrides();
-  const manualTasksById = useMemo(() => {
-    const m = new Map<string, (typeof manualTasks)[number]>();
-    for (const t of manualTasks) m.set(t.id, t);
-    return m;
-  }, [manualTasks]);
-  const userPlanned = useUserPlannedItems();
-  const userIds = useMemo(
-    () => new Set(userPlanned.map((u) => u.id)),
-    [userPlanned],
-  );
-
   const openAddFor = (d: string) => {
     setAddDate(d);
     setAddOpen(true);
   };
 
-  // Mirrors TaskList.handleRowClick so the two boxes feel identical:
-  //   · items linked to an email → open the email preview modal
-  //   · everything else (manual / user-added tasks, events) → open
-  //     the read-only task detail modal so the clinician sees what
-  //     the item actually is.
+  // Every item open delegates to the shared detail / edit popup
+  // owned by HomeTab — same component the calendar uses, so the
+  // experience is identical across surfaces.
   const handleItemClick = (item: PlanItem, dateIso: string) => {
-    if (typeof item.linkedToEmailId === 'number') {
-      setPreviewEmailId(item.linkedToEmailId);
-      return;
-    }
-    const refId = typeof item.refId === 'string' ? item.refId : null;
-    const seed = refId ? manualTasksById.get(refId) : undefined;
-    const isUser = refId !== null && userIds.has(refId);
-    const sourceLabel =
-      item.kind === 'event'
-        ? 'Calendar event'
-        : isUser
-          ? 'Manually added'
-          : 'Scheduled task';
-    setDetailTask({
-      title: item.title,
-      sourceLabel,
-      dueLabel: formatDateLabel(dateIso, todayKey),
-      estMin: item.estMin,
-      typeLabel: seed?.type ?? null,
-      risk: seed?.risk,
-      patientName: null,
-      notes: seed?.noteAfterEmailDone ?? null,
-    });
+    if (onOpenTaskDetail) onOpenTaskDetail(item, dateIso);
   };
 
   // ---- Window navigation -------------------------------------------------
@@ -320,17 +279,6 @@ export default function WeeklyTaskOverview({ runway, onOpenEmail }: Props) {
         open={addOpen}
         defaultDate={addDate}
         onClose={() => setAddOpen(false)}
-      />
-      <EmailPreviewModal
-        open={previewEmailId !== null}
-        emailId={previewEmailId}
-        onClose={() => setPreviewEmailId(null)}
-        onOpenInInbox={onOpenEmail}
-      />
-      <TaskDetailModal
-        open={detailTask !== null}
-        detail={detailTask}
-        onClose={() => setDetailTask(null)}
       />
     </div>
   );

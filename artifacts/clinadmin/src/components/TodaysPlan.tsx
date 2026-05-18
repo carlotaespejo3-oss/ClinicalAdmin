@@ -17,7 +17,7 @@ interface Props {
   unclearCount: number;
   unclearEmails?: UnclearEmailSummary[];
   onTriageUnclear?: (id: number) => void;
-  onItemClick?: (item: PlanItem) => void;
+  onItemClick?: (item: PlanItem, dateIso: string) => void;
   // Day navigation — when provided, the header shows prev/next chevrons
   // so the clinician can step through the runway without leaving Home.
   dayIndex?: number;
@@ -229,7 +229,7 @@ function WeekColumn({
 }: {
   day: DailyPlan;
   isTodayCol: boolean;
-  onItemClick?: (item: PlanItem) => void;
+  onItemClick?: (item: PlanItem, dateIso: string) => void;
 }) {
   const items = day.items.filter((i) => i.kind !== 'unclear_gate');
   const idle = day.minutesAvailable === 0;
@@ -276,7 +276,7 @@ function WeekColumn({
             type="button"
             key={`${item.kind}:${item.refId ?? i}`}
             onClick={
-              onItemClick && item.refId != null ? () => onItemClick(item) : undefined
+              onItemClick && item.refId != null ? () => onItemClick(item, day.date) : undefined
             }
             className={cn(
               'w-full text-left rounded-md border border-border bg-white px-2 py-1.5 transition-colors',
@@ -566,7 +566,7 @@ export default function TodaysPlan({
                       item={item}
                       onClick={
                         onItemClick && item.refId != null
-                          ? () => onItemClick(item)
+                          ? () => onItemClick(item, todaysPlan.date)
                           : undefined
                       }
                     />

@@ -9,6 +9,15 @@ import {
   CalendarClock,
   Info,
   RotateCcw,
+  Pencil,
+  Calendar,
+  Clock,
+  Hash,
+  StickyNote,
+  User,
+  Sparkles,
+  Hand,
+  Mail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PlanItem } from '@/lib/planner';
@@ -42,9 +51,16 @@ import {
 } from '@/lib/unclearGateOverridesStore';
 import type { ManualTask } from '@/lib/types';
 
-// Detail / edit modal for an item the clinician clicked on the
-// **calendar**. Different from `TaskDetailModal` (the read-only Home /
-// Tasks popup) — this one mutates.
+// Shared detail / edit popup for any plan item — calendar tab AND
+// the dashboard (Today's Plan, My Tasks, Week Ahead) both use this
+// single modal so the experience is identical across surfaces.
+//
+// Modes:
+//   - `initialMode='details'` (default for dashboard) — opens in a
+//     read-only summary view first; an Edit button swaps it into
+//     the existing edit form.
+//   - `initialMode='edit'` (calendar tab) — opens straight in edit
+//     mode, preserving the calendar's existing behaviour.
 //
 // Routing by item.refId namespace:
 //   - 'upt_*' / 'upe_*' → userPlannedItems (full edit)
@@ -83,6 +99,7 @@ interface Props {
   scheduledDate: string; // YYYY-MM-DD — the runway day this item was placed on
   onClose: () => void;
   onNavigateToTasks: () => void;
+  initialMode?: 'details' | 'edit';
 }
 
 function todayKey(): string {
@@ -106,17 +123,47 @@ function dateKeyFromDueDays(dueDays: number | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function formatDateLabel(iso: string): string {
+  const tKey = todayKey();
+  if (iso === tKey) return 'Today';
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const [ty, tm, td] = tKey.split('-').map(Number);
+  const tomorrow = new Date(ty, tm - 1, td + 1);
+  if (
+    date.getFullYear() === tomorrow.getFullYear() &&
+    date.getMonth() === tomorrow.getMonth() &&
+    date.getDate() === tomorrow.getDate()
+  ) {
+    return 'Tomorrow';
+  }
+  const diffDays = Math.round(
+    (date.getTime() - new Date(ty, tm - 1, td).getTime()) / 86_400_000,
+  );
+  if (diffDays > 1 && diffDays <= 6) {
+    return date.toLocaleDateString('en-GB', { weekday: 'long' });
+  }
+  return date.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
 export default function CalendarTaskDetailModal({
   item,
   scheduledDate,
   onClose,
   onNavigateToTasks,
+  initialMode = 'edit',
 }: Props) {
   const userItems = useUserPlannedItems();
   const { tasks: prompted } = usePromptedTasksState();
   const manualTasks = useManualTasksWithOverrides();
   const linkedDocTasks = useLinkedDocTasks();
 
+  // Resolve the underlying source so we know what fields are editable
+  // and what extra metadata (notes, risk) to surface in details mode.
   const source: EditableSource = useMemo(() => {
     const refId = item.refId;
     if (typeof refId === 'string') {
@@ -153,10 +200,21 @@ export default function CalendarTaskDetailModal({
     return {
       kind: 'readonly',
       title: item.title,
-      reason: 'This task is managed from the Tasks tab.',
+      reason:
+        typeof item.linkedToEmailId === 'number'
+          ? 'This task came from an email — open it from the Inbox to update it.'
+          : 'This task is managed from the Tasks tab.',
     };
   }, [item, userItems, prompted, manualTasks, linkedDocTasks, scheduledDate]);
 
+  // Seed manual task lookup — surfaces notes/risk for readonly plan
+  // rows whose refId points back to a hand-curated manual task.
+  const seedManual = useMemo(() => {
+    if (typeof item.refId !== 'string') return null;
+    return manualTasks.find((t) => t.id === item.refId) ?? null;
+  }, [item.refId, manualTasks]);
+
+  const [mode, setMode] = useState<'details' | 'edit'>(initialMode);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState<string>(scheduledDate || todayKey());
   const [estMin, setEstMin] = useState<number>(item.estMin);
@@ -198,6 +256,10 @@ export default function CalendarTaskDetailModal({
 
   const phoneCallLocked =
     source.kind === 'prompted' && source.item.kind === 'phone_call';
+  const editable = source.kind !== 'readonly';
+  const showTitleField = source.kind !== 'unclear';
+  const showDateField = source.kind !== 'unclear';
+  const deleteLabel = source.kind === 'unclear' ? 'Dismiss for today' : 'Delete';
 
   const handleSave = () => {
     setError(null);
@@ -304,6 +366,17 @@ export default function CalendarTaskDetailModal({
     onClose();
   };
 
+  // Cancel from edit returns to details if we opened in details mode,
+  // otherwise closes (calendar tab keeps its single-stage behaviour).
+  const handleCancel = () => {
+    if (initialMode === 'details') {
+      setMode('details');
+      setError(null);
+    } else {
+      onClose();
+    }
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -318,22 +391,86 @@ export default function CalendarTaskDetailModal({
       : phoneCallLocked
         ? Phone
         : ClipboardList;
-  const heading =
+
+  // Source label shown above the title in the details panel.
+  const sourceLabel =
     source.kind === 'userEvent'
-      ? 'Edit event'
-      : source.kind === 'readonly'
-        ? 'Task details'
+      ? 'Calendar event'
+      : source.kind === 'userTask'
+        ? 'Manually added'
+        : source.kind === 'prompted'
+          ? 'AI · from email'
+          : source.kind === 'linkedDoc'
+            ? 'Linked document task'
+            : source.kind === 'unclear'
+              ? 'Unclear emails'
+              : typeof item.linkedToEmailId === 'number'
+                ? 'Linked to email'
+                : seedManual
+                  ? 'Scheduled task'
+                  : 'External task';
+
+  const heading =
+    mode === 'details'
+      ? source.kind === 'userEvent'
+        ? 'Event details'
+        : source.kind === 'unclear'
+          ? 'Unclear emails reminder'
+          : 'Task details'
+      : source.kind === 'userEvent'
+        ? 'Edit event'
         : source.kind === 'unclear'
           ? 'Unclear emails reminder'
           : source.kind === 'linkedDoc'
             ? 'Edit document task'
-            : source.kind === 'manual'
-              ? 'Edit task'
-              : 'Edit task';
-  const editable = source.kind !== 'readonly';
-  const showTitleField = source.kind !== 'unclear';
-  const showDateField = source.kind !== 'unclear';
-  const deleteLabel = source.kind === 'unclear' ? 'Dismiss for today' : 'Delete';
+            : 'Edit task';
+
+  // Details mode field values pulled from the resolved source. We
+  // prefer the persisted store values (always up to date) and fall
+  // back to the planner's PlanItem fields for readonly rows.
+  const detailDateIso =
+    source.kind === 'userTask' || source.kind === 'userEvent'
+      ? source.item.date
+      : source.kind === 'prompted'
+        ? dateKeyFromDueDays(source.item.dueDays)
+        : source.kind === 'manual' || source.kind === 'linkedDoc'
+          ? dateKeyFromDueDays(source.item.deadline)
+          : scheduledDate;
+  const detailEstMin =
+    source.kind === 'userEvent'
+      ? source.item.durationMin
+      : source.kind === 'userTask' ||
+          source.kind === 'prompted' ||
+          source.kind === 'manual' ||
+          source.kind === 'linkedDoc'
+        ? source.item.estMin
+        : item.estMin;
+  const detailType =
+    source.kind === 'prompted'
+      ? source.item.type
+      : source.kind === 'userEvent'
+        ? 'Event'
+        : source.kind === 'linkedDoc'
+          ? source.item.type
+          : seedManual?.type ?? null;
+  const detailPatient =
+    source.kind === 'prompted' ? source.item.patientName : null;
+  const detailNotes =
+    source.kind === 'userEvent'
+      ? source.item.notes
+      : source.kind === 'prompted'
+        ? source.item.notes
+        : source.kind === 'manual' || source.kind === 'linkedDoc'
+          ? source.item.noteAfterEmailDone ?? null
+          : seedManual?.noteAfterEmailDone ?? null;
+  const detailRisk =
+    source.kind === 'manual' || source.kind === 'linkedDoc'
+      ? source.item.risk
+      : seedManual?.risk;
+  const detailPriority =
+    source.kind === 'prompted' ? source.item.priority : null;
+  const detailStartTime =
+    source.kind === 'userEvent' ? source.item.startTime : null;
 
   return (
     <div
@@ -373,7 +510,120 @@ export default function CalendarTaskDetailModal({
         </div>
 
         <div className="p-4 space-y-3">
-          {!editable && source.kind === 'readonly' && (
+          {/* ---- Details (read-only) view ---- */}
+          {mode === 'details' && (
+            <div className="space-y-3" data-testid="calendar-task-detail-details">
+              <div>
+                <p className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {source.kind === 'prompted' ? (
+                    <Sparkles size={10} />
+                  ) : source.kind === 'userEvent' || source.kind === 'userTask' ? (
+                    <Hand size={10} />
+                  ) : typeof item.linkedToEmailId === 'number' ? (
+                    <Mail size={10} />
+                  ) : null}
+                  {sourceLabel}
+                </p>
+                <h3 className="text-base font-semibold text-foreground mt-1 leading-snug break-words">
+                  {title || item.title}
+                </h3>
+              </div>
+
+              <div className="rounded-md border border-border bg-muted/30 divide-y divide-border/60">
+                <DetailRow icon={<Calendar size={13} />} label="Due">
+                  {formatDateLabel(detailDateIso)}
+                </DetailRow>
+                {detailStartTime && (
+                  <DetailRow icon={<Clock size={13} />} label="Start time">
+                    {detailStartTime}
+                  </DetailRow>
+                )}
+                <DetailRow icon={<Clock size={13} />} label={source.kind === 'userEvent' ? 'Duration' : 'Estimated time'}>
+                  {detailEstMin} min
+                </DetailRow>
+                {detailType && (
+                  <DetailRow icon={<Hash size={13} />} label="Type">
+                    {detailType}
+                  </DetailRow>
+                )}
+                {detailPriority && (
+                  <DetailRow icon={<Hash size={13} />} label="Priority">
+                    <span className={cn(
+                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
+                      detailPriority === 'high'
+                        ? 'bg-red-100 text-red-700'
+                        : detailPriority === 'medium'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700',
+                    )}>
+                      {detailPriority}
+                    </span>
+                  </DetailRow>
+                )}
+                {detailPatient && (
+                  <DetailRow icon={<User size={13} />} label="Patient">
+                    {detailPatient}
+                  </DetailRow>
+                )}
+                {detailRisk && detailRisk !== 'none' && (
+                  <DetailRow icon={<Hash size={13} />} label="Risk">
+                    <span className={cn(
+                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
+                      detailRisk === 'high'
+                        ? 'bg-red-100 text-red-700'
+                        : detailRisk === 'medium'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700',
+                    )}>
+                      {detailRisk}
+                    </span>
+                  </DetailRow>
+                )}
+              </div>
+
+              {detailNotes && detailNotes.trim() && (
+                <div>
+                  <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <StickyNote size={11} /> Notes
+                  </p>
+                  <p className="text-sm text-foreground mt-1 whitespace-pre-wrap leading-relaxed bg-muted/40 border border-border rounded-md p-3">
+                    {detailNotes}
+                  </p>
+                </div>
+              )}
+
+              {source.kind === 'unclear' && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs flex items-start gap-2">
+                  <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-700" />
+                  <p className="leading-snug text-amber-900">
+                    {item.title}. Edit to set how long you want to reserve for
+                    this triage, or dismiss it for today if you've already
+                    handled it.
+                  </p>
+                </div>
+              )}
+
+              {!editable && (
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs flex items-start gap-2">
+                  <Info size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+                  <div className="space-y-2 min-w-0">
+                    <p className="text-muted-foreground">{(source as Extract<EditableSource, { kind: 'readonly' }>).reason}</p>
+                    <button
+                      type="button"
+                      onClick={() => { onNavigateToTasks(); onClose(); }}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
+                      data-testid="calendar-task-detail-open-tasks"
+                    >
+                      Open Tasks tab <ExternalLink size={11} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ---- Edit (form) view ---- */}
+          {mode === 'edit' && !editable && source.kind === 'readonly' && (
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs flex items-start gap-2">
               <Info
                 size={14}
@@ -396,7 +646,7 @@ export default function CalendarTaskDetailModal({
             </div>
           )}
 
-          {source.kind === 'unclear' && (
+          {mode === 'edit' && source.kind === 'unclear' && (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs flex items-start gap-2">
               <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-700" />
               <p className="leading-snug text-amber-900">
@@ -406,7 +656,7 @@ export default function CalendarTaskDetailModal({
             </div>
           )}
 
-          {editable && (
+          {mode === 'edit' && editable && (
             <>
               {showTitleField && (
                 <label className="block">
@@ -574,12 +824,23 @@ export default function CalendarTaskDetailModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={mode === 'edit' ? handleCancel : onClose}
               className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded border border-border hover:bg-muted/50"
+              data-testid="calendar-task-detail-cancel"
             >
-              {editable ? 'Cancel' : 'Close'}
+              {mode === 'edit' && editable ? 'Cancel' : 'Close'}
             </button>
-            {editable && (
+            {mode === 'details' && editable && (
+              <button
+                type="button"
+                onClick={() => setMode('edit')}
+                className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-primary text-primary-foreground hover:brightness-95"
+                data-testid="calendar-task-detail-edit"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            )}
+            {mode === 'edit' && editable && (
               <button
                 type="button"
                 onClick={handleSave}
@@ -592,6 +853,25 @@ export default function CalendarTaskDetailModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 text-sm">
+      <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-28 flex-shrink-0">
+        {icon} {label}
+      </span>
+      <span className="text-foreground min-w-0 flex-1">{children}</span>
     </div>
   );
 }

@@ -12,6 +12,8 @@ import TodaysPlan from '@/components/TodaysPlan';
 import TaskList from '@/components/TaskList';
 import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
 import UnclearTriageDialog from '@/components/UnclearTriageDialog';
+import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
+import type { PlanItem } from '@/lib/planner';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -54,6 +56,9 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   // opens the dialog right here on the dashboard so the clinician
   // doesn't have to bounce over to the inbox and back.
   const [triageOpen, setTriageOpen] = useState(false);
+  // Unified task detail / edit popup — opened from Today's Plan,
+  // My Tasks, and Week Ahead so they all behave like the calendar.
+  const [selectedTask, setSelectedTask] = useState<{ item: PlanItem; date: string } | null>(null);
   const runwayLen = plannerOutput.runway.length;
   const safeDayIndex = Math.min(dayIndex, Math.max(0, runwayLen - 1));
   const currentDay = plannerOutput.runway[safeDayIndex] ?? plannerOutput.todaysPlan;
@@ -514,13 +519,16 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
               })
               .filter((e): e is { id: number; subject: string; from: string } => e !== null)}
             onTriageUnclear={() => setTriageOpen(true)}
-            onItemClick={(item) => {
+            onItemClick={(item, dateIso) => {
+              // Email items still jump to the Inbox — they're managed
+              // there. Tasks and events open the shared detail popup
+              // so the dashboard matches the calendar's behaviour.
               if (typeof item.refId === 'number') {
                 onOpenEmail(item.refId);
                 onNavigate('Emails');
-              } else if (item.kind === 'task') {
-                onNavigate('Tasks');
+                return;
               }
+              setSelectedTask({ item, date: dateIso });
             }}
           />
         );
@@ -528,7 +536,13 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           // My tasks — the clinician's hand-curated list. Anything
           // added here also flows into the planner and onto the
           // Week ahead grid below + the full Calendar tab.
-          <TaskList runway={plannerOutput.runway} onOpenEmail={onOpenEmail} />
+          <TaskList
+            runway={plannerOutput.runway}
+            onOpenEmail={onOpenEmail}
+            onOpenTaskDetail={(item, dateIso) =>
+              setSelectedTask({ item, date: dateIso })
+            }
+          />
         );
         if (planView === 'week') {
           return (
@@ -549,7 +563,21 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       {/* Week ahead — the diary view. Replaces the old mini workload
           calendar: same purpose, but actually readable and you can
           add to it. */}
-      <WeeklyTaskOverview runway={plannerOutput.runway} onOpenEmail={onOpenEmail} />
+      <WeeklyTaskOverview
+        runway={plannerOutput.runway}
+        onOpenEmail={onOpenEmail}
+        onOpenTaskDetail={(item, dateIso) => setSelectedTask({ item, date: dateIso })}
+      />
+
+      {selectedTask && (
+        <CalendarTaskDetailModal
+          item={selectedTask.item}
+          scheduledDate={selectedTask.date}
+          onClose={() => setSelectedTask(null)}
+          onNavigateToTasks={() => onNavigate('Tasks')}
+          initialMode="details"
+        />
+      )}
 
       {/* Inline unclear-email triage. Opens from Today's Plan when
           the clinician clicks an "emails need classifying" row. Keeps
