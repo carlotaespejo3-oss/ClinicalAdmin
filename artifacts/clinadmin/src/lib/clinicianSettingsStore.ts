@@ -115,10 +115,10 @@ export interface AppSettings {
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   profile: {
-    fullName: 'Dr. Sam Patel',
-    role: 'Consultant Clinical Psychologist',
-    email: 'sam.patel@nhs.example',
-    serviceName: 'North CAMHS Team',
+    fullName: 'Dr. A. Patterson',
+    role: 'Consultant Child & Adolescent Psychiatrist',
+    email: 'a.patterson@example.com',
+    serviceName: 'CAMHS Outpatient',
   },
   weeklyDefaults: {
     hoursPerWeek: 6,
@@ -148,8 +148,18 @@ interface Cache {
   appSettings: AppSettings | null;
 }
 
-const DEFAULT_SIGNATURE =
-  'Kind regards,\nDr. Sam Patel\nConsultant Clinical Psychologist\nNorth CAMHS Team';
+// Default signature is derived from the clinician's profile so changing
+// the name/role in Settings flows through. Computed on read (not at
+// module load) because the profile itself hydrates from the server.
+function buildDefaultSignature(): string {
+  const { profile } = { profile: DEFAULT_APP_SETTINGS.profile };
+  const live = cache.appSettings?.profile ?? profile;
+  return `Kind regards,\n${live.fullName}\n${live.role}${live.serviceName ? `\n${live.serviceName}` : ''}`;
+}
+
+export function getDefaultSignatureFromProfile(p: AppSettings['profile']): string {
+  return `Kind regards,\n${p.fullName}\n${p.role}${p.serviceName ? `\n${p.serviceName}` : ''}`;
+}
 
 // Back-fill missing sub-sections so consumers can read any field
 // directly without null-checking. Mirrors how the old localStorage
@@ -350,7 +360,7 @@ export function clearStyleProfileInternal() {
 
 export function getSignaturesSettings(): SignaturesSettings {
   ensureHydrationStarted();
-  return cache.signaturesSettings ?? { default: DEFAULT_SIGNATURE, perRecipient: {} };
+  return cache.signaturesSettings ?? { default: buildDefaultSignature(), perRecipient: {} };
 }
 
 export function setSignaturesSettingsInternal(next: SignaturesSettings) {

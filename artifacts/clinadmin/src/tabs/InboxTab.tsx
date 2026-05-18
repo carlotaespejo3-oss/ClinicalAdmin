@@ -52,6 +52,7 @@ import PotentialTaskPanel from '@/components/PotentialTaskPanel';
 import AutoCreatedTasksStrip from '@/components/AutoCreatedTasksStrip';
 import UnresolvedTaskStrip from '@/components/UnresolvedTaskStrip';
 import { useAutoTaskCreator } from '@/lib/autoTaskCreator';
+import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -262,6 +263,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // classification happens, so the hook fires the moment new
   // classifications arrive.
   useAutoTaskCreator();
+  const { profile } = useAppSettingsCache();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
   const classifications = useAiClassifications();
@@ -1139,7 +1141,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </div>
                     <div>
                       <p className="text-sm font-bold">{selectedEmail.from}</p>
-                      <p className="text-xs text-muted-foreground">To: Dr. A. Patterson (Consultant Child &amp; Adolescent Psychiatrist)</p>
+                      <p className="text-xs text-muted-foreground">To: {profile.fullName} ({profile.role})</p>
                     </div>
                   </div>
                 </div>

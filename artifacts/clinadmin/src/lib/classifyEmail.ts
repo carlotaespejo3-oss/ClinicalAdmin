@@ -1,6 +1,7 @@
 import type { Email, AiClassification, AiCategory, AiPriority } from './types';
 import { detectDocumentRequest } from './documentDetect';
 import { detectPrescriptionRequest, urgencyFor } from './prescriptionDetect';
+import { getAppSettings } from './clinicianSettingsStore';
 
 const VALID_CATEGORIES: readonly AiCategory[] = [
   'SAFEGUARDING',
@@ -20,7 +21,9 @@ const VALID_PROF_SUBTYPES = ['clinical_input', 'document_request', 'meeting'] as
 
 export type RunPrompt = (prompt: string) => Promise<string>;
 
-const buildPrompt = (email: Email) => `You are an email triage assistant for Dr. A. Patterson, an Australian child & adolescent psychiatrist.
+const buildPrompt = (email: Email) => {
+  const { profile } = getAppSettings();
+  return `You are an email triage assistant for ${profile.fullName}, an Australian ${profile.role}.
 
 Classify ONE incoming email into the categories and priorities below. Return ONLY a single valid JSON object — no preamble, no markdown fences, no commentary.
 
@@ -87,6 +90,7 @@ From: ${email.from}
 Subject: ${email.subject}
 ---
 ${email.body}`;
+};
 
 function tryParseJson(text: string): Record<string, unknown> | null {
   if (!text) return null;

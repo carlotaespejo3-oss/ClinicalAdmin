@@ -4,6 +4,8 @@ import {
   getSignaturesSettings,
   setSignaturesSettingsInternal,
   useSignaturesSettingsCache,
+  getAppSettings,
+  getDefaultSignatureFromProfile,
   type SignaturesSettings,
 } from './clinicianSettingsStore';
 
@@ -40,7 +42,10 @@ export function getSignatureForRecipient(recipientType: RecipientType): string {
   const settings = getSignaturesSettings();
   const perType = settings.perRecipient[recipientType];
   if (typeof perType === 'string' && perType.trim()) return perType;
-  return settings.default ?? '';
+  if (settings.default && settings.default.trim()) return settings.default;
+  // Final fallback — always derive from the clinician's own profile.
+  // Never a hardcoded other-person name.
+  return getDefaultSignatureFromProfile(getAppSettings().profile);
 }
 
 // Writers used by SettingsTab. Each delegates to the central store

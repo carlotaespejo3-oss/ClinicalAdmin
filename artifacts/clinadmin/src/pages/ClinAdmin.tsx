@@ -32,7 +32,7 @@ import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
 import { useClassifyBootstrap } from '@/lib/useClassifyBootstrap';
 import { useMatchEvidenceBootstrap } from '@/lib/useMatchEvidenceBootstrap';
-import { useClinicianSettingsHydration } from '@/lib/clinicianSettingsStore';
+import { useClinicianSettingsHydration, useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 import TimelineTab from '../tabs/TimelineTab';
 import CalendarTab from '../tabs/CalendarTab';
 import ForecastTab from '../tabs/ForecastTab';
@@ -485,17 +485,7 @@ export default function ClinAdmin() {
         </div>
 
         {/* Profile */}
-        <div className="p-3 border-t border-sidebar-border">
-          <div className="flex items-center gap-3 px-2 py-2.5 bg-sidebar-accent/50 rounded-lg">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-              DM
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-sm font-semibold truncate">Dr. Morgan</p>
-              <p className="text-[10px] text-muted-foreground truncate uppercase font-medium">CAMHS Consultant</p>
-            </div>
-          </div>
-        </div>
+        <SidebarProfile />
       </aside>
 
       {/* Main Content */}
@@ -521,7 +511,33 @@ export default function ClinAdmin() {
   );
 }
 
+function profileInitials(fullName: string): string {
+  const cleaned = fullName.replace(/^(Dr|Prof|Mr|Mrs|Ms|Mx)\.?\s+/i, '').trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function SidebarProfile() {
+  const { profile } = useAppSettingsCache();
+  return (
+    <div className="p-3 border-t border-sidebar-border">
+      <div className="flex items-center gap-3 px-2 py-2.5 bg-sidebar-accent/50 rounded-lg">
+        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+          {profileInitials(profile.fullName)}
+        </div>
+        <div className="overflow-hidden">
+          <p className="text-sm font-semibold truncate">{profile.fullName}</p>
+          <p className="text-[10px] text-muted-foreground truncate uppercase font-medium">{profile.role}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfileMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { profile } = useAppSettingsCache();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -547,8 +563,8 @@ function ProfileMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
       {open && (
         <div className="absolute right-0 mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
           <div className="px-4 py-3 border-b border-border bg-muted/30">
-            <p className="text-sm font-bold">Dr. A. Patterson</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Consultant Child Psychiatrist · CAMHS Outpatient</p>
+            <p className="text-sm font-bold">{profile.fullName}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{profile.role}{profile.serviceName ? ` · ${profile.serviceName}` : ''}</p>
           </div>
           <div className="py-1">
             <button

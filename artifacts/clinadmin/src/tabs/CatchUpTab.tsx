@@ -3,6 +3,7 @@ import { RefreshCcw, Sparkles, ChevronRight, AlertTriangle, Clock, Inbox, Shield
 import { histEmails, scanSteps } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useAiComplete } from '@workspace/api-client-react';
+import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 
 type AbsenceType = 'annual' | 'sick' | 'maternity' | 'study' | 'other';
 type AbsenceDuration = '1w' | '2w' | '4w' | '3m' | 'longer';
@@ -173,6 +174,7 @@ export default function CatchUpTab() {
   const [aiPlan, setAiPlan] = useState<string | null>(null);
   const [expandedRisk, setExpandedRisk] = useState<'high' | 'medium' | 'low' | null>('high');
   const aiComplete = useAiComplete();
+  const { profile } = useAppSettingsCache();
 
   useEffect(() => {
     if (step !== 1) return;
@@ -198,12 +200,12 @@ export default function CatchUpTab() {
       .map(e => `- [${e.risk.toUpperCase()}] ${e.from}: "${e.subject}" (${e.date}, ~${e.estMin}min, deadline: ${e.deadline ?? 'none'}d)`)
       .join('\n');
     aiComplete.mutate({ data: {
-      prompt: `Catch-up plan for Dr. A. Patterson returning from ${DURATION_LABELS[form.duration]} ${ABSENCE_LABELS[form.absenceType]}.
+      prompt: `Catch-up plan for ${profile.fullName} (${profile.role}) returning from ${DURATION_LABELS[form.duration]} ${ABSENCE_LABELS[form.absenceType]}.
 Extra capacity: ${form.extraCapacity}h/week above normal.
 Backlog (${histEmails.length} items):
 ${backlogDesc}
 
-Write a detailed 3-week staged return plan. Week 1: immediate safety actions. Week 2: professional/clinical catch-up. Week 3: admin clearance. Include specific actions and safety note. British English. Max 250 words.`,
+Write a detailed 3-week staged return plan. Week 1: immediate safety actions. Week 2: professional/clinical catch-up. Week 3: admin clearance. Include specific actions and safety note. Australian English. Max 250 words.`,
     }}, { onSuccess: res => setAiPlan(res.text) });
   };
 
@@ -215,7 +217,7 @@ Write a detailed 3-week staged return plan. Week 1: immediate safety actions. We
           <div className="w-14 h-14 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-3">
             <RefreshCcw size={26} />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight">Welcome back, Dr. Patterson</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Welcome back, {profile.fullName}</h2>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-sm mx-auto">
             Let's scan your clinical inbox and build a safe, staged plan to clear the backlog from your absence.
           </p>

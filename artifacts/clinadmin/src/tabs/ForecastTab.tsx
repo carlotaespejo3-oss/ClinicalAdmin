@@ -9,6 +9,7 @@ import { useAiClassifications } from '@/lib/aiClassifyStore';
 import { useArrivalsConfig, setArrivalsConfig, resetArrivalsConfig } from '@/lib/arrivalsConfigStore';
 import { recommendArrivals } from '@/lib/arrivalsLearning';
 import { DEFAULT_ARRIVAL_CONFIG } from '@/lib/planner';
+import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 import type { WeekSetup } from '../pages/ClinAdmin';
 import type { GeneratedPlan } from '@/lib/types';
 
@@ -43,6 +44,7 @@ export default function ForecastTab({ weekSetup, plan, onOpenWeeklySetup }: Prop
   // and mutate emails[].estMin via the rules-based estimator.
   const classifications = useAiClassifications();
   const arrivalsConfig = useArrivalsConfig();
+  const { profile } = useAppSettingsCache();
   const NEW_PER_WEEK = arrivalsConfig.emailsPerWeek;
   const [aiNote, setAiNote] = useState<string>('');
   const [aiError, setAiError] = useState<string>('');
@@ -204,7 +206,7 @@ export default function ForecastTab({ weekSetup, plan, onOpenWeeklySetup }: Prop
     setAiError('');
     setAiNote('');
     const facts = `
-Workload snapshot for Dr. A. Patterson (NHS CAMHS):
+Workload snapshot for ${profile.fullName} (${profile.role}):
 - ${totalBacklogCount} actionable emails in backlog (${fmtH(totalBacklogMin)} of work). ${noiseCount} additional no-action emails to acknowledge.
 - High priority: ${backlog.High.count} emails, ${fmtH(backlog.High.mins)}
 - Medium priority: ${backlog.Medium.count} emails, ${fmtH(backlog.Medium.mins)}
@@ -219,7 +221,7 @@ Workload snapshot for Dr. A. Patterson (NHS CAMHS):
 - Two-week SLA breach risk: ${willBreachLowSla ? `Yes — about ${fmtH(lowBreachMin)} of work will spill past 14 days` : 'No'}
 - High-risk SLA risk this week: ${highSlaAtRisk ? 'Yes' : 'No'}
 `;
-    const prompt = `You are writing a short, plain-English workload summary for a busy NHS CAMHS consultant. British spelling. No jargon. 4-6 sentences max.\n\nUsing the facts below, write a calm, direct paragraph that:\n1. Tells her how many hours she realistically needs this week to stay safe.\n2. Tells her if there is a gap and how to handle it (carry low-priority into next week is fine; high-risk clinical work cannot wait).\n3. If a 14-day low-priority breach is likely, flag it once, gently, and suggest the simplest mitigation (e.g. add 1-2 hours next week, or accept the breach and document why).\n4. End with one specific concrete action she can do today.\n\nDo NOT repeat the numbers verbatim — interpret them. Speak to her as "you".\n\nFacts:\n${facts}`;
+    const prompt = `You are writing a short, plain-English workload summary directly to ${profile.fullName} (${profile.role}). Australian English. No jargon. 4-6 sentences max.\n\nUsing the facts below, write a calm, direct paragraph that:\n1. Tells them how many hours they realistically need this week to stay safe.\n2. Tells them if there is a gap and how to handle it (carrying low-priority into next week is fine; high-risk clinical work cannot wait).\n3. If a 14-day low-priority breach is likely, flag it once, gently, and suggest the simplest mitigation (e.g. add 1-2 hours next week, or accept the breach and document why).\n4. End with one specific concrete action they can do today.\n\nDo NOT repeat the numbers verbatim — interpret them. Address them directly as "you".\n\nFacts:\n${facts}`;
     try {
       const res = await aiComplete.mutateAsync({ data: { prompt } });
       setAiNote(res.text ?? '');

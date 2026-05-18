@@ -8,6 +8,7 @@ import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
+import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
 import {
   useLeaveBlocks,
   currentLeaveStatus,
@@ -55,6 +56,7 @@ function fmtMins(min: number) {
 }
 
 export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdateAvailability, onNavigate, onOpenEmail }: Props) {
+  const { profile } = useAppSettingsCache();
   const linkedDocTasks = useLinkedDocTasks();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
@@ -330,7 +332,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           <Sun size={26} className="text-amber-500" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Good morning, Dr. Morgan</h1>
+          <h1 className="text-2xl font-bold text-foreground">Good morning, {profile.fullName}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan for today. Follow it and you're on top of your admin.</p>
         </div>
       </div>

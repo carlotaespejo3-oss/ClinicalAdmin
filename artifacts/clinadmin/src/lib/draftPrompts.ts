@@ -1,16 +1,21 @@
 import type { Email, AiClassification } from './types';
 import { detectRecipientType, getSignatureForRecipient } from './signatures';
 import { getStyleGuidanceForRecipient } from './styleProfile';
+import {
+  getAppSettings,
+  getDefaultSignatureFromProfile,
+} from './clinicianSettingsStore';
 
-// Default sign-off for Dr. Patterson (AU child & adolescent psychiatrist).
-// Used only when the user has not configured a per-recipient signature in
-// Settings. Matches the AU context for Step 3 of the email triage redesign.
-const DEFAULT_AU_SIGNATURE =
-  'Dr. A. Patterson | Consultant Child & Adolescent Psychiatrist';
+// Every prompt builder reads the clinician's profile + signature
+// settings live, so changing the name/role in Settings flows through
+// to the next draft generated. No hardcoded clinician name lives in
+// this file — the AI is always instructed to write in the first
+// person as whoever is currently signed in.
 
 function signOffFor(email: Email): string {
   const sig = getSignatureForRecipient(detectRecipientType(email));
-  return sig && sig.trim() ? sig : DEFAULT_AU_SIGNATURE;
+  if (sig && sig.trim()) return sig;
+  return getDefaultSignatureFromProfile(getAppSettings().profile);
 }
 
 function styleBlockFor(email: Email): string {
@@ -20,8 +25,10 @@ function styleBlockFor(email: Email): string {
     : '';
 }
 
-const COMMON_HEADER =
-  'Dr. A. Patterson is an Australian Consultant Child & Adolescent Psychiatrist. Use Australian English (no Britishisms, no NHS, no CAMHS, no "A&E", no "999", no "Samaritans").';
+function commonHeader(): string {
+  const { profile } = getAppSettings();
+  return `You are ${profile.fullName}, ${profile.role}. You are an Australian clinician — use Australian English (no Britishisms, no NHS, no CAMHS, no "A&E", no "999", no "Samaritans"). Write the reply in the FIRST PERSON, as yourself — never refer to yourself in the third person.`;
+}
 
 // AU crisis numbers — used in SAFEGUARDING family drafts.
 const AU_CRISIS_BLOCK = `If there is immediate risk to life, call 000 (Australian emergency services) or attend the nearest hospital Emergency Department.
@@ -42,13 +49,13 @@ function returnOnlyBody(): string {
 // family reply — only the AU crisis numbers and an arrangement to be seen.
 export function buildSafeguardingFamilyPrompt(email: Email, c?: AiClassification): string {
   const patient = c?.patientName ? `\nPatient name (use as it appears): ${c.patientName}` : '';
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a compassionate INTERIM ACKNOWLEDGEMENT to the family. This is a SAFEGUARDING situation — the family deserves a warm, prompt reply, but the email cannot safely contain specific clinical advice.
 
 The reply MUST:
-- Acknowledge the parent's distress and thank them for letting us know.
-- Make clear that what they have described needs proper clinical assessment by phone or face-to-face, and that we are arranging this urgently.
+- Acknowledge the parent's distress and thank them for letting you know.
+- Make clear that what they have described needs proper clinical assessment by phone or face-to-face, and that you are arranging this urgently.
 - Do NOT give specific clinical advice about the patient.
 - Include general interim safety guidance:
   • Remove or secure sharps and any items that could be used for self-harm.
@@ -66,13 +73,13 @@ ${emailBodyBlock(email)}`;
 
 export function buildSafeguardingAdminPrompt(email: Email, c?: AiClassification): string {
   const patient = c?.patientName ? c.patientName : 'the patient referenced in the email';
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a SHORT internal email to the practice admin / booking team asking them to book ${patient} in URGENTLY for a clinical review (telephone or face-to-face) — this is a SAFEGUARDING flag raised by the family today.
 
 Rules:
 - Address the admin team (e.g. "Hi team,").
-- Reference ${patient} and the requesting clinician (Dr. A. Patterson).
+- Reference ${patient}. Write in the first person — this is from you, the treating clinician.
 - Keep it to a few sentences. No clinical detail beyond what is needed to prioritise the booking (e.g. "raised today by parent, safeguarding concern, needs urgent review").
 - Do NOT quote the parent's wording.
 - Ask them to confirm once booked and to flag back if no slot is available within 24 hours.
@@ -92,13 +99,13 @@ Subject: ${email.subject}`;
 // still routes to phone/face-to-face review.
 export function buildUrgentClinicalFamilyPrompt(email: Email, c?: AiClassification): string {
   const patient = c?.patientName ? `\nPatient name: ${c.patientName}` : '';
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a prompt, warm INTERIM REPLY to the family. This is an URGENT CLINICAL situation (severe symptoms or escalation) but NOT a safeguarding concern.
 
 The reply MUST:
 - Acknowledge the family's concern and thank them for getting in touch.
-- Explain that what they have described needs a phone or face-to-face clinical review, and that we are arranging this within the next working day.
+- Explain that what they have described needs a phone or face-to-face clinical review, and that you are arranging this within the next working day.
 - Avoid prescribing specific medication changes by email — defer to the review.
 - Be warm and plain in tone.
 - End with EXACTLY this sign-off:
@@ -111,13 +118,13 @@ ${emailBodyBlock(email)}`;
 
 export function buildUrgentClinicalAdminPrompt(email: Email, c?: AiClassification): string {
   const patient = c?.patientName ? c.patientName : 'the patient';
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a SHORT internal email to the admin / booking team asking them to book ${patient} for an URGENT clinical review within the next working day. This is NOT a safeguarding flag — a clinical escalation only.
 
 Rules:
 - Address the admin team.
-- Reference ${patient} and Dr. A. Patterson.
+- Reference ${patient}. Write in the first person — this is from you, the treating clinician.
 - Keep it to a few sentences. No detailed clinical information.
 - End with EXACTLY this sign-off:
 ${signOffFor(email)}
@@ -131,9 +138,9 @@ Subject: ${email.subject}`;
 
 // ---- CLINICAL (routine clinical question / script / dose check) ----
 export function buildClinicalPrompt(email: Email): string {
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
-Draft a clinical reply on behalf of Dr. A. Patterson.
+Draft a clinical reply in the first person as yourself.
 
 Rules:
 - This is a routine clinical question (not a safeguarding or urgent escalation).
@@ -191,11 +198,11 @@ export function buildProfessionalPrompt(email: Email, c?: AiClassification): str
     intent = 'The colleague is asking for clinical input. Provide a focused clinical opinion if straightforward, or propose a short call/MDT slot if the case needs discussion.';
   } else if (sub === 'document_request') {
     const doc = c?.documentRequested ? `: "${c.documentRequested}"` : '';
-    intent = `The colleague has requested a clinical document${doc}. Acknowledge the request, confirm a realistic turnaround, and say it will be added to the documents-to-write task list.`;
+    intent = `The colleague has requested a clinical document${doc}. Acknowledge the request, confirm a realistic turnaround, and say it will be added to your documents-to-write task list.`;
   } else if (sub === 'meeting') {
     intent = 'The colleague is coordinating a meeting / joint appointment. Reply collegially with availability or propose two concrete options.';
   }
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a reply to a fellow professional (GP, psychologist, allied health, school MH lead, paediatrician, etc).
 
@@ -212,7 +219,7 @@ ${emailBodyBlock(email)}`;
 
 // ---- ADMIN ----
 export function buildAdminPrompt(email: Email): string {
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a brief, decisive admin reply (booking, room change, rota, scheduling, form).
 
@@ -229,7 +236,7 @@ ${emailBodyBlock(email)}`;
 // ---- NONE / CPD on-demand acknowledgement ----
 // Only generated if the clinician explicitly asks for one (button click).
 export function buildAcknowledgementPrompt(email: Email): string {
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a one or two sentence polite acknowledgement reply. The email does not need a substantive answer — this is just a courtesy reply.
 
@@ -266,12 +273,12 @@ export function buildPrescriptionPrompt(email: Email, c?: AiClassification): str
     ? '\n- Add a short note: "If you are travelling internationally, please let us know — some medications have additional requirements for travel."'
     : '';
   const patientLine = patient ? `\nPatient name (use as it appears): ${patient}` : '';
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Draft a warm, practical reply confirming the prescription request will be handled.
 
 Rules:
-- Thank them for letting us know.
+- Thank them for letting you know.
 - Confirm that you will ${verb} script for ${med}${patient ? ` for ${patient}` : ''}.${deadlineLine}${controlledLine}${travelLine}
 - Keep it to a few short sentences — warm and reassuring, not clinical.
 - Invite them to contact the practice if the script has not arrived by the expected date.
@@ -285,9 +292,9 @@ ${emailBodyBlock(email)}`;
 
 // ---- Mini chat box: ad-hoc additional draft from clinician's own instruction ----
 export function buildExtraDraftPrompt(email: Email, instruction: string): string {
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
-The clinician wants an ADDITIONAL draft for the email below, based on this specific instruction:
+You want an ADDITIONAL draft for the email below, based on this specific instruction:
 
 "${instruction.trim()}"
 
@@ -355,7 +362,7 @@ export function buildChatPrompt(
   history: ChatTurn[],
   userMessage: string,
 ): string {
-  return `${COMMON_HEADER}
+  return `${commonHeader()}
 
 Drafts (if you are writing one) MUST end with EXACTLY this sign-off (do not modify):
 ${signOffFor(email)}${styleBlockFor(email)}
