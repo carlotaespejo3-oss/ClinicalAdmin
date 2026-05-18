@@ -21,6 +21,7 @@ import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
 import UnclearTriageDialog from '@/components/UnclearTriageDialog';
 import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
 import OnLeaveDashboard from '@/components/OnLeaveDashboard';
+import CatchUpPlanCard from '@/components/CatchUpPlanCard';
 import type { PlanItem } from '@/lib/planner';
 
 interface Props {
@@ -350,50 +351,68 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
 
       {leaveStatus.state !== 'on-leave-today' && (<>
 
-      {/* Leave-context banner. Sky for back-today / leave-soon;
-          advisory only. Sits above the weekly-handled card so the
-          clinician sees their leave state before anything else. The
-          on-leave-today variant is folded into OnLeaveDashboard
-          above. */}
-      {leaveStatus.state !== 'none' && (
+      {/* Leave-context surfaces. The on-leave-today variant is folded
+          into OnLeaveDashboard above. Back-today gets the richer
+          CatchUpPlanCard (auto-generated catch-up plan: pile,
+          time math, leave-excused breaches). Leave-starts-soon
+          keeps the slim sky banner. */}
+      {leaveStatus.state === 'back-today' && (() => {
+        const pendingEmails = emails.filter(
+          (e) => e.cat !== CAT.NONE && !acknowledged.has(e.id) && !archived.has(e.id),
+        );
+        const pendingCount =
+          priorityCounts.High + priorityCounts.Medium + priorityCounts.Low;
+        const pendingEmailMin = pendingEmails.reduce((s, e) => s + e.estMin, 0);
+        const pendingTaskMin = manualTasks
+          .filter((t) => !t.done && !isLinkedDocTask(t))
+          .reduce((s, t) => s + t.estMin, 0);
+        const totalEstimateMin = pendingEmailMin + pendingTaskMin;
+        const weekCapacityMin = plannerOutput.runway.reduce(
+          (s, d) => s + d.minutesAvailable,
+          0,
+        );
+        // 14-day rule excused only for routine categories. Anything
+        // clinical/safeguarding/urgent/legal/professional that won't
+        // fit is NOT excused — those still need clinician action.
+        const ROUTINE = new Set(['ADMIN', 'CPD', 'NONE']);
+        const routineBreachCount = plannerOutput.breaches.filter((b) =>
+          ROUTINE.has(b.category),
+        ).length;
+        const urgentBreachCount =
+          plannerOutput.breaches.length - routineBreachCount;
+        return (
+          <CatchUpPlanCard
+            daysAway={leaveStatus.daysAway}
+            pendingCount={pendingCount}
+            pendingByPriority={priorityCounts}
+            totalEstimateMin={totalEstimateMin}
+            weekCapacityMin={weekCapacityMin}
+            routineBreachCount={routineBreachCount}
+            urgentBreachCount={urgentBreachCount}
+            onNavigateInbox={() => onNavigate('Emails')}
+          />
+        );
+      })()}
+
+      {leaveStatus.state === 'leave-starts-soon' && (
         <div
-          className={cn(
-            'rounded-xl border px-5 py-3.5 flex items-start gap-3',
-            leaveStatus.state === 'back-today'
-              ? 'border-amber-200 bg-amber-50 text-amber-900'
-              : 'border-sky-200 bg-sky-50 text-sky-900',
-          )}
-          data-testid={`home-leave-banner-${leaveStatus.state}`}
+          className="rounded-xl border border-sky-200 bg-sky-50 text-sky-900 px-5 py-3.5 flex items-start gap-3"
+          data-testid="home-leave-banner-leave-starts-soon"
         >
           <Plane size={18} className="mt-0.5 flex-shrink-0" />
           <div className="min-w-0 text-sm leading-snug">
-            {leaveStatus.state === 'back-today' && (
-              <>
-                <p className="font-bold">
-                  Welcome back — first day back after {leaveStatus.daysAway}{' '}
-                  {leaveStatus.daysAway === 1 ? 'day' : 'days'} off.
-                </p>
-                <p className="text-xs mt-0.5">
-                  Today's plan has a catch-up buffer at the top. Expect the inbox to feel heavier than usual.
-                </p>
-              </>
-            )}
-            {leaveStatus.state === 'leave-starts-soon' && (
-              <>
-                <p className="font-bold">
-                  {LEAVE_TYPE_LABEL[leaveStatus.block.leaveType]} starts{' '}
-                  {leaveStatus.daysUntil === 0
-                    ? 'later today'
-                    : leaveStatus.daysUntil === 1
-                    ? 'tomorrow'
-                    : `in ${leaveStatus.daysUntil} days`}
-                  .
-                </p>
-                <p className="text-xs mt-0.5">
-                  Anything you can finish this week won't pile up while you're away.
-                </p>
-              </>
-            )}
+            <p className="font-bold">
+              {LEAVE_TYPE_LABEL[leaveStatus.block.leaveType]} starts{' '}
+              {leaveStatus.daysUntil === 0
+                ? 'later today'
+                : leaveStatus.daysUntil === 1
+                ? 'tomorrow'
+                : `in ${leaveStatus.daysUntil} days`}
+              .
+            </p>
+            <p className="text-xs mt-0.5">
+              Anything you can finish this week won't pile up while you're away.
+            </p>
           </div>
         </div>
       )}

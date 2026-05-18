@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Plane, Plus, Trash2, X, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -243,16 +243,6 @@ export default function LeavePanel({ weekSetup }: Props) {
       `Remove ${LEAVE_TYPE_LABEL[b.leaveType].toLowerCase()} for ${formatRange(b)}? The week will be replanned.`,
     );
     if (ok) removeLeaveBlock(b.id);
-  };
-
-  const rampUpMinutes = appSettings.leavePlanner?.rampUpMinutes ?? 60;
-  const rampUpOptions = useMemo(() => [0, 30, 60, 90, 120], []);
-
-  const setRampUp = (mins: number) => {
-    setAppSettingsInternal({
-      ...appSettings,
-      leavePlanner: { ...appSettings.leavePlanner, rampUpMinutes: mins },
-    });
   };
 
   return (
@@ -534,37 +524,6 @@ export default function LeavePanel({ weekSetup }: Props) {
           </ul>
         )}
 
-        {/* Catch-up time on first day back — advisory setting.
-            Holds the chosen minutes back from bookable time on the
-            first working day after a fully-on-leave run. */}
-        <div className="pt-2 mt-2 border-t border-border/60" data-testid="leave-rampup-control">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Catch-up time on first day back
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {rampUpOptions.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setRampUp(m)}
-                className={cn(
-                  'text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors',
-                  rampUpMinutes === m
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-background text-foreground border-border hover:bg-accent',
-                )}
-                data-testid={`leave-rampup-${m}`}
-              >
-                {m === 0 ? 'Off' : m < 60 ? `${m} min` : `${m / 60}h`}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-1.5">
-            {rampUpMinutes === 0
-              ? 'No catch-up buffer reserved.'
-              : `Holds ${rampUpMinutes < 60 ? `${rampUpMinutes} min` : `${rampUpMinutes / 60}h`} back from your first day back so triage isn't crammed into the day's first hour.`}
-          </p>
-        </div>
       </CardContent>
     </Card>
   );

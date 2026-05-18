@@ -98,13 +98,13 @@ export interface AppSettings {
   //                          day doesn't trigger; a long weekend +
   //                          Monday does.
   //
-  // `rampUpMinutes` is the v1 dial that the now-removed in-hook
-  // ramp-up injection consulted; preserved here for back-compat with
-  // any LeavePanel control that still writes it. The resolver
-  // supersedes it via recoveryReservedMin and a richer ramp curve.
+  // Recovery is fully automatic — the resolver derives the catch-up
+  // ramp from rampMultipliers / recoveryReservedMin / triageReservedMin
+  // and the actual length of the leave stretch. There is no
+  // clinician-facing "catch-up minutes" dial; the legacy `rampUpMinutes`
+  // field was removed because the resolver supersedes it.
   // All of this lives in the open JSON column — no schema migration.
   leavePlanner: {
-    rampUpMinutes: number;
     rampMultipliers: number[];
     recoveryReservedMin: number[];
     triageReservedMin: number[];
@@ -133,7 +133,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     desktopSound: false,
   },
   leavePlanner: {
-    rampUpMinutes: 60,
     rampMultipliers: [0.5, 0.75, 1.0],
     recoveryReservedMin: [60, 30, 0],
     triageReservedMin: [20, 0, 0],
