@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Mail, ClipboardList, ShieldCheck, Flag } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
-import { cn, getEmailPriority, getTaskPriority, PRIORITY_PILL, type Priority } from '@/lib/utils';
+import { cn, getEmailPriority, getTaskPriority, type Priority } from '@/lib/utils';
 import { WeekSetup } from '@/pages/ClinAdmin';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
@@ -200,81 +200,70 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const StatusIcon = statusStyles.Ico;
   const youAre = status === 'red' ? 'Behind' : status === 'amber' ? 'Tight' : 'On track';
 
-  // ---- Plan-vs-inbox summary strip (4 cards under the status banner) ----
-  // All four numbers derive from the same `plannerOutput` the banner
-  // already consumes, plus `manualTasks` for the scheduled-tasks count.
-  // No new stores, no duplicated computation — when the planner output
-  // updates (capacity changes, emails archived, deferrals recorded),
-  // these cards re-render in lock-step with the banner above.
+  // ---- "Emails handled for you this week" hero ----
+  // Union of three sets, deduped on emailId, scoped to "this week":
+  //   - safelyDeferred: planner pushed beyond this week's runway AND
+  //     NOT in a breach. Every deferred item in planner output is
+  //     co-pushed with a breach when its SLA can't be met
+  //     (no_capacity_before_sla / already_overdue), so we filter
+  //     those out — unsafe deferrals are problems, not "handled".
+  //   - archived this week: clinician archived (acknowledged-no-action
+  //     OR done) since the start of this week. ArchiveEntry carries
+  //     `at` so we can scope properly.
+  //   - acknowledged: the acknowledgedStore is a Set<emailId> with no
+  //     timestamps, so we fall back to "all currently acknowledged".
+  //     If clinician scoping becomes important here we'd need to add
+  //     `at` to that store too — flagged for later.
+  // Hours saved = sum of email.estMin for the union, rounded to hours.
   //
-  //   - Safely deferred: items the planner pushed beyond the current
-  //     runway because they don't need to fit this week (SLA still
-  //     comfortably ahead). These are the items that won't bite.
-  //   - Tasks scheduled: clinician's own organisational layer
-  //     (reports / letters / admin) that are still open and not
-  //     auto-completed by an email reply.
-  //   - Unsafe deferrals: items the planner couldn't fit and whose
-  //     SLA WILL bite within the runway — the "if you don't add
-  //     capacity, these slip" set.
-  //   - Missed deadlines: items already past their SLA today. This
-  //     should stay at 0 in a well-planned week.
-  const tasksScheduledCount = manualTasks.filter(
-    (t) => !t.done && !isLinkedDocTask(t),
-  ).length;
-  const safelyDeferredCount = plannerOutput.deferredItems.filter(
-    (i) => i.kind === 'email',
-  ).length;
-  const unsafeDeferralsCount = plannerOutput.breaches.filter(
-    (b) => b.reason === 'no_capacity_before_sla',
-  ).length;
-  const missedDeadlinesCount = plannerOutput.breaches.filter(
-    (b) => b.reason === 'already_overdue',
-  ).length;
+  // Time-of-day values (startOfWeekMs, isMonday) intentionally NOT
+  // memoised — they must re-evaluate each render so a tab left open
+  // across midnight or Sun→Mon rollover picks up the new week / new
+  // copy variant without needing a manual refresh.
+  const now = new Date();
+  const startOfWeekDate = new Date(now);
+  startOfWeekDate.setHours(0, 0, 0, 0);
+  // Monday as start-of-week. JS getDay(): Sun=0, Mon=1, ..., Sat=6.
+  const dow = startOfWeekDate.getDay();
+  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+  startOfWeekDate.setDate(startOfWeekDate.getDate() - daysSinceMonday);
+  const startOfWeekMs = startOfWeekDate.getTime();
+  const isMonday = now.getDay() === 1;
 
-  const summaryCards = [
-    {
-      key: 'safely-deferred',
-      Icon: Mail,
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-      count: safelyDeferredCount,
-      title: 'Emails safely deferred',
-      subtitle: 'Scheduled for next week or later.',
-    },
-    {
-      key: 'tasks-scheduled',
-      Icon: ClipboardList,
-      iconBg: 'bg-indigo-100',
-      iconColor: 'text-indigo-600',
-      count: tasksScheduledCount,
-      title: 'Tasks scheduled',
-      subtitle: 'Reports / letters / admin tasks.',
-    },
-    {
-      key: 'unsafe-deferrals',
-      Icon: ShieldCheck,
-      iconBg: unsafeDeferralsCount > 0 ? 'bg-amber-100' : 'bg-emerald-100',
-      iconColor: unsafeDeferralsCount > 0 ? 'text-amber-600' : 'text-emerald-600',
-      count: unsafeDeferralsCount,
-      title: 'Unsafe deferrals',
-      subtitle:
-        unsafeDeferralsCount > 0
-          ? 'These will slip unless you add capacity.'
-          : "You're safe if you follow the plan.",
-    },
-    {
-      key: 'missed-deadlines',
-      Icon: Flag,
-      iconBg: missedDeadlinesCount > 0 ? 'bg-red-100' : 'bg-slate-100',
-      iconColor: missedDeadlinesCount > 0 ? 'text-red-600' : 'text-slate-500',
-      count: missedDeadlinesCount,
-      title: 'Missed deadlines',
-      subtitle:
-        missedDeadlinesCount > 0
-          ? 'Action these first to recover the week.'
-          : "You're on top of everything.",
-    },
-  ];
+  const breachedEmailIds = useMemo(() => {
+    const s = new Set<number>();
+    for (const b of plannerOutput.breaches) {
+      if (typeof b.itemId === 'number') s.add(b.itemId);
+    }
+    return s;
+  }, [plannerOutput.breaches]);
+
+  const handledThisWeek = useMemo(() => {
+    const ids = new Set<number>();
+    for (const item of plannerOutput.deferredItems) {
+      if (
+        item.kind === 'email' &&
+        typeof item.refId === 'number' &&
+        !breachedEmailIds.has(item.refId)
+      ) {
+        ids.add(item.refId);
+      }
+    }
+    for (const [id, entry] of archived) {
+      if (entry.at >= startOfWeekMs) ids.add(id);
+    }
+    for (const id of acknowledged) ids.add(id);
+    return ids;
+  }, [plannerOutput.deferredItems, breachedEmailIds, archived, acknowledged, startOfWeekMs]);
+
+  const weeklyHandledCount = handledThisWeek.size;
+  const hoursSaved = useMemo(() => {
+    let mins = 0;
+    for (const e of emails) {
+      if (handledThisWeek.has(e.id)) mins += e.estMin;
+    }
+    return Math.round(mins / 60);
+  }, [handledThisWeek]);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
@@ -288,37 +277,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           <h1 className="text-2xl font-bold text-foreground">Good morning, Dr. Morgan</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan for today. Follow it and you're on top of your admin.</p>
         </div>
-      </div>
-
-      {/* Priority summary bar */}
-      <div
-        className="flex flex-wrap items-center gap-2"
-        data-testid="priority-summary-bar"
-        aria-label="Priority summary"
-      >
-        {([
-          { key: 'High' as const, label: 'Urgent' },
-          { key: 'Medium' as const, label: 'Medium' },
-          { key: 'Low' as const, label: 'Low' },
-        ]).map(({ key, label }) => {
-          const count = priorityCounts[key];
-          const zero = count === 0;
-          return (
-            <span
-              key={key}
-              data-testid={`priority-summary-${label.toLowerCase()}`}
-              className={cn(
-                'inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border',
-                zero
-                  ? 'text-muted-foreground bg-slate-50 border-slate-200 opacity-60'
-                  : PRIORITY_PILL[key],
-              )}
-            >
-              <span className="tabular-nums">{count}</span>
-              <span>{label}</span>
-            </span>
-          );
-        })}
       </div>
 
       {/* Status + AI recommendation banner — left column is the at-a-glance
@@ -463,40 +421,77 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         </div>
       </div>
 
-      {/* Plan-vs-inbox summary — four at-a-glance counts derived from
-          the same planner output as the status banner above. Stays in
-          sync with capacity changes, archives, deferrals. */}
+      {/* Weekly handled + priority triage card. Collapses what used to
+          be three separate surfaces (top priority pills, four stat
+          cards, and this region) into one card focused on celebration
+          + triage. The "On track" banner above keeps owning the
+          status / reassurance tone — this card stays neutral even
+          when there are unsafe deferrals or missed deadlines. */}
       <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
-        data-testid="plan-summary-strip"
-        aria-label="Plan versus inbox summary"
+        className="bg-white border border-border/50 rounded-xl p-7"
+        data-testid="weekly-handled-card"
       >
-        {summaryCards.map(({ key, Icon, iconBg, iconColor, count, title, subtitle }) => (
-          <div
-            key={key}
-            className="bg-white border border-border rounded-2xl shadow-sm p-4 flex items-start gap-3"
-            data-testid={`plan-summary-${key}`}
-          >
-            <div
-              className={cn(
-                'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                iconBg,
-              )}
-            >
-              <Icon size={18} className={iconColor} />
-            </div>
-            <div className="space-y-0.5 min-w-0">
-              <p
-                className="text-2xl font-bold text-foreground leading-none tabular-nums"
-                data-testid={`plan-summary-${key}-count`}
+        {/* Hero — handled count + hours saved */}
+        {weeklyHandledCount === 0 && isMonday ? (
+          <div data-testid="weekly-handled-monday-variant">
+            <p className="text-[44px] font-medium leading-tight tracking-tight text-foreground">
+              Fresh week
+            </p>
+            <p className="text-[15px] text-muted-foreground mt-1">
+              Let&apos;s get into it. Your plan for the week is below.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-baseline flex-wrap gap-x-3">
+              <span
+                className="text-[72px] font-medium leading-none tracking-tight text-foreground tabular-nums"
+                data-testid="weekly-handled-count"
               >
-                {count}
-              </p>
-              <p className="text-sm font-bold text-foreground leading-tight">{title}</p>
-              <p className="text-xs text-muted-foreground leading-snug">{subtitle}</p>
+                {weeklyHandledCount}
+              </span>
+              <span className="text-[22px] font-medium text-foreground">
+                emails handled for you this week
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-2.5 text-[14px] text-muted-foreground">
+              <Clock size={14} strokeWidth={1.75} />
+              <span data-testid="weekly-hours-saved">
+                ≈ {hoursSaved} hours of inbox time saved
+              </span>
             </div>
           </div>
-        ))}
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-border/50 mt-6 pt-5">
+          <p className="text-[14px] text-muted-foreground mb-3">
+            Pending, by priority
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {([
+              { key: 'High' as const, label: 'Urgent', cls: 'bg-red-50 text-red-700' },
+              { key: 'Medium' as const, label: 'Medium', cls: 'bg-amber-50 text-amber-800' },
+              { key: 'Low' as const, label: 'Low', cls: 'bg-slate-100 text-muted-foreground' },
+            ]).map(({ key, label, cls }) => {
+              const count = priorityCounts[key];
+              const numberCls = key === 'Low' ? 'text-foreground' : '';
+              return (
+                <span
+                  key={key}
+                  data-testid={`pending-pill-${label.toLowerCase()}`}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-[5px] text-[13px]',
+                    cls,
+                  )}
+                >
+                  <span className={cn('font-medium tabular-nums', numberCls)}>{count}</span>
+                  <span className="font-normal">{label}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Today's plan + mini workload calendar — paired side-by-side on
