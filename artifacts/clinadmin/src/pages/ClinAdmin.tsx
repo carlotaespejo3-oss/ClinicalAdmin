@@ -314,16 +314,16 @@ export default function ClinAdmin() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
+      case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
       case 'Detailed View': return <TodayTab manualTasks={manualTaskList} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'Archive': return <ArchiveTab />;
-      case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
+      case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
       case 'Backlog Recovery': return <CatchUpTab />;
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
-      case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => setOpenEmailId(id)} onNavigate={setActiveTab} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} />;
+      case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} onNavigate={setActiveTab} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} />;
       case 'Tasks': return (
         <TasksTab
           manualTasks={manualTaskList}
@@ -333,11 +333,11 @@ export default function ClinAdmin() {
           onRemoveSidebarTask={removeTask}
           onAddSidebarTask={addSidebarTask}
           onNavigate={setActiveTab}
-          onOpenEmail={(id) => setOpenEmailId(id)}
+          onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }}
         />
       );
       case 'Settings': return <SettingsTab />;
-      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => setOpenEmailId(id)} />;
+      default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
     }
   };
 
