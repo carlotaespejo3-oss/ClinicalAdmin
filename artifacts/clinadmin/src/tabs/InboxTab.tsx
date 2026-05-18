@@ -99,17 +99,6 @@ const KIND_LABEL: Record<string, string> = {
   none: 'Acknowledge',
 };
 
-const KIND_COLOUR: Record<string, string> = {
-  clinical: 'bg-red-50 text-red-700 border-red-200',
-  triage: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  script: 'bg-blue-50 text-blue-700 border-blue-200',
-  complex: 'bg-purple-50 text-purple-700 border-purple-200',
-  admin: 'bg-slate-50 text-slate-600 border-slate-200',
-  meeting: 'bg-amber-50 text-amber-700 border-amber-200',
-  professional: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  none: 'bg-slate-50 text-slate-500 border-slate-200',
-};
-
 interface InboxTabProps {
   initialSelectedId?: number | null;
 }
@@ -902,14 +891,29 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   {(() => {
                     const cls = classifications.get(selectedEmail.id);
                     if (cls) {
+                      const bannerVisible = cls.category === 'SAFEGUARDING' || cls.category === 'URGENT_CLINICAL';
+                      const pillLabel = bannerVisible
+                        ? `${PRIORITY_LABEL[cls.priority]} priority`
+                        : `${PRIORITY_LABEL[cls.priority]} · ${CATEGORY_LABEL[cls.category]}`;
+                      const tightDeadline = selectedEmail.deadline !== null && selectedEmail.deadline <= 3;
                       return (
                         <div className="flex gap-2 flex-wrap justify-end">
-                          <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", PRIORITY_BADGE[cls.priority])}>
-                            {PRIORITY_LABEL[cls.priority]} priority
+                          <span
+                            className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", PRIORITY_BADGE[cls.priority])}
+                            data-testid="badge-priority-category"
+                          >
+                            {pillLabel}
                           </span>
-                          <span className={cn("inline-flex items-center text-[11px] font-bold border px-2.5 py-1 rounded-full", CATEGORY_BADGE[cls.category])}>
-                            {CATEGORY_LABEL[cls.category]}
-                          </span>
+                          {tightDeadline && (
+                            <span className={cn(
+                              "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border",
+                              selectedEmail.deadline! <= 1
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              Reply within {selectedEmail.deadline}d
+                            </span>
+                          )}
                           {cls.documentDirection === 'outgoing' && (
                             <span
                               className="inline-flex items-center gap-1 text-[11px] font-bold border border-purple-200 bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full"
@@ -949,41 +953,40 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                 </div>
               </div>
 
-              {/* Meta strip: kind, time, deadline */}
-              <div className="flex flex-wrap items-center gap-2 mb-6 pb-4 border-b border-border">
-                {selectedEmail.kind && (
-                  <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border", KIND_COLOUR[selectedEmail.kind])}>
-                    {KIND_LABEL[selectedEmail.kind]}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
-                  <Clock size={11} /> {selectedEmail.estMin} min to action
-                </span>
-                {(() => {
-                  const reasons = complexityReasonsFor(selectedEmail, classifications.get(selectedEmail.id));
-                  if (reasons.length === 0) return null;
-                  return (
+              {/* Quiet meta line: kind · time · complexity · (deadline if loose) */}
+              {(() => {
+                const reasons = complexityReasonsFor(selectedEmail, classifications.get(selectedEmail.id));
+                const looseDeadline = selectedEmail.deadline !== null && selectedEmail.deadline > 3;
+                const parts: import('react').ReactNode[] = [];
+                if (selectedEmail.kind) {
+                  parts.push(<span key="kind">{KIND_LABEL[selectedEmail.kind]}</span>);
+                }
+                parts.push(<span key="time">{selectedEmail.estMin} min</span>);
+                if (reasons.length > 0) {
+                  parts.push(
                     <span
-                      className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200 cursor-help"
+                      key="complex"
+                      className="cursor-help underline decoration-dotted underline-offset-2"
                       title={`Time estimate bumped because: ${reasons.join(' • ')}`}
                     >
-                      <Sparkles size={11} /> Complex content
+                      complex content
                     </span>
                   );
-                })()}
-                {selectedEmail.deadline !== null && (
-                  <span className={cn(
-                    "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border",
-                    selectedEmail.deadline <= 1
-                      ? "bg-red-50 text-red-700 border-red-200"
-                      : selectedEmail.deadline <= 3
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-slate-50 text-slate-600 border-slate-200"
-                  )}>
-                    Reply within {selectedEmail.deadline}d
-                  </span>
-                )}
-              </div>
+                }
+                if (looseDeadline) {
+                  parts.push(<span key="deadline">reply within {selectedEmail.deadline}d</span>);
+                }
+                return (
+                  <div className="text-xs text-muted-foreground mb-6 pb-4 border-b border-border flex flex-wrap items-center gap-x-1.5">
+                    {parts.map((part, i) => (
+                      <Fragment key={i}>
+                        {i > 0 && <span aria-hidden="true">·</span>}
+                        {part}
+                      </Fragment>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Direction-confirm banner — shown when a document was
                   detected but the AI couldn't tell whether it's incoming
