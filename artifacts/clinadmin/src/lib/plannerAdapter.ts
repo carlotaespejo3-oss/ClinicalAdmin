@@ -162,6 +162,13 @@ export interface AdapterArgs {
   // / done items. Defaults: all emails included, only undone tasks.
   excludeEmailId?: (id: number) => boolean;
   excludeTaskId?: (id: string) => boolean;
+  // Extra planner-shaped tasks to add on top (e.g. user-added tasks
+  // from the "Week ahead" overview with explicit due dates).
+  extraTasks?: PlannerTask[];
+  // Per-date minutes to subtract from availability BEFORE buildPlan
+  // runs. Used to make fixed events (clinic, meeting) eat the day's
+  // bookable time so the planner schedules around them.
+  busyMinutesByDate?: ReadonlyMap<string, number>;
 }
 
 export function buildPlannerInput(args: AdapterArgs): PlannerInput {
@@ -209,10 +216,29 @@ export function buildPlannerInput(args: AdapterArgs): PlannerInput {
     plannerTasks.push(mapManualTask(t));
   }
 
+  if (args.extraTasks && args.extraTasks.length > 0) {
+    for (const t of args.extraTasks) {
+      if (excludeTask(t.id)) continue;
+      plannerTasks.push(t);
+    }
+  }
+
+  let availability = buildAvailabilityFromWeekSetup(args.today, args.weekSetup);
+  if (args.busyMinutesByDate && args.busyMinutesByDate.size > 0) {
+    availability = availability.map((a) => {
+      const busy = args.busyMinutesByDate!.get(a.date) ?? 0;
+      if (busy <= 0) return a;
+      return {
+        ...a,
+        minutesAvailable: Math.max(0, a.minutesAvailable - busy),
+      };
+    });
+  }
+
   return {
     today: args.today,
     emails: plannerEmails,
     tasks: plannerTasks,
-    availability: buildAvailabilityFromWeekSetup(args.today, args.weekSetup),
+    availability,
   };
 }

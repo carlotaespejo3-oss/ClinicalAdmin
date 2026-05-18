@@ -13,14 +13,22 @@ import {
   recordDeferralsForWeek,
   isoMondayOf,
 } from './deferralStore';
+import { useUserPlannedItems } from './userPlannedItemsStore';
 import { buildPlannerInput } from './plannerAdapter';
-import { buildPlan, type PlannerOutput } from './planner';
+import {
+  buildPlan,
+  type PlannerOutput,
+  type PlanItem,
+  type PlannerTask,
+  type DailyPlan,
+} from './planner';
 
 // Shared planner subscription: both HomeTab (Today's Plan) and the Detailed
 // View (Runway / Projected Workload) call this hook so they recompute from
 // the same live stores. When an email is acknowledged / archived in the
 // inbox, a manual task is marked done in Tasks, an AI classification
-// streams in, or a linked doc task is created/completed, every consumer
+// streams in, a linked doc task is created/completed, OR the clinician
+// adds a task/event from the "Week ahead" overview on Home, every consumer
 // re-renders together — no stale slices, no per-tab desync.
 export function usePlannerOutput(
   manualTasks: ManualTask[],
@@ -32,20 +40,58 @@ export function usePlannerOutput(
   const archived = useArchivedEmails();
   const arrivals = useArrivalsConfig();
   const deferralHistory = useDeferralHistory();
+  const userPlannedItems = useUserPlannedItems();
 
   const weekMondayKey = isoMondayOf(new Date());
 
   const output = useMemo(() => {
+    const today = new Date();
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+
+    // User-added tasks: convert each date → deadlineDays from today.
+    // ADMIN category by default — these are routine workload items the
+    // clinician chose to plan. The user-supplied date is treated as the
+    // deadline (must fit on or before).
+    const extraTasks: PlannerTask[] = [];
+    for (const it of userPlannedItems) {
+      if (it.kind !== 'task') continue;
+      const d = parseLocalDate(it.date);
+      if (!d) continue;
+      const deadlineDays = Math.round((d.getTime() - todayStart.getTime()) / 86400000);
+      extraTasks.push({
+        id: it.id,
+        title: it.title,
+        category: 'ADMIN',
+        estMin: it.estMin,
+        deadlineDays: Math.max(0, deadlineDays),
+        linkedEmailId: null,
+      });
+    }
+
+    // Fixed events: tally minutes per date so the planner subtracts
+    // them from bookable time on the day they fall.
+    const busyMinutesByDate = new Map<string, number>();
+    for (const it of userPlannedItems) {
+      if (it.kind !== 'event') continue;
+      busyMinutesByDate.set(
+        it.date,
+        (busyMinutesByDate.get(it.date) ?? 0) + it.durationMin,
+      );
+    }
+
     const input = buildPlannerInput({
-      today: new Date(),
+      today,
       emails,
       classifications,
       manualTasks,
       linkedDocTasks,
       weekSetup,
       excludeEmailId: (id) => acknowledged.has(id) || archived.has(id),
+      extraTasks,
+      busyMinutesByDate,
     });
-    return buildPlan({
+    const planned = buildPlan({
       ...input,
       arrivals,
       // Only counts weeks STRICTLY before this week. Records made
@@ -55,7 +101,98 @@ export function usePlannerOutput(
       // adds capacity and it gets placed.
       deferralHistory: deferralCountMap(deferralHistory, weekMondayKey),
     });
-  }, [classifications, linkedDocTasks, manualTasks, weekSetup, acknowledged, archived, arrivals, deferralHistory, weekMondayKey]);
+
+    // Inject events into the runway days they belong to. Events are
+    // PINNED to their date — the planner never moves them, it only
+    // gave back the time they consume. They appear FIRST on the day
+    // (above scheduled work) and are sorted by startTime when present.
+    const eventsByDate = new Map<string, PlanItem[]>();
+    for (const it of userPlannedItems) {
+      if (it.kind !== 'event') continue;
+      const item: PlanItem = {
+        kind: 'event',
+        refId: it.id,
+        title: it.title,
+        detail: it.startTime ? `Starts ${it.startTime}` : 'Fixed in your diary',
+        category: 'PROFESSIONAL',
+        estMin: it.durationMin,
+        reason: 'fixed_event',
+        reasonText: it.startTime
+          ? `Fixed at ${it.startTime} — won't be rescheduled`
+          : "Fixed event — won't be rescheduled",
+      };
+      const arr = eventsByDate.get(it.date) ?? [];
+      arr.push(item);
+      eventsByDate.set(it.date, arr);
+    }
+
+    if (eventsByDate.size > 0) {
+      planned.runway = planned.runway.map<DailyPlan>((day) => {
+        const dayEvents = eventsByDate.get(day.date);
+        if (!dayEvents || dayEvents.length === 0) return day;
+        // Sort events by startTime (untimed last). Stable for equal keys.
+        const sorted = [...dayEvents].sort((a, b) => {
+          const ta = a.detail.startsWith('Starts ') ? a.detail.slice(7) : '99:99';
+          const tb = b.detail.startsWith('Starts ') ? b.detail.slice(7) : '99:99';
+          return ta.localeCompare(tb);
+        });
+        const items = [...sorted, ...day.items];
+        const eventsMin = sorted.reduce((s, i) => s + i.estMin, 0);
+        // Accounting note: events were subtracted from minutesAvailable
+        // BEFORE buildPlan so the packer wouldn't overfill the day.
+        // For the runway we publish, restore the full admin time and
+        // count the events as planned work — that matches the
+        // clinician's mental model ("my 4h day is full because I have
+        // a 2h meeting and 2h of emails"). Without this restore the
+        // event would be double-counted (reduce denominator AND add to
+        // numerator), making the day look tighter than it is.
+        const totalPlannedMin = day.totalPlannedMin + eventsMin;
+        const minutesAvailable = day.minutesAvailable + eventsMin;
+        const bufferMin = Math.max(0, minutesAvailable - totalPlannedMin);
+        // Same thresholds as planner.ts L876-892 + calendarHelpers
+        // filterRunwayToTasks — keep them in lock-step so a re-filter
+        // doesn't disagree about the day's status.
+        let status: DailyPlan['status'];
+        if (minutesAvailable === 0) {
+          status = 'idle';
+        } else if (totalPlannedMin > minutesAvailable * 1.10) {
+          status = 'breach';
+        } else if (totalPlannedMin >= minutesAvailable * 0.90) {
+          status = 'tight';
+        } else {
+          status = 'safe';
+        }
+        return {
+          ...day,
+          items,
+          totalPlannedMin,
+          minutesAvailable,
+          bufferMin,
+          status,
+        };
+      });
+
+      // Today's plan mirror — if today has events, show them on top
+      // of Today's Plan too.
+      const todayKey = planned.runway[0]?.date;
+      if (todayKey && eventsByDate.has(todayKey)) {
+        planned.todaysPlan = planned.runway[0];
+      }
+    }
+
+    return planned;
+  }, [
+    classifications,
+    linkedDocTasks,
+    manualTasks,
+    weekSetup,
+    acknowledged,
+    archived,
+    arrivals,
+    deferralHistory,
+    weekMondayKey,
+    userPlannedItems,
+  ]);
 
   // Side-effect: any email the planner couldn't fit into this week's
   // runway gets recorded against this ISO week. recordDeferralsForWeek
@@ -75,4 +212,16 @@ export function usePlannerOutput(
   }, [deferredKey, weekMondayKey]);
 
   return output;
+}
+
+// Parse a 'YYYY-MM-DD' local date string into a local Date at midnight.
+// Returns null for malformed input.
+function parseLocalDate(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!y || !mo || !d) return null;
+  return new Date(y, mo - 1, d, 0, 0, 0, 0);
 }

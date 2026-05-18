@@ -10,6 +10,7 @@ import { useArchivedEmails } from '@/lib/archivedStore';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import TodaysPlan from '@/components/TodaysPlan';
 import MiniWorkloadCalendar from '@/components/MiniWorkloadCalendar';
+import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -430,6 +431,11 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           />
         </div>
       </div>
+
+      {/* Week ahead — task + event overview. Items added here flow
+          into the planner, so the mini calendar above and the full
+          Calendar tab update automatically. */}
+      <WeeklyTaskOverview runway={plannerOutput.runway} />
     </div>
   );
 }

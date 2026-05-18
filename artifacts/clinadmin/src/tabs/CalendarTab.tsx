@@ -8,6 +8,7 @@ import {
   Clock,
   Mail,
   ClipboardList,
+  CalendarClock,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -40,7 +41,12 @@ interface Props {
 
 function ItemChip({ item, onOpenEmail, dense }: { item: PlanItem; onOpenEmail: (id: number) => void; dense?: boolean }) {
   const tone = CATEGORY_TONE[item.category] ?? CATEGORY_TONE.ADMIN;
-  const Icon = item.kind === 'task' ? ClipboardList : Mail;
+  const Icon =
+    item.kind === 'event'
+      ? CalendarClock
+      : item.kind === 'task'
+        ? ClipboardList
+        : Mail;
   const clickable = item.kind === 'email' && typeof item.refId === 'number';
   const handleClick = () => {
     if (clickable) onOpenEmail(item.refId as number);

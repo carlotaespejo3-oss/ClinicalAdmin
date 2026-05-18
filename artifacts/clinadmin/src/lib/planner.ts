@@ -152,10 +152,11 @@ export type ItemReasonKind =
   | 'high_priority'
   | 'medium_progressing'
   | 'low_daily'
-  | 'linked_task';
+  | 'linked_task'
+  | 'fixed_event';
 
 export interface PlanItem {
-  kind: 'email' | 'task' | 'unclear_gate';
+  kind: 'email' | 'task' | 'unclear_gate' | 'event';
   refId: number | string | null;
   title: string;
   detail: string;
