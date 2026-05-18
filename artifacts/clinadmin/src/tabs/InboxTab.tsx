@@ -809,21 +809,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       data-testid={`email-row-${e.id}`}
                     >
                       <div className="flex items-start gap-3">
+                        {/* Leftmost column: received time. Fixed
+                            width so sender names align across rows.
+                            Top-aligned with the sender line. */}
+                        <div
+                          className="w-12 flex-shrink-0 pt-0.5 text-[11px] font-semibold text-muted-foreground tabular-nums leading-tight"
+                          data-testid={`email-row-time-${e.id}`}
+                        >
+                          {meta.rowLabel || '—'}
+                        </div>
                         <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0", avatarColor(e.from))}>
                           {initials(e.from)}
                         </div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="flex justify-between items-start mb-1 gap-2">
-                            <p className="text-sm font-bold truncate">{e.from}</p>
-                            {meta.rowLabel && (
-                              <span
-                                className="text-[11px] text-muted-foreground font-semibold tabular-nums flex-shrink-0"
-                                data-testid={`email-row-time-${e.id}`}
-                              >
-                                {meta.rowLabel}
-                              </span>
-                            )}
-                          </div>
+                          <p className="text-sm font-bold truncate mb-1">{e.from}</p>
                       <p className="text-xs font-semibold mb-1 truncate">{e.subject}</p>
                       <p className="text-[11px] text-muted-foreground line-clamp-1">{e.preview}</p>
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
