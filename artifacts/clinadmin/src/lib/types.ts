@@ -83,7 +83,6 @@ export type TabType =
   | 'Emails'
   | 'Archive'
   | 'High-Risk Patients'
-  | 'Tasks'
   | 'Backlog Recovery'
   | 'Forecast'
   | 'Templates'

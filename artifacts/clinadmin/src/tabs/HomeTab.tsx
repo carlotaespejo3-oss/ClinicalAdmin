@@ -743,7 +743,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           item={selectedTask.item}
           scheduledDate={selectedTask.date}
           onClose={() => setSelectedTask(null)}
-          onNavigateToTasks={() => onNavigate('Tasks')}
           initialMode="details"
         />
       )}

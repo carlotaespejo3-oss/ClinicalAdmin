@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
@@ -38,7 +38,6 @@ import CalendarTab from '../tabs/CalendarTab';
 import ForecastTab from '../tabs/ForecastTab';
 import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
-import TasksTab from '../tabs/TasksTab';
 import SettingsTab from '../tabs/SettingsTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
 import { TabType, GeneratedPlan } from '@/lib/types';
@@ -71,7 +70,6 @@ const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Emails', icon: Mail, label: 'Emails' },
   { id: 'Archive', icon: Archive, label: 'Archive' },
   { id: 'High-Risk Patients', icon: Shield, label: 'High-Risk Patients' },
-  { id: 'Tasks', icon: CheckSquare, label: 'Tasks' },
   { id: 'Backlog Recovery', icon: RefreshCcw, label: 'Backlog Recovery' },
   { id: 'Forecast', icon: BarChart2, label: 'Forecast' },
   { id: 'Templates', icon: PenTool, label: 'Templates' },
@@ -327,18 +325,6 @@ export default function ClinAdmin() {
       case 'Forecast': return <ForecastTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
       case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} onNavigate={setActiveTab} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} />;
-      case 'Tasks': return (
-        <TasksTab
-          manualTasks={manualTaskList}
-          sidebarTasks={sidebarTasks}
-          onToggleManualTask={toggleManualTask}
-          onToggleSidebarTask={toggleTask}
-          onRemoveSidebarTask={removeTask}
-          onAddSidebarTask={addSidebarTask}
-          onNavigate={setActiveTab}
-          onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }}
-        />
-      );
       case 'Settings': return <SettingsTab />;
       default: return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
     }

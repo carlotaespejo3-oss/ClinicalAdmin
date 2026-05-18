@@ -3,7 +3,6 @@ import {
   X,
   Trash2,
   Save,
-  ExternalLink,
   Phone,
   ClipboardList,
   CalendarClock,
@@ -98,7 +97,6 @@ interface Props {
   item: PlanItem;
   scheduledDate: string; // YYYY-MM-DD — the runway day this item was placed on
   onClose: () => void;
-  onNavigateToTasks: () => void;
   initialMode?: 'details' | 'edit';
 }
 
@@ -154,7 +152,6 @@ export default function CalendarTaskDetailModal({
   item,
   scheduledDate,
   onClose,
-  onNavigateToTasks,
   initialMode = 'edit',
 }: Props) {
   const userItems = useUserPlannedItems();
@@ -203,7 +200,7 @@ export default function CalendarTaskDetailModal({
       reason:
         typeof item.linkedToEmailId === 'number'
           ? 'This task came from an email — open it from the Inbox to update it.'
-          : 'This task is managed from the Tasks tab.',
+          : 'This task is managed from your Home tab and the Manual Tasks panel in the sidebar.',
     };
   }, [item, userItems, prompted, manualTasks, linkedDocTasks, scheduledDate]);
 
@@ -608,14 +605,6 @@ export default function CalendarTaskDetailModal({
                   <Info size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
                   <div className="space-y-2 min-w-0">
                     <p className="text-muted-foreground">{(source as Extract<EditableSource, { kind: 'readonly' }>).reason}</p>
-                    <button
-                      type="button"
-                      onClick={() => { onNavigateToTasks(); onClose(); }}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
-                      data-testid="calendar-task-detail-open-tasks"
-                    >
-                      Open Tasks tab <ExternalLink size={11} />
-                    </button>
                   </div>
                 </div>
               )}
@@ -632,16 +621,6 @@ export default function CalendarTaskDetailModal({
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold leading-snug">{source.title}</p>
                 <p className="text-muted-foreground">{source.reason}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNavigateToTasks();
-                    onClose();
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
-                >
-                  Open Tasks tab <ExternalLink size={11} />
-                </button>
               </div>
             </div>
           )}

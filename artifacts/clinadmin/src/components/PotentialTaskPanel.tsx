@@ -66,7 +66,6 @@ function shouldSkip(cls: AiClassification | undefined): boolean {
 interface Props {
   email: Email;
   classification: AiClassification | undefined;
-  onOpenTasksTab?: () => void;
 }
 
 interface FormDraft {
@@ -141,7 +140,7 @@ function buildPrescriptionForm(p: PrescriptionRequest, email: Email): FormDraft 
   };
 }
 
-export default function PotentialTaskPanel({ email, classification, onOpenTasksTab }: Props) {
+export default function PotentialTaskPanel({ email, classification }: Props) {
   // Subscribe to the prompted-tasks store so the panel reacts to
   // dismiss/create actions without needing local refresh logic.
   const state = usePromptedTasksState();
@@ -483,19 +482,6 @@ export default function PotentialTaskPanel({ email, classification, onOpenTasksT
                   <>
                     <span>·</span>
                     <span>Due in {t.dueDays}d</span>
-                  </>
-                )}
-                {onOpenTasksTab && (
-                  <>
-                    <span>·</span>
-                    <button
-                      type="button"
-                      onClick={onOpenTasksTab}
-                      className="font-semibold text-emerald-700 underline hover:text-emerald-900"
-                      data-testid={`potential-task-open-${t.kind}`}
-                    >
-                      Open in Tasks
-                    </button>
                   </>
                 )}
               </div>

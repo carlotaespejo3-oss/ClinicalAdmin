@@ -681,7 +681,6 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
           item={selectedTask.item}
           scheduledDate={selectedTask.date}
           onClose={() => setSelectedTask(null)}
-          onNavigateToTasks={() => onNavigate('Tasks')}
         />
       )}
 
