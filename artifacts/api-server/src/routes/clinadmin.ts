@@ -192,7 +192,13 @@ router.post("/clinadmin/weekly-plan", async (req, res) => {
   const dayUsed: Record<string, number> = Object.fromEntries(
     days.map((d) => [d, 0]),
   );
-  const deferred: string[] = [];
+  interface DeferredItem {
+    label: string;
+    dueDays: number | null;
+    estMin: number;
+    reason: string;
+  }
+  const deferred: DeferredItem[] = [];
 
   for (const e of sortedEmails) {
     const link = linkByEmailId.get(e.id);
@@ -216,11 +222,16 @@ router.post("/clinadmin/weekly-plan", async (req, res) => {
       const label = link
         ? `${e.subject} + linked ${
             link.isLinkedDoc ? "document" : "task"
-          } (~${combinedMin}min)`
-        : `${e.subject} (~${combinedMin}min)`;
-      deferred.push(
-        `${label} — moved to next week (no day has room for the full pair).`,
-      );
+          }`
+        : e.subject;
+      deferred.push({
+        label,
+        dueDays: e.deadline,
+        estMin: combinedMin,
+        reason: link
+          ? "No day has room for the email and its linked task together."
+          : "No day has room this week.",
+      });
       continue;
     }
 
@@ -269,7 +280,12 @@ router.post("/clinadmin/weekly-plan", async (req, res) => {
       }
     }
     if (!placedDay) {
-      deferred.push(`${t.title} (~${t.estMin}min) — deferred to next week.`);
+      deferred.push({
+        label: t.title,
+        dueDays: null,
+        estMin: t.estMin,
+        reason: "Standalone task — no day had a free slot of this size.",
+      });
       continue;
     }
     dayBlocks[placedDay].push({

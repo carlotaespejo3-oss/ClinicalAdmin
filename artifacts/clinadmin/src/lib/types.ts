@@ -88,7 +88,6 @@ export type TabType =
   | 'Forecast'
   | 'Templates'
   | 'Settings'
-  | 'Weekly Plan'
   | 'Calendar';
 
 // ---- AI classification (new in Step 2 of the email triage redesign) ----
@@ -178,9 +177,25 @@ export interface PlanDay {
   blocks: PlanBlock[];
 }
 
+/**
+ * One row in the "safely deferred to next week" list returned by the
+ * weekly-plan packer. Carries enough metadata for the Forecast tab to
+ * group rows by deadline rather than render a flat numbered list.
+ */
+export interface DeferredItem {
+  /** Short human-readable label, e.g. "Ritalin 54mg early script". */
+  label: string;
+  /** Days from today until the email's deadline. `null` when no deadline. */
+  dueDays: number | null;
+  /** Combined estimated minutes (email + linked task if any). */
+  estMin: number;
+  /** Why it couldn't fit this week (one short sentence). */
+  reason: string;
+}
+
 export interface GeneratedPlan {
   days: PlanDay[];
-  deferredItems: string[];
+  deferredItems: DeferredItem[];
   safetyNote: string;
   // Documents / forms to write across the week. Surfaced as a separate
   // summary line in the Weekly Plan UI: "Includes X documents or forms
