@@ -80,7 +80,6 @@ export interface WeekHistoryItem {
 
 export type TabType =
   | 'Home'
-  | 'Detailed View'
   | 'Emails'
   | 'Archive'
   | 'High-Risk Patients'

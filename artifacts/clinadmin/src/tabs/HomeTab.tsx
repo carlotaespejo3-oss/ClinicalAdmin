@@ -25,8 +25,7 @@ interface Props {
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 // Buffer minutes the planner assumes per week for unscheduled overhead
-// (interruptions, context-switching). Mirrors the constant in TodayTab so
-// the "Top up by X" recommendation matches across views.
+// (interruptions, context-switching).
 const projectedExtra = 45;
 
 function fmtMins(min: number) {
@@ -83,8 +82,8 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manualTasks, sidebarTasks, linkedDocTasks, acknowledged, archived]);
 
-  // ---- AI recommendation panel (mirrors TodayTab so the clinician can
-  // top up hours straight from Home without bouncing to Detailed View) ----
+  // ---- AI recommendation panel (lets the clinician top up hours
+  // straight from Home) ----
   const emailMins = emails.reduce((a, e) => a + e.estMin, 0);
   const taskMins = manualTasks
     .filter(t => !t.done && !isLinkedDocTask(t))
@@ -281,7 +280,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
 
       {/* Status + AI recommendation banner — left column is the at-a-glance
           status; right column lets the clinician top up hours directly so
-          the week plan readjusts without bouncing to the Detailed View. */}
+          the week plan readjusts inline. */}
       <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
           <div className="p-6 flex items-start gap-4" data-testid={`status-banner-${status}`}>

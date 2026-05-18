@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, LayoutList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, CheckSquare, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
@@ -27,7 +27,6 @@ import {
 } from '@/lib/weeklyPlanStore';
 import LinkedTaskPromptModal from '../components/LinkedTaskPromptModal';
 import HomeTab from '../tabs/HomeTab';
-import TodayTab from '../tabs/TodayTab';
 import InboxTab from '../tabs/InboxTab';
 import ArchiveTab from '../tabs/ArchiveTab';
 import HighRiskTab from '../tabs/HighRiskTab';
@@ -69,7 +68,6 @@ export interface WeekSetup {
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
   { id: 'Home', icon: Home, label: 'Home' },
-  { id: 'Detailed View', icon: LayoutList, label: 'Detailed View' },
   { id: 'Weekly Plan', icon: CalendarDays, label: 'Weekly Plan' },
   { id: 'Calendar', icon: CalendarDays, label: 'Calendar' },
   { id: 'Emails', icon: Mail, label: 'Emails' },
@@ -322,7 +320,6 @@ export default function ClinAdmin() {
   const renderTab = () => {
     switch (activeTab) {
       case 'Home': return <HomeTab sidebarTasks={sidebarTasks} onToggleSidebarTask={toggleTask} manualTasks={manualTaskList} weekSetup={weekSetup} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
-      case 'Detailed View': return <TodayTab manualTasks={manualTaskList} weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} onNavigate={setActiveTab} />;
       case 'Emails': return <InboxTab key={openEmailId ?? 'default'} initialSelectedId={openEmailId} />;
       case 'Archive': return <ArchiveTab />;
       case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
@@ -525,13 +522,6 @@ export default function ClinAdmin() {
             <span className="text-xs text-muted-foreground font-medium">CAMHS Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setActiveTab('Detailed View')}
-              className="flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-accent transition-colors"
-            >
-              <LayoutList size={15} />
-              Detailed view
-            </button>
             <ProfileMenu onOpenSettings={() => setActiveTab('Settings')} />
           </div>
         </header>
