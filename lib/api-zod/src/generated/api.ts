@@ -916,3 +916,161 @@ export const UpsertEmailEvidenceBody = zod
       ),
   })
   .describe("Upsert body for PUT \/email-evidence\/{outlookEmailId}.");
+
+/**
+ * @summary Get the draft-audit record for one email
+ */
+export const GetDraftAuditParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const GetDraftAuditResponse = zod
+  .object({
+    outlookEmailId: zod.string(),
+    aiDraftText: zod
+      .string()
+      .nullable()
+      .describe(
+        "De-identified — patient\/parent\/other names replaced with placeholders.",
+      ),
+    aiDraftHash: zod.string().nullable(),
+    sentHash: zod.string().nullable(),
+    draftEdited: zod.boolean(),
+    evidenceSnapshot: zod.array(
+      zod
+        .object({
+          sourceId: zod.number(),
+          tier: zod.number(),
+          sourceName: zod.string(),
+          title: zod.string(),
+          year: zod.number(),
+          url: zod.string(),
+          flag: zod
+            .union([
+              zod.literal("A"),
+              zod.literal("B"),
+              zod.literal("C"),
+              zod.literal("D"),
+              zod.literal("tier5"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          flagText: zod.string().nullable(),
+        })
+        .describe("Frozen copy of one citation as it was at draft time."),
+    ),
+    draftedAt: zod.coerce.date().nullable(),
+    sentAt: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "One row of draft_audit (audit-only carve-out from the three-bucket rule).",
+  );
+
+/**
+ * Server de-identifies the AI draft text (replaces patient/parent/ person names with placeholders) before any write. The original pre-scrub text is discarded after hashing. Idempotent on (clinicianId, outlookEmailId).
+ * @summary Record (or replace) the AI draft + evidence snapshot for one email
+ */
+export const RecordDraftAuditParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const RecordDraftAuditBody = zod
+  .object({
+    aiDraftText: zod
+      .string()
+      .describe(
+        "AI draft text BEFORE de-identification. Discarded server-side after scrub + hash.",
+      ),
+    aiDraftHash: zod
+      .string()
+      .describe(
+        "SHA-256 hex of the original pre-scrub draft, computed client-side.",
+      ),
+    evidenceSnapshot: zod.array(
+      zod
+        .object({
+          sourceId: zod.number(),
+          tier: zod.number(),
+          sourceName: zod.string(),
+          title: zod.string(),
+          year: zod.number(),
+          url: zod.string(),
+          flag: zod
+            .union([
+              zod.literal("A"),
+              zod.literal("B"),
+              zod.literal("C"),
+              zod.literal("D"),
+              zod.literal("tier5"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          flagText: zod.string().nullable(),
+        })
+        .describe("Frozen copy of one citation as it was at draft time."),
+    ),
+    participants: zod.array(
+      zod
+        .object({
+          name: zod.string(),
+          role: zod.enum(["patient", "parent", "other"]),
+        })
+        .describe(
+          "Name pair used by the server-side de-identifier to scrub the AI draft. Roles map onto the placeholder tokens.",
+        ),
+    ),
+    draftedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Payload for POST \/draft-audit\/{id}\/draft. The server scrubs aiDraftText against participants before storing it, and hashes the ORIGINAL pre-scrub text into ai_draft_hash.",
+  );
+
+/**
+ * The sent text itself never reaches the server. Only its SHA-256 hash is captured. Server computes draft_edited by comparing against the stored ai_draft_hash.
+ * @summary Record the hash of what the clinician sent, derive draft_edited
+ */
+export const RecordDraftAuditSentParams = zod.object({
+  outlookEmailId: zod.coerce.string(),
+});
+
+export const RecordDraftAuditSentBody = zod
+  .object({
+    sentHash: zod
+      .string()
+      .describe("SHA-256 hex of the final sent text, computed client-side."),
+    sentAt: zod.coerce.date(),
+  })
+  .describe(
+    "Hash-only sent-record. The full sent text never leaves the clinician's browser.",
+  );
+
+/**
+ * The url MUST exact-match evidence_sources.url for the given sourceId. Sources marked publicly_accessible=false are never fetched. Redirects outside the registered host are blocked. 8s timeout. Successful fetches bump last_verified_url.
+ * @summary Fetch live content for a registered evidence-source URL (server-side, allow-listed)
+ */
+export const FetchEvidenceBody = zod.object({
+  sourceId: zod.number(),
+  url: zod.string(),
+});
+
+export const FetchEvidenceResponse = zod.object({
+  fetched: zod.boolean(),
+  reason: zod
+    .union([
+      zod.literal("not_public"),
+      zod.literal("fetch_failed"),
+      zod.literal("url_mismatch"),
+      zod.literal("redirect_blocked"),
+      zod.literal("unknown_source"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  content: zod
+    .string()
+    .nullish()
+    .describe(
+      "Extracted plain-text content, capped at ~30k chars. Null when fetched=false.",
+    ),
+});

@@ -525,3 +525,128 @@ export interface EmailEvidenceInput {
   /** Set to true to record that the AI matcher ran and found no relevant source. Required when citations is empty. */
   aiCheckedNoMatch: boolean;
 }
+
+/**
+ * @nullable
+ */
+export type EvidenceSnapshotEntryFlag =
+  | (typeof EvidenceSnapshotEntryFlag)[keyof typeof EvidenceSnapshotEntryFlag]
+  | null;
+
+export const EvidenceSnapshotEntryFlag = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  tier5: "tier5",
+} as const;
+
+/**
+ * Frozen copy of one citation as it was at draft time.
+ */
+export interface EvidenceSnapshotEntry {
+  sourceId: number;
+  tier: number;
+  sourceName: string;
+  title: string;
+  year: number;
+  url: string;
+  /** @nullable */
+  flag: EvidenceSnapshotEntryFlag;
+  /** @nullable */
+  flagText: string | null;
+}
+
+export type EmailParticipantRole =
+  (typeof EmailParticipantRole)[keyof typeof EmailParticipantRole];
+
+export const EmailParticipantRole = {
+  patient: "patient",
+  parent: "parent",
+  other: "other",
+} as const;
+
+/**
+ * Name pair used by the server-side de-identifier to scrub the AI draft. Roles map onto the placeholder tokens.
+ */
+export interface EmailParticipant {
+  name: string;
+  role: EmailParticipantRole;
+}
+
+/**
+ * Payload for POST /draft-audit/{id}/draft. The server scrubs aiDraftText against participants before storing it, and hashes the ORIGINAL pre-scrub text into ai_draft_hash.
+ */
+export interface DraftAuditInput {
+  /** AI draft text BEFORE de-identification. Discarded server-side after scrub + hash. */
+  aiDraftText: string;
+  /** SHA-256 hex of the original pre-scrub draft, computed client-side. */
+  aiDraftHash: string;
+  evidenceSnapshot: EvidenceSnapshotEntry[];
+  participants: EmailParticipant[];
+  draftedAt: string;
+}
+
+/**
+ * Hash-only sent-record. The full sent text never leaves the clinician's browser.
+ */
+export interface DraftAuditSentInput {
+  /** SHA-256 hex of the final sent text, computed client-side. */
+  sentHash: string;
+  sentAt: string;
+}
+
+/**
+ * One row of draft_audit (audit-only carve-out from the three-bucket rule).
+ */
+export interface DraftAuditRecord {
+  outlookEmailId: string;
+  /**
+   * De-identified — patient/parent/other names replaced with placeholders.
+   * @nullable
+   */
+  aiDraftText: string | null;
+  /** @nullable */
+  aiDraftHash: string | null;
+  /** @nullable */
+  sentHash: string | null;
+  draftEdited: boolean;
+  evidenceSnapshot: EvidenceSnapshotEntry[];
+  /** @nullable */
+  draftedAt: string | null;
+  /** @nullable */
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EvidenceFetchInput {
+  sourceId: number;
+  url: string;
+}
+
+/**
+ * @nullable
+ */
+export type EvidenceFetchResultReason =
+  | (typeof EvidenceFetchResultReason)[keyof typeof EvidenceFetchResultReason]
+  | null;
+
+export const EvidenceFetchResultReason = {
+  not_public: "not_public",
+  fetch_failed: "fetch_failed",
+  url_mismatch: "url_mismatch",
+  redirect_blocked: "redirect_blocked",
+  unknown_source: "unknown_source",
+} as const;
+
+export interface EvidenceFetchResult {
+  fetched: boolean;
+  /** @nullable */
+  reason?: EvidenceFetchResultReason;
+  /**
+   * Extracted plain-text content, capped at ~30k chars. Null when fetched=false.
+   * @nullable
+   */
+  content?: string | null;
+}

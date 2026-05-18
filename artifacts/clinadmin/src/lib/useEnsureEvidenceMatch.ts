@@ -75,7 +75,7 @@ export function useEnsureEvidenceMatch(emailId: number | null): void {
           return;
         }
         clearPending(emailId);
-        setEvidence(emailId, result);
+        setEvidence(emailId, result.citations, result.prescribingWarning);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('[ensureMatched] match failed', emailId, err);

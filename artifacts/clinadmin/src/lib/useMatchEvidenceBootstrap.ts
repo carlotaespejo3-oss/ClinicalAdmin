@@ -84,9 +84,9 @@ export function useMatchEvidenceBootstrap(): void {
       classifications,
       registry,
       runPrompt,
-      (emailId, citations) => {
+      (emailId, result) => {
         clearPending(emailId);
-        setEvidence(emailId, citations);
+        setEvidence(emailId, result.citations, result.prescribingWarning);
       },
       {
         concurrency: 3,

@@ -33,8 +33,13 @@ import type {
   ClinicianSettings,
   DeferralRecord,
   DismissPromptedTaskInput,
+  DraftAuditInput,
+  DraftAuditRecord,
+  DraftAuditSentInput,
   EmailEvidence,
   EmailEvidenceInput,
+  EvidenceFetchInput,
+  EvidenceFetchResult,
   EvidenceSource,
   HealthStatus,
   LinkedDocTaskRecord,
@@ -3896,4 +3901,355 @@ export const useUpsertEmailEvidence = <
   TContext
 > => {
   return useMutation(getUpsertEmailEvidenceMutationOptions(options));
+};
+
+/**
+ * @summary Get the draft-audit record for one email
+ */
+export const getGetDraftAuditUrl = (outlookEmailId: string) => {
+  return `/api/draft-audit/${outlookEmailId}`;
+};
+
+export const getDraftAudit = async (
+  outlookEmailId: string,
+  options?: RequestInit,
+): Promise<DraftAuditRecord> => {
+  return customFetch<DraftAuditRecord>(getGetDraftAuditUrl(outlookEmailId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDraftAuditQueryKey = (outlookEmailId: string) => {
+  return [`/api/draft-audit/${outlookEmailId}`] as const;
+};
+
+export const getGetDraftAuditQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDraftAudit>>,
+  TError = ErrorType<void>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDraftAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDraftAuditQueryKey(outlookEmailId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDraftAudit>>> = ({
+    signal,
+  }) => getDraftAudit(outlookEmailId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!outlookEmailId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDraftAudit>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDraftAuditQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDraftAudit>>
+>;
+export type GetDraftAuditQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the draft-audit record for one email
+ */
+
+export function useGetDraftAudit<
+  TData = Awaited<ReturnType<typeof getDraftAudit>>,
+  TError = ErrorType<void>,
+>(
+  outlookEmailId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDraftAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDraftAuditQueryOptions(outlookEmailId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Server de-identifies the AI draft text (replaces patient/parent/ person names with placeholders) before any write. The original pre-scrub text is discarded after hashing. Idempotent on (clinicianId, outlookEmailId).
+ * @summary Record (or replace) the AI draft + evidence snapshot for one email
+ */
+export const getRecordDraftAuditUrl = (outlookEmailId: string) => {
+  return `/api/draft-audit/${outlookEmailId}/draft`;
+};
+
+export const recordDraftAudit = async (
+  outlookEmailId: string,
+  draftAuditInput: DraftAuditInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRecordDraftAuditUrl(outlookEmailId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(draftAuditInput),
+  });
+};
+
+export const getRecordDraftAuditMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDraftAudit>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<DraftAuditInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordDraftAudit>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<DraftAuditInput> },
+  TContext
+> => {
+  const mutationKey = ["recordDraftAudit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordDraftAudit>>,
+    { outlookEmailId: string; data: BodyType<DraftAuditInput> }
+  > = (props) => {
+    const { outlookEmailId, data } = props ?? {};
+
+    return recordDraftAudit(outlookEmailId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordDraftAuditMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordDraftAudit>>
+>;
+export type RecordDraftAuditMutationBody = BodyType<DraftAuditInput>;
+export type RecordDraftAuditMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record (or replace) the AI draft + evidence snapshot for one email
+ */
+export const useRecordDraftAudit = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDraftAudit>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<DraftAuditInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordDraftAudit>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<DraftAuditInput> },
+  TContext
+> => {
+  return useMutation(getRecordDraftAuditMutationOptions(options));
+};
+
+/**
+ * The sent text itself never reaches the server. Only its SHA-256 hash is captured. Server computes draft_edited by comparing against the stored ai_draft_hash.
+ * @summary Record the hash of what the clinician sent, derive draft_edited
+ */
+export const getRecordDraftAuditSentUrl = (outlookEmailId: string) => {
+  return `/api/draft-audit/${outlookEmailId}/sent`;
+};
+
+export const recordDraftAuditSent = async (
+  outlookEmailId: string,
+  draftAuditSentInput: DraftAuditSentInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRecordDraftAuditSentUrl(outlookEmailId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(draftAuditSentInput),
+  });
+};
+
+export const getRecordDraftAuditSentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDraftAuditSent>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<DraftAuditSentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordDraftAuditSent>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<DraftAuditSentInput> },
+  TContext
+> => {
+  const mutationKey = ["recordDraftAuditSent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordDraftAuditSent>>,
+    { outlookEmailId: string; data: BodyType<DraftAuditSentInput> }
+  > = (props) => {
+    const { outlookEmailId, data } = props ?? {};
+
+    return recordDraftAuditSent(outlookEmailId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecordDraftAuditSentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recordDraftAuditSent>>
+>;
+export type RecordDraftAuditSentMutationBody = BodyType<DraftAuditSentInput>;
+export type RecordDraftAuditSentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record the hash of what the clinician sent, derive draft_edited
+ */
+export const useRecordDraftAuditSent = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recordDraftAuditSent>>,
+    TError,
+    { outlookEmailId: string; data: BodyType<DraftAuditSentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recordDraftAuditSent>>,
+  TError,
+  { outlookEmailId: string; data: BodyType<DraftAuditSentInput> },
+  TContext
+> => {
+  return useMutation(getRecordDraftAuditSentMutationOptions(options));
+};
+
+/**
+ * The url MUST exact-match evidence_sources.url for the given sourceId. Sources marked publicly_accessible=false are never fetched. Redirects outside the registered host are blocked. 8s timeout. Successful fetches bump last_verified_url.
+ * @summary Fetch live content for a registered evidence-source URL (server-side, allow-listed)
+ */
+export const getFetchEvidenceUrl = () => {
+  return `/api/evidence-fetch`;
+};
+
+export const fetchEvidence = async (
+  evidenceFetchInput: EvidenceFetchInput,
+  options?: RequestInit,
+): Promise<EvidenceFetchResult> => {
+  return customFetch<EvidenceFetchResult>(getFetchEvidenceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(evidenceFetchInput),
+  });
+};
+
+export const getFetchEvidenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchEvidence>>,
+    TError,
+    { data: BodyType<EvidenceFetchInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof fetchEvidence>>,
+  TError,
+  { data: BodyType<EvidenceFetchInput> },
+  TContext
+> => {
+  const mutationKey = ["fetchEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof fetchEvidence>>,
+    { data: BodyType<EvidenceFetchInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return fetchEvidence(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FetchEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof fetchEvidence>>
+>;
+export type FetchEvidenceMutationBody = BodyType<EvidenceFetchInput>;
+export type FetchEvidenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Fetch live content for a registered evidence-source URL (server-side, allow-listed)
+ */
+export const useFetchEvidence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchEvidence>>,
+    TError,
+    { data: BodyType<EvidenceFetchInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof fetchEvidence>>,
+  TError,
+  { data: BodyType<EvidenceFetchInput> },
+  TContext
+> => {
+  return useMutation(getFetchEvidenceMutationOptions(options));
 };

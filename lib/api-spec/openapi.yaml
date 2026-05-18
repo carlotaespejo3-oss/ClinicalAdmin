@@ -42,6 +42,10 @@ tags:
     description: Registry of clinical guideline pointers (metadata only; AI fetches live at query time)
   - name: emailEvidence
     description: Per-email evidence citations — references into the source registry, never guideline content
+  - name: draftAudit
+    description: Medico-legal audit trail of AI drafts (de-identified) + evidence snapshot + sent-text hashes. Audit-only carve-out from the three-bucket rule.
+  - name: evidenceFetch
+    description: Server-side live fetch of registered guideline URLs with allow-list + timeouts (no cross-domain redirects).
 paths:
   /healthz:
     get:
@@ -875,6 +879,98 @@ paths:
       responses:
         "204":
           description: Saved
+  /draft-audit/{outlookEmailId}:
+    get:
+      operationId: getDraftAudit
+      tags: [draftAudit]
+      summary: Get the draft-audit record for one email
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Draft-audit record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DraftAuditRecord"
+        "404":
+          description: No audit row for this email yet
+  /draft-audit/{outlookEmailId}/draft:
+    post:
+      operationId: recordDraftAudit
+      tags: [draftAudit]
+      summary: Record (or replace) the AI draft + evidence snapshot for one email
+      description: >-
+        Server de-identifies the AI draft text (replaces patient/parent/
+        person names with placeholders) before any write. The original
+        pre-scrub text is discarded after hashing. Idempotent on
+        (clinicianId, outlookEmailId).
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DraftAuditInput"
+      responses:
+        "204":
+          description: Recorded
+  /draft-audit/{outlookEmailId}/sent:
+    post:
+      operationId: recordDraftAuditSent
+      tags: [draftAudit]
+      summary: Record the hash of what the clinician sent, derive draft_edited
+      description: >-
+        The sent text itself never reaches the server. Only its SHA-256
+        hash is captured. Server computes draft_edited by comparing
+        against the stored ai_draft_hash.
+      parameters:
+        - name: outlookEmailId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DraftAuditSentInput"
+      responses:
+        "204":
+          description: Recorded
+  /evidence-fetch:
+    post:
+      operationId: fetchEvidence
+      tags: [evidenceFetch]
+      summary: Fetch live content for a registered evidence-source URL (server-side, allow-listed)
+      description: >-
+        The url MUST exact-match evidence_sources.url for the given
+        sourceId. Sources marked publicly_accessible=false are never
+        fetched. Redirects outside the registered host are blocked. 8s
+        timeout. Successful fetches bump last_verified_url.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvidenceFetchInput"
+      responses:
+        "200":
+          description: Fetch outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceFetchResult"
 components:
   schemas:
     HealthStatus:
@@ -1642,3 +1738,160 @@ components:
         - prescribingWarning
         - citations
         - aiCheckedNoMatch
+    EvidenceSnapshotEntry:
+      type: object
+      description: Frozen copy of one citation as it was at draft time.
+      properties:
+        sourceId:
+          type: integer
+        tier:
+          type: integer
+        sourceName:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+        url:
+          type: string
+        flag:
+          type: ["string", "null"]
+          enum: [A, B, C, D, tier5, null]
+        flagText:
+          type: ["string", "null"]
+      required:
+        - sourceId
+        - tier
+        - sourceName
+        - title
+        - year
+        - url
+        - flag
+        - flagText
+    EmailParticipant:
+      type: object
+      description: >-
+        Name pair used by the server-side de-identifier to scrub the AI
+        draft. Roles map onto the placeholder tokens.
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [patient, parent, other]
+      required:
+        - name
+        - role
+    DraftAuditInput:
+      type: object
+      description: >-
+        Payload for POST /draft-audit/{id}/draft. The server scrubs
+        aiDraftText against participants before storing it, and hashes
+        the ORIGINAL pre-scrub text into ai_draft_hash.
+      properties:
+        aiDraftText:
+          type: string
+          description: AI draft text BEFORE de-identification. Discarded server-side after scrub + hash.
+        aiDraftHash:
+          type: string
+          description: SHA-256 hex of the original pre-scrub draft, computed client-side.
+        evidenceSnapshot:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSnapshotEntry"
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailParticipant"
+        draftedAt:
+          type: string
+          format: date-time
+      required:
+        - aiDraftText
+        - aiDraftHash
+        - evidenceSnapshot
+        - participants
+        - draftedAt
+      additionalProperties: false
+    DraftAuditSentInput:
+      type: object
+      description: >-
+        Hash-only sent-record. The full sent text never leaves the
+        clinician's browser.
+      properties:
+        sentHash:
+          type: string
+          description: SHA-256 hex of the final sent text, computed client-side.
+        sentAt:
+          type: string
+          format: date-time
+      required:
+        - sentHash
+        - sentAt
+      additionalProperties: false
+    DraftAuditRecord:
+      type: object
+      description: One row of draft_audit (audit-only carve-out from the three-bucket rule).
+      properties:
+        outlookEmailId:
+          type: string
+        aiDraftText:
+          type: ["string", "null"]
+          description: De-identified — patient/parent/other names replaced with placeholders.
+        aiDraftHash:
+          type: ["string", "null"]
+        sentHash:
+          type: ["string", "null"]
+        draftEdited:
+          type: boolean
+        evidenceSnapshot:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSnapshotEntry"
+        draftedAt:
+          type: ["string", "null"]
+          format: date-time
+        sentAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - outlookEmailId
+        - aiDraftText
+        - aiDraftHash
+        - sentHash
+        - draftEdited
+        - evidenceSnapshot
+        - draftedAt
+        - sentAt
+        - createdAt
+        - updatedAt
+    EvidenceFetchInput:
+      type: object
+      properties:
+        sourceId:
+          type: integer
+        url:
+          type: string
+      required:
+        - sourceId
+        - url
+      additionalProperties: false
+    EvidenceFetchResult:
+      type: object
+      properties:
+        fetched:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+          enum: [not_public, fetch_failed, url_mismatch, redirect_blocked, unknown_source, null]
+        content:
+          type: ["string", "null"]
+          description: Extracted plain-text content, capped at ~30k chars. Null when fetched=false.
+      required:
+        - fetched

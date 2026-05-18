@@ -16,6 +16,8 @@ import manualTaskOverridesRouter from "./manualTaskOverrides";
 import sidebarTasksRouter from "./sidebarTasks";
 import evidenceSourcesRouter from "./evidenceSources";
 import emailEvidenceRouter from "./emailEvidence";
+import draftAuditRouter from "./draftAudit";
+import evidenceFetchRouter from "./evidenceFetch";
 
 const router: IRouter = Router();
 
@@ -36,5 +38,7 @@ router.use(manualTaskOverridesRouter);
 router.use(sidebarTasksRouter);
 router.use(evidenceSourcesRouter);
 router.use(emailEvidenceRouter);
+router.use(draftAuditRouter);
+router.use(evidenceFetchRouter);
 
 export default router;

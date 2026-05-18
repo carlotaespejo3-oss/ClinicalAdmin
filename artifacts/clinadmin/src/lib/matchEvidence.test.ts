@@ -5,7 +5,8 @@ import {
   parseMatchResponse,
   matchQueue,
 } from './matchEvidence';
-import type { RegistryItem, ServerCitation } from './evidenceStore';
+import type { RegistryItem } from './evidenceStore';
+import type { MatchResult } from './matchEvidence';
 import type { Email, AiClassification } from './types';
 
 const REGISTRY: RegistryItem[] = [
@@ -99,10 +100,11 @@ describe('parseMatchResponse', () => {
       '{"citations":[{"sourceId":101,"flag":"A"},{"sourceId":102,"flag":"C"}]}',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [
+    assert.deepEqual(res?.citations, [
       { sourceId: 101, flag: 'A', flagText: null },
       { sourceId: 102, flag: 'C', flagText: null },
     ]);
+    assert.equal(res?.prescribingWarning, null);
   });
 
   it('drops orphan source IDs not in the registry', () => {
@@ -110,7 +112,7 @@ describe('parseMatchResponse', () => {
       '{"citations":[{"sourceId":101,"flag":"A"},{"sourceId":999,"flag":"A"}]}',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 101, flag: 'A', flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 101, flag: 'A', flagText: null }]);
   });
 
   it('coerces an invalid flag to null', () => {
@@ -118,7 +120,7 @@ describe('parseMatchResponse', () => {
       '{"citations":[{"sourceId":101,"flag":"Z"}]}',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 101, flag: null, flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 101, flag: null, flagText: null }]);
   });
 
   it('forces flagText to null even when the AI sends a string', () => {
@@ -126,7 +128,7 @@ describe('parseMatchResponse', () => {
       '{"citations":[{"sourceId":101,"flag":"A","flagText":"some AI rationale"}]}',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 101, flag: 'A', flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 101, flag: 'A', flagText: null }]);
   });
 
   it('strips markdown code fences', () => {
@@ -134,12 +136,13 @@ describe('parseMatchResponse', () => {
       '```json\n{"citations":[{"sourceId":102,"flag":null}]}\n```',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 102, flag: null, flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 102, flag: null, flagText: null }]);
   });
 
   it('returns an empty array when the AI honestly finds no match', () => {
     const res = parseMatchResponse('{"citations":[]}', REGISTRY_IDS);
-    assert.deepEqual(res, []);
+    assert.deepEqual(res?.citations, []);
+    assert.equal(res?.prescribingWarning, null);
   });
 
   it('returns null on malformed JSON', () => {
@@ -162,7 +165,7 @@ describe('parseMatchResponse', () => {
       '{"citations":[{"sourceId":101,"flag":"A"},{"sourceId":101,"flag":"D"}]}',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 101, flag: 'A', flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 101, flag: 'A', flagText: null }]);
   });
 
   it('extracts JSON from preamble + braces fallback', () => {
@@ -170,7 +173,43 @@ describe('parseMatchResponse', () => {
       'Here is my answer: {"citations":[{"sourceId":101,"flag":null}]} thanks',
       REGISTRY_IDS,
     );
-    assert.deepEqual(res, [{ sourceId: 101, flag: null, flagText: null }]);
+    assert.deepEqual(res?.citations, [{ sourceId: 101, flag: null, flagText: null }]);
+  });
+
+  it('captures a prescribing warning when the AI returns one', () => {
+    const res = parseMatchResponse(
+      '{"citations":[{"sourceId":101,"flag":"A"}],"prescribingWarning":"Methylphenidate dose change — verify against eTG Paediatrics and AMH before responding."}',
+      REGISTRY_IDS,
+    );
+    assert.equal(
+      res?.prescribingWarning,
+      'Methylphenidate dose change — verify against eTG Paediatrics and AMH before responding.',
+    );
+  });
+
+  it('treats a non-string prescribingWarning as null', () => {
+    const res = parseMatchResponse(
+      '{"citations":[{"sourceId":101,"flag":"A"}],"prescribingWarning":{"oops":1}}',
+      REGISTRY_IDS,
+    );
+    assert.equal(res?.prescribingWarning, null);
+  });
+
+  it('truncates an overlong prescribingWarning to 200 chars', () => {
+    const long = 'x'.repeat(500);
+    const res = parseMatchResponse(
+      `{"citations":[],"prescribingWarning":"${long}"}`,
+      REGISTRY_IDS,
+    );
+    assert.equal(res?.prescribingWarning?.length, 200);
+  });
+
+  it('treats an empty/whitespace prescribingWarning as null', () => {
+    const res = parseMatchResponse(
+      '{"citations":[],"prescribingWarning":"   "}',
+      REGISTRY_IDS,
+    );
+    assert.equal(res?.prescribingWarning, null);
   });
 });
 
@@ -194,19 +233,19 @@ describe('matchQueue', () => {
     };
     // Tag e2 so the test runPrompt can tell them apart.
     (e2 as { body: string }).body = 'email-6-marker';
-    const results: Array<[number, ServerCitation[]]> = [];
+    const results: Array<[number, MatchResult]> = [];
     await matchQueue(
       [e1, e2],
       classifications,
       REGISTRY,
       runPrompt,
-      (id, citations) => results.push([id, citations]),
+      (id, result) => results.push([id, result]),
       { concurrency: 2 },
     );
     results.sort((a, b) => a[0] - b[0]);
     assert.deepEqual(results, [
-      [5, [{ sourceId: 101, flag: 'A', flagText: null }]],
-      [6, []],
+      [5, { citations: [{ sourceId: 101, flag: 'A', flagText: null }], prescribingWarning: null }],
+      [6, { citations: [], prescribingWarning: null }],
     ]);
   });
 

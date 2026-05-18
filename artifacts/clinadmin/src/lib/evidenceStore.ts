@@ -51,7 +51,7 @@ export interface RegistryItem {
   specialty: string | null;
 }
 
-interface SourceRecord {
+export interface SourceRecord {
   id: number;
   tier: number;
   sourceName: string;
@@ -281,6 +281,7 @@ export function markNoMatchForSession(emailId: number): void {
 export function setEvidence(
   emailId: number,
   serverCitations: ServerCitation[],
+  prescribingWarning: string | null = null,
 ): void {
   pendingSet.delete(emailId);
   if (serverCitations.length === 0) {
@@ -288,7 +289,7 @@ export function setEvidence(
     emailEvidence.delete(emailId);
     emit();
     upsertEmailEvidence(String(emailId), {
-      prescribingWarning: null,
+      prescribingWarning,
       citations: [],
       aiCheckedNoMatch: true,
     }).catch((err: unknown) => {
@@ -316,7 +317,7 @@ export function setEvidence(
     emailEvidence.delete(emailId);
     emit();
     upsertEmailEvidence(String(emailId), {
-      prescribingWarning: null,
+      prescribingWarning,
       citations: [],
       aiCheckedNoMatch: true,
     }).catch((err: unknown) => {
@@ -326,10 +327,13 @@ export function setEvidence(
     return;
   }
   noMatchSet.delete(emailId);
-  emailEvidence.set(emailId, { citations: resolved });
+  emailEvidence.set(emailId, {
+    citations: resolved,
+    prescribingWarning: prescribingWarning ?? undefined,
+  });
   emit();
   upsertEmailEvidence(String(emailId), {
-    prescribingWarning: null,
+    prescribingWarning,
     citations: wireCitations,
     aiCheckedNoMatch: false,
   }).catch((err: unknown) => {

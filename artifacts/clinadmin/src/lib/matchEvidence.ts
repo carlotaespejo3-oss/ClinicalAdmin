@@ -25,14 +25,18 @@ export type RunPrompt = (prompt: string) => Promise<string>;
 
 const VALID_FLAGS = new Set(['A', 'B', 'C', 'D']);
 
-const SYSTEM = `You are an evidence-base lookup assistant for an Australian / NHS CAMHS consultant. You will be given ONE clinical email and a registry of clinical guideline sources the clinician has pre-vetted. Your job is to select ONLY sources from that registry that are directly relevant to the clinical question in the email.
+const SYSTEM = `You are an evidence-base lookup assistant for an Australian / NHS CAMHS consultant. You will be given ONE clinical email and a registry of clinical guideline sources the clinician has pre-vetted. Your job is to select ONLY sources from that registry that are directly relevant to the clinical question in the email, AND surface a per-email prescribing warning when the email mentions a specific drug or dose.
 
 ABSOLUTE RULES:
 - NEVER invent a source. Use ONLY the integer "id" values shown in the registry.
 - NEVER cite a source that is not in the registry.
-- If NO source in the registry is directly relevant, return {"citations": []}. An honest "no match" is always preferable to a weak or tangential citation.
+- If NO source in the registry is directly relevant, return {"citations": [], "prescribingWarning": null}. An honest "no match" is always preferable to a weak or tangential citation.
 - Return JSON only — no preamble, no markdown fences, no commentary.
-- Use UK English in any free text.`;
+- Use UK English in any free text.
+
+PRESCRIBING WARNING:
+- If the email mentions a specific drug or dose (e.g. methylphenidate 36 mg, sertraline, dexamfetamine), return a SINGLE plain sentence of UK English (≤200 chars) naming the drug and pointing the clinician at the Australian therapeutic resources to verify (eTG / AMH). Do not invent doses. Do not give a recommendation. Example: "Methylphenidate dose change — verify against eTG Paediatrics and AMH before responding."
+- Otherwise return null.`;
 
 export function buildMatchPrompt(
   email: Email,
@@ -66,9 +70,9 @@ Subject: ${email.subject}
 ${email.body}
 
 OUTPUT JSON SHAPE (exact keys, no extras):
-{"citations": [{"sourceId": <integer from registry>, "flag": "A"|"B"|"C"|"D"|null}]}
+{"citations": [{"sourceId": <integer from registry>, "flag": "A"|"B"|"C"|"D"|null}], "prescribingWarning": "<sentence>"|null}
 
-If no registry source is directly relevant, return: {"citations": []}`;
+If no registry source is directly relevant, return: {"citations": [], "prescribingWarning": null}`;
 }
 
 function tryParseJson(text: string): Record<string, unknown> | null {
@@ -100,15 +104,34 @@ function tryParseJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+// Per-email matcher verdict. `prescribingWarning` is a short UK-English
+// sentence the AI surfaces when the email mentions a specific drug or
+// dose; null otherwise. Stored in `email_evidence.prescribing_warning`
+// alongside the citation list (Stage 4 T006 — no schema change).
+export interface MatchResult {
+  citations: ServerCitation[];
+  prescribingWarning: string | null;
+}
+
+const MAX_WARNING_CHARS = 200;
+
+function parsePrescribingWarning(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_WARNING_CHARS) return trimmed.slice(0, MAX_WARNING_CHARS);
+  return trimmed;
+}
+
 // Strict, defensive parse. Returns:
-//   - ServerCitation[] (possibly empty) on a valid response.
+//   - MatchResult (possibly empty citations / null warning) on a valid response.
 //   - null on malformed JSON or a missing/non-array citations field.
-// An empty array is treated as a legitimate "no match"; null is
+// An empty citations array is a legitimate "no match"; null is
 // treated as an error by the queue's onError path.
 export function parseMatchResponse(
   text: string,
   registryIds: Set<number>,
-): ServerCitation[] | null {
+): MatchResult | null {
   const obj = tryParseJson(text);
   if (!obj) return null;
   const raw = obj['citations'];
@@ -138,7 +161,10 @@ export function parseMatchResponse(
     seen.add(c.sourceId);
     deduped.push(c);
   }
-  return deduped;
+  return {
+    citations: deduped,
+    prescribingWarning: parsePrescribingWarning(obj['prescribingWarning']),
+  };
 }
 
 export async function matchEmailEvidence(
@@ -146,7 +172,7 @@ export async function matchEmailEvidence(
   classification: AiClassification | undefined,
   registry: RegistryItem[],
   runPrompt: RunPrompt,
-): Promise<ServerCitation[] | null> {
+): Promise<MatchResult | null> {
   const text = await runPrompt(buildMatchPrompt(email, classification, registry));
   const ids = new Set(registry.map((r) => r.id));
   return parseMatchResponse(text, ids);
@@ -162,7 +188,7 @@ export async function matchQueue(
   classifications: Map<number, AiClassification>,
   registry: RegistryItem[],
   runPrompt: RunPrompt,
-  onResult: (emailId: number, citations: ServerCitation[]) => void,
+  onResult: (emailId: number, result: MatchResult) => void,
   opts: {
     concurrency?: number;
     signal?: AbortSignal;

@@ -29,7 +29,11 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
-import { useEmailEvidenceMap, useEvidencePending } from '@/lib/evidenceStore';
+import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources } from '@/lib/evidenceStore';
+import { buildEvidenceSnapshot, fetchEvidenceForGrounding, buildGroundingBlock } from '@/lib/evidenceGrounding';
+import { recordDraft, recordSent as recordAuditSent } from '@/lib/draftAuditStore';
+import { extractParticipants } from '@/lib/draftParticipants';
+import type { EvidenceSnapshotEntry, EmailParticipant } from '@workspace/api-zod';
 import { useEnsureEvidenceMatch } from '@/lib/useEnsureEvidenceMatch';
 import { EvidenceBlockView, NoEvidenceRefusal } from '@/components/EvidenceBlockView';
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
@@ -135,6 +139,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const classifications = useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
   const evidenceMap = useEmailEvidenceMap();
+  const evidenceSources = useEvidenceSources();
   const evidencePending = useEvidencePending();
   // Stage 3: on-demand AI source-matcher for CLINICAL emails. Fires
   // at most once per email per session; URGENT_CLINICAL +
@@ -328,7 +333,24 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // overwrite a fresh URGENT_CLINICAL draft after a re-classification.
   const draftTokenRef = useRef<Map<string, number>>(new Map());
 
-  const runDraft = async (email: Email, slot: DraftSlot, prompt: string) => {
+  // Tracks which (emailId, slot) pairs have a server-side draft_audit
+  // row written for them in this session. handleSend uses this to
+  // decide whether to fire the sent-hash POST — we never record a
+  // sent hash for a draft we didn't first record at draft time
+  // (would orphan the row's audit metadata).
+  const auditedSlotsRef = useRef<Set<string>>(new Set());
+
+  interface AuditContext {
+    snapshot: EvidenceSnapshotEntry[];
+    participants: EmailParticipant[];
+  }
+
+  const runDraft = async (
+    email: Email,
+    slot: DraftSlot,
+    prompt: string,
+    audit?: AuditContext,
+  ) => {
     const tokKey = `${email.id}:${slot}`;
     const myToken = (draftTokenRef.current.get(tokKey) ?? 0) + 1;
     draftTokenRef.current.set(tokKey, myToken);
@@ -338,6 +360,20 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       const res = await aiComplete.mutateAsync({ data: { prompt } });
       if (draftTokenRef.current.get(tokKey) !== myToken) return; // stale
       setAiDrafts(prev => ({ ...prev, [email.id]: { ...prev[email.id], [slot]: res.text } }));
+      // Audit-trail carve-out: only record drafts that came with
+      // evidence context (i.e. CLINICAL single-slot path). Fire-and-
+      // forget — the draft is already in the panel and the audit row
+      // is medico-legal documentation, not a safety gate. The server
+      // de-identifies the text before it lands in the DB.
+      if (audit) {
+        auditedSlotsRef.current.add(tokKey);
+        void recordDraft({
+          outlookEmailId: String(email.id),
+          aiDraftText: res.text,
+          evidenceSnapshot: audit.snapshot,
+          participants: audit.participants,
+        });
+      }
     } catch {
       if (draftTokenRef.current.get(tokKey) !== myToken) return; // stale
       setSlotError(email.id, slot, true);
@@ -365,6 +401,44 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // so tabs other than the inbox (e.g. High-Risk) get a populated classification
   // store on first open instead of an empty one.
 
+  // Stage 4 evidence-grounding: for the CLINICAL single-slot path,
+  // build the snapshot, fetch live content for each cited source
+  // (AU first, international fallback), and append a grounding block
+  // to the prompt. Other categories (SAFEGUARDING / URGENT_CLINICAL
+  // family + admin, PROFESSIONAL, ADMIN, NONE/CPD ack) don't cite
+  // guideline content, so they skip both the fetch and the audit row.
+  // The fetch is best-effort — failure proceeds on metadata only.
+  const fireDraft = async (email: Email, slot: DraftSlot, cls: AiClassification) => {
+    const prompt = promptFor(email, slot, cls);
+    if (!prompt) return;
+    const isEvidenceBacked =
+      slot === 'single' && cls.category === 'CLINICAL';
+    if (!isEvidenceBacked) {
+      void runDraft(email, slot, prompt);
+      return;
+    }
+    const ev = evidenceMap.get(email.id);
+    if (!ev || ev.citations.length === 0) {
+      // promptFor already gates on this — defensive double-check so a
+      // future change to promptFor can't sneak through an audit row
+      // with an empty snapshot.
+      void runDraft(email, slot, prompt);
+      return;
+    }
+    const snapshot = buildEvidenceSnapshot(ev, evidenceSources);
+    const participants = extractParticipants(email, cls);
+    let groundedPrompt = prompt;
+    try {
+      const outcomes = await fetchEvidenceForGrounding(snapshot, evidenceSources);
+      const groundingBlock = buildGroundingBlock(snapshot, outcomes);
+      if (groundingBlock) groundedPrompt = `${prompt}\n\n${groundingBlock}`;
+    } catch (err) {
+      // Fetch pipeline failed wholesale — proceed on metadata only.
+      console.warn('[InboxTab] evidence grounding failed', err);
+    }
+    void runDraft(email, slot, groundedPrompt, { snapshot, participants });
+  };
+
   // Auto-draft based on the AI category, as soon as the classification lands
   // for the currently-selected email:
   //   - 'dual' (SAFEGUARDING / URGENT_CLINICAL) → fire family + admin
@@ -378,12 +452,15 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     if (!cls) return; // wait for classification
     const mode = draftModeFor(cls.category);
     const fire = (slot: DraftSlot) => {
-      const prompt = promptFor(selectedEmail, slot, cls);
-      if (!prompt) return;
       const key = `${selectedEmail.id}:${slot}:${cls.category}`;
       if (autoDraftedRef.current.has(key)) return;
+      // Pre-check that there's actually a prompt to send before we
+      // commit the auto-fire guard — fireDraft will silently no-op
+      // if promptFor returns null, but consuming the guard either
+      // way would block a later legitimate re-trigger.
+      if (!promptFor(selectedEmail, slot, cls)) return;
       autoDraftedRef.current.add(key);
-      void runDraft(selectedEmail, slot, prompt);
+      void fireDraft(selectedEmail, slot, cls);
     };
     if (mode === 'dual') {
       fire('family');
@@ -397,9 +474,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   const handleRegenerate = (slot: DraftSlot) => {
     if (!selectedEmail) return;
     const cls = classifications.get(selectedEmail.id);
-    const prompt = promptFor(selectedEmail, slot, cls);
-    if (!prompt) return;
-    void runDraft(selectedEmail, slot, prompt);
+    if (!cls) return;
+    if (!promptFor(selectedEmail, slot, cls)) return;
+    void fireDraft(selectedEmail, slot, cls);
   };
 
   // On-demand acknowledgement draft for NONE/CPD emails — only fired when the
@@ -532,6 +609,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     // store. They live in Outlook Sent Items the moment the user
     // confirms send.
     recordSent({ emailId: email.id, variant });
+    // Stage 4 audit-trail carve-out: if a draft_audit row was written
+    // at draft time for this (emailId, slot), POST the SHA-256 hash
+    // of the final sent text so the server can compute draft_edited.
+    // The text itself never leaves the browser. Fire-and-forget — we
+    // never block the mailto handoff on the audit write.
+    if (auditedSlotsRef.current.has(`${email.id}:${slot}`)) {
+      void recordAuditSent(String(email.id), text);
+    }
     // Best-effort clipboard backup in case the mailto body gets
     // truncated or the user's client refuses long URLs.
     try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
