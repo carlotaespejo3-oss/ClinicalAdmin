@@ -28,4 +28,6 @@ export interface ChatAuditTurnInput {
    * @minItems 1
    */
   participants: EmailParticipant[];
+  /** Assistant turns only. IDs from evidence_sources that the AI said it consulted for this reply. Server filters against the live registry — unknown IDs are dropped before insert. Omit on clinician turns. */
+  sourcesChecked?: number[];
 }

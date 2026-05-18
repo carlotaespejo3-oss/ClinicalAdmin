@@ -31,7 +31,7 @@ import {
 } from '@/lib/draftPrompts';
 import { addUserTask, useUserTasks } from '@/lib/userTasksStore';
 import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/lib/sentLogStore';
-import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources } from '@/lib/evidenceStore';
+import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources, getRegistrySnapshot } from '@/lib/evidenceStore';
 import { buildEvidenceSnapshot, fetchEvidenceForGrounding, buildGroundingBlock } from '@/lib/evidenceGrounding';
 import { recordDraft, recordSent as recordAuditSent } from '@/lib/draftAuditStore';
 import { recordChatTurn } from '@/lib/chatAuditStore';
@@ -39,6 +39,7 @@ import { extractParticipants } from '@/lib/draftParticipants';
 import type { EvidenceSnapshotEntry, EmailParticipant } from '@workspace/api-zod';
 import { useEnsureEvidenceMatch } from '@/lib/useEnsureEvidenceMatch';
 import { EvidenceBlockView, NoEvidenceRefusal } from '@/components/EvidenceBlockView';
+import { ChatSourcesPill } from '@/components/ChatSourcesPill';
 import { buildMailtoUrl, buildReplySubject, extractAddress } from '@/lib/mailto';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import PotentialTaskPanel from '@/components/PotentialTaskPanel';
@@ -630,25 +631,63 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     }),
   );
 
-  const parseChatReply = (raw: string): { kind: 'draft' | 'answer'; content: string } => {
+  const parseChatReply = (
+    raw: string,
+    validIds: Set<number>,
+  ): {
+    kind: 'draft' | 'answer';
+    content: string;
+    sourcesChecked: number[];
+    hadInvalidIds: boolean;
+  } => {
     const trimmed = (raw ?? '').trim();
     // Strip a possible ```json fence the model may add despite instructions.
     const unfenced = trimmed
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
+    // Coerce + filter source IDs against the live registry. The model
+    // occasionally returns strings, duplicates, or invented IDs — keep
+    // only well-formed positive integers that exist in the registry.
+    // We also report whether any IDs were dropped so the UI can flag
+    // "model named sources that aren't in our registry" rather than
+    // silently showing the empty "general knowledge" state.
+    const coerceAndValidate = (v: unknown): { valid: number[]; hadInvalid: boolean } => {
+      if (!Array.isArray(v)) return { valid: [], hadInvalid: false };
+      const valid: number[] = [];
+      let hadInvalid = false;
+      for (const x of v) {
+        const n = typeof x === 'number' ? x : typeof x === 'string' ? Number(x) : NaN;
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+          hadInvalid = true;
+          continue;
+        }
+        if (!validIds.has(n)) {
+          hadInvalid = true;
+          continue;
+        }
+        if (!valid.includes(n)) valid.push(n);
+      }
+      return { valid, hadInvalid };
+    };
     try {
-      const obj = JSON.parse(unfenced) as { kind?: string; body?: string; text?: string };
+      const obj = JSON.parse(unfenced) as {
+        kind?: string;
+        body?: string;
+        text?: string;
+        sources_checked?: unknown;
+      };
+      const { valid, hadInvalid } = coerceAndValidate(obj?.sources_checked);
       if (obj && obj.kind === 'draft' && typeof obj.body === 'string') {
-        return { kind: 'draft', content: obj.body };
+        return { kind: 'draft', content: obj.body, sourcesChecked: valid, hadInvalidIds: hadInvalid };
       }
       if (obj && obj.kind === 'answer' && typeof obj.text === 'string') {
-        return { kind: 'answer', content: obj.text };
+        return { kind: 'answer', content: obj.text, sourcesChecked: valid, hadInvalidIds: hadInvalid };
       }
     } catch {
       // fall through to plain-text fallback
     }
-    return { kind: 'answer', content: unfenced };
+    return { kind: 'answer', content: unfenced, sourcesChecked: [], hadInvalidIds: false };
   };
 
   const handleChatSend = async () => {
@@ -678,19 +717,31 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     });
 
     try {
+      const registry = getRegistrySnapshot();
+      const validIds = new Set(registry.map((s) => s.id));
       const res = await aiComplete.mutateAsync({
-        data: { prompt: buildChatPrompt(selectedEmail, history, message) },
+        data: { prompt: buildChatPrompt(selectedEmail, history, message, registry) },
       });
-      const parsed = parseChatReply(res.text ?? '');
+      const parsed = parseChatReply(res.text ?? '', validIds);
       setChatThreads((p) => ({
         ...p,
-        [id]: [...nextHistory, { role: 'assistant', kind: parsed.kind, content: parsed.content }],
+        [id]: [
+          ...nextHistory,
+          {
+            role: 'assistant',
+            kind: parsed.kind,
+            content: parsed.content,
+            sourcesChecked: parsed.sourcesChecked,
+            hadInvalidSources: parsed.hadInvalidIds,
+          },
+        ],
       }));
       // And the assistant turn — same de-id pass, same fire-and-forget. The
       // ai_draft_hash in draft_audit covers the consultant's SENT reply
       // text; this audit row covers the AI's chat reply, which may never
       // be sent at all (questions, discarded drafts) but still needs a
-      // trail for a clinical pilot.
+      // trail for a clinical pilot. sourcesChecked is the validated list
+      // — server re-validates against the registry as a backstop.
       void recordChatTurn({
         outlookEmailId: String(id),
         turnIndex: clinicianTurnIndex + 1,
@@ -698,6 +749,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
         kind: parsed.kind,
         content: parsed.content,
         participants,
+        sourcesChecked: parsed.sourcesChecked,
       });
     } catch {
       setChatError((p) => ({ ...p, [id]: true }));
@@ -1707,7 +1759,13 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                                   <div className="w-full text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-4 border-blue-300 pl-4 bg-white p-4 rounded shadow-inner font-sans">
                                     {turn.content}
                                   </div>
-                                  <div className="mt-1.5 self-end">
+                                  <div className="mt-1.5 w-full flex items-center justify-between gap-2">
+                                    <ChatSourcesPill
+                                      ids={turn.sourcesChecked ?? []}
+                                      sources={evidenceSources}
+                                      hadInvalidIds={turn.hadInvalidSources ?? false}
+                                      testIdSuffix={`draft-${i}`}
+                                    />
                                     <button
                                       onClick={() => handleCopy(selectedEmail.id, 'single', turn.content)}
                                       className="text-[10px] font-bold bg-blue-600 text-white px-3 py-1.5 rounded shadow hover:bg-blue-700 transition-colors uppercase tracking-tight"
@@ -1720,9 +1778,17 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                               );
                             }
                             return (
-                              <div key={i} className="flex justify-start" data-testid={`chat-turn-answer-${i}`}>
+                              <div key={i} className="flex flex-col items-start" data-testid={`chat-turn-answer-${i}`}>
                                 <div className="max-w-[92%] bg-white border border-blue-100 text-slate-800 text-xs leading-relaxed px-3 py-2 rounded-2xl rounded-bl-sm whitespace-pre-wrap shadow-sm">
                                   {turn.content}
+                                </div>
+                                <div className="mt-1 pl-1">
+                                  <ChatSourcesPill
+                                    ids={turn.sourcesChecked ?? []}
+                                    sources={evidenceSources}
+                                    hadInvalidIds={turn.hadInvalidSources ?? false}
+                                    testIdSuffix={`answer-${i}`}
+                                  />
                                 </div>
                               </div>
                             );

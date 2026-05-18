@@ -2047,6 +2047,16 @@ components:
             empty lists are rejected (400).
           items:
             $ref: "#/components/schemas/EmailParticipant"
+        sourcesChecked:
+          type: array
+          description: >-
+            Assistant turns only. IDs from evidence_sources that the AI
+            said it consulted for this reply. Server filters against the
+            live registry — unknown IDs are dropped before insert.
+            Omit on clinician turns.
+          items:
+            type: integer
+            minimum: 1
       required:
         - turnIndex
         - role
@@ -2075,6 +2085,15 @@ components:
           description: De-identified — patient/parent/other names replaced with placeholders.
         contentHash:
           type: string
+        sourcesChecked:
+          type: array
+          nullable: true
+          description: >-
+            Registry IDs the assistant said it consulted. Null for
+            clinician turns; empty array for assistant turns answered
+            from general clinical knowledge.
+          items:
+            type: integer
         createdAt:
           type: string
           format: date-time

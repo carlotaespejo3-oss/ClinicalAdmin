@@ -701,6 +701,8 @@ export interface ChatAuditTurnInput {
    * @minItems 1
    */
   participants: EmailParticipant[];
+  /** Assistant turns only. IDs from evidence_sources that the AI said it consulted for this reply. Server filters against the live registry — unknown IDs are dropped before insert. Omit on clinician turns. */
+  sourcesChecked?: number[];
 }
 
 export type ChatAuditTurnRole =
@@ -732,6 +734,8 @@ export interface ChatAuditTurn {
   /** De-identified — patient/parent/other names replaced with placeholders. */
   contentDeid: string;
   contentHash: string;
+  /** Registry IDs the assistant said it consulted. Null for clinician turns; empty array for assistant turns answered from general clinical knowledge. */
+  sourcesChecked?: number[] | null;
   createdAt: string;
 }
 

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, serial, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, jsonb, timestamp, serial, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -61,6 +61,12 @@ export const chatAuditTable = pgTable(
     // audit view confirm that what was de-identified matches what was
     // shown to the clinician, without storing the original text.
     contentHash: text("content_hash").notNull(),
+    // Assistant-turn provenance: IDs from evidence_sources that the AI
+    // said it consulted for this reply. Empty array = answered from
+    // general clinical knowledge. Null = clinician turn (no provenance
+    // concept applies). Validated server-side against the registry
+    // before insert, so audit rows never contain phantom IDs.
+    sourcesChecked: jsonb("sources_checked").$type<number[] | null>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

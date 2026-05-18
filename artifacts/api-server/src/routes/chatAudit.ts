@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { createHash } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
-import { db, chatAuditTable } from "@workspace/db";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { db, chatAuditTable, evidenceSourcesTable } from "@workspace/db";
 import { RecordChatAuditTurnBody } from "@workspace/api-zod";
 import { deidentify, type Participant } from "../lib/deidentify";
 
@@ -37,6 +37,7 @@ router.get("/chat-audit/:outlookEmailId", async (req, res) => {
       kind: r.kind,
       contentDeid: r.contentDeid,
       contentHash: r.contentHash,
+      sourcesChecked: r.sourcesChecked ?? null,
       createdAt: r.createdAt.toISOString(),
     })),
   );
@@ -112,6 +113,25 @@ router.post("/chat-audit/:outlookEmailId/turn", async (req, res) => {
     return;
   }
 
+  // Validate source IDs against the live registry — never persist phantom
+  // IDs the model invented. Clinician turns get null (no provenance
+  // concept); assistant turns get a filtered (possibly empty) array.
+  let sourcesChecked: number[] | null = null;
+  if (body.role === "assistant") {
+    const requested = body.sourcesChecked ?? [];
+    if (requested.length === 0) {
+      sourcesChecked = [];
+    } else {
+      const rows = await db
+        .select({ id: evidenceSourcesTable.id })
+        .from(evidenceSourcesTable)
+        .where(inArray(evidenceSourcesTable.id, requested));
+      const valid = new Set(rows.map((r) => r.id));
+      // Preserve the order the model reported, drop unknowns.
+      sourcesChecked = requested.filter((rid) => valid.has(rid));
+    }
+  }
+
   await db.insert(chatAuditTable).values({
     clinicianId: DEFAULT_CLINICIAN_ID,
     outlookEmailId: id,
@@ -120,6 +140,7 @@ router.post("/chat-audit/:outlookEmailId/turn", async (req, res) => {
     kind: body.kind,
     contentDeid: scrubbed,
     contentHash,
+    sourcesChecked,
   });
   res.status(204).send();
 });

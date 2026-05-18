@@ -20,5 +20,7 @@ export interface ChatAuditTurn {
   /** De-identified — patient/parent/other names replaced with placeholders. */
   contentDeid: string;
   contentHash: string;
+  /** Registry IDs the assistant said it consulted. Null for clinician turns; empty array for assistant turns answered from general clinical knowledge. */
+  sourcesChecked?: number[] | null;
   createdAt: Date;
 }

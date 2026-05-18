@@ -1148,6 +1148,12 @@ export const GetChatAuditResponseItem = zod
         "De-identified — patient\/parent\/other names replaced with placeholders.",
       ),
     contentHash: zod.string(),
+    sourcesChecked: zod
+      .array(zod.number())
+      .nullish()
+      .describe(
+        "Registry IDs the assistant said it consulted. Null for clinician turns; empty array for assistant turns answered from general clinical knowledge.",
+      ),
     createdAt: zod.coerce.date(),
   })
   .describe("One de-identified turn from the chat-audit thread.");
@@ -1194,6 +1200,12 @@ export const RecordChatAuditTurnBody = zod
       .min(1)
       .describe(
         "Names to scrub from the content. At minimum the sender of the email; the de-id pass is only as good as this list, so empty lists are rejected (400).",
+      ),
+    sourcesChecked: zod
+      .array(zod.number().min(1))
+      .optional()
+      .describe(
+        "Assistant turns only. IDs from evidence_sources that the AI said it consulted for this reply. Server filters against the live registry — unknown IDs are dropped before insert. Omit on clinician turns.",
       ),
   })
   .describe(

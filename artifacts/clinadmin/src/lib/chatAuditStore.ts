@@ -30,6 +30,9 @@ export interface RecordChatTurnInput {
   kind: "message" | "draft" | "answer";
   content: string;
   participants: EmailParticipant[];
+  // Assistant turns only. Registry IDs the AI said it consulted.
+  // Server filters against the live registry before insert.
+  sourcesChecked?: number[];
 }
 
 // The server hashes the content itself (single source of truth for
@@ -44,6 +47,7 @@ export async function recordChatTurn(input: RecordChatTurnInput): Promise<void> 
       kind: input.kind,
       content: input.content,
       participants: input.participants,
+      ...(input.sourcesChecked !== undefined ? { sourcesChecked: input.sourcesChecked } : {}),
     });
   } catch (err) {
     // Fire-and-forget — never block the chat on an audit failure.
