@@ -97,20 +97,26 @@ export function EvidenceBlockView({ block }: Props) {
         </h4>
       </div>
 
-      {block.prescribingWarning && (
-        <div
-          className="bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs p-3 rounded-lg flex items-start gap-2"
-          data-testid="evidence-prescribing-warning"
-        >
-          <AlertTriangle size={14} className="text-rose-700 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-bold uppercase tracking-tight text-[11px] mb-0.5">
-              Prescribing — verify in eTG / AMH
-            </p>
-            <p className="leading-relaxed">{block.prescribingWarning}</p>
-          </div>
+      {/* Prescribing banner. When the matcher returned a drug-specific
+          warning, surface it verbatim. Otherwise fall back to the
+          blanket "verify dosing in eTG / AMH" reminder so every
+          clinical reply carries a prescribing-safety prompt — the
+          specific drug name is just a nice-to-have on top. */}
+      <div
+        className="bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs p-3 rounded-lg flex items-start gap-2"
+        data-testid="evidence-prescribing-warning"
+      >
+        <AlertTriangle size={14} className="text-rose-700 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="font-bold uppercase tracking-tight text-[11px] mb-0.5">
+            Prescribing — verify in eTG / AMH
+          </p>
+          <p className="leading-relaxed">
+            {block.prescribingWarning
+              ?? 'Any dose, frequency, or interaction mentioned in your reply should be verified against eTG or AMH before sending.'}
+          </p>
         </div>
-      )}
+      </div>
 
       <div className="space-y-2">
         {block.citations.map((c, i) => (

@@ -9,6 +9,8 @@ export interface UnclearEmailSummary {
   from: string;
 }
 
+export type PlanViewMode = 'day' | 'week';
+
 interface Props {
   todaysPlan: DailyPlan;
   overallStatus: OverallStatus;
@@ -23,6 +25,13 @@ interface Props {
   onPrevDay?: () => void;
   onNextDay?: () => void;
   onJumpToday?: () => void;
+  // Day/Week toggle — when `runway` + `onChangeViewMode` are both
+  // provided, the header renders a segmented control. In 'week' mode
+  // the body switches to a parallel-columns layout over all runway
+  // days. Day navigation chevrons hide in week mode (they're moot).
+  viewMode?: PlanViewMode;
+  onChangeViewMode?: (mode: PlanViewMode) => void;
+  runway?: DailyPlan[];
 }
 
 function fmtMin(min: number): string {
@@ -213,6 +222,105 @@ function ItemRow({ item, onClick }: { item: PlanItem; onClick?: () => void }) {
   );
 }
 
+function WeekColumn({
+  day,
+  isTodayCol,
+  onItemClick,
+}: {
+  day: DailyPlan;
+  isTodayCol: boolean;
+  onItemClick?: (item: PlanItem) => void;
+}) {
+  const items = day.items.filter((i) => i.kind !== 'unclear_gate');
+  const idle = day.minutesAvailable === 0;
+  const empty = items.length === 0;
+  return (
+    <div
+      className={cn(
+        'flex flex-col rounded-xl border bg-white min-w-0',
+        isTodayCol ? 'border-primary/40 ring-1 ring-primary/20' : 'border-border',
+      )}
+      data-testid={`week-column-${day.dayLabel.toLowerCase()}`}
+    >
+      <div className="px-3 py-2.5 border-b border-border/70">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm font-bold text-foreground">
+            {day.dayLabel}
+            {isTodayCol && (
+              <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                Today
+              </span>
+            )}
+          </h3>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {fmtMin(day.totalPlannedMin)}
+            <span className="text-slate-300"> / </span>
+            {fmtMin(day.minutesAvailable)}
+          </span>
+        </div>
+        <p className="text-[11px] text-muted-foreground truncate">{day.displayLabel}</p>
+      </div>
+      <div className="p-2 space-y-1.5 flex-1">
+        {empty && idle && (
+          <p className="text-[11px] text-muted-foreground italic px-1 py-3 text-center">
+            No admin time.
+          </p>
+        )}
+        {empty && !idle && (
+          <p className="text-[11px] text-green-700 px-1 py-3 inline-flex items-center gap-1.5">
+            <CheckCircle2 size={12} className="text-green-600" /> Slot free.
+          </p>
+        )}
+        {items.map((item, i) => (
+          <button
+            type="button"
+            key={`${item.kind}:${item.refId ?? i}`}
+            onClick={
+              onItemClick && item.refId != null ? () => onItemClick(item) : undefined
+            }
+            className={cn(
+              'w-full text-left rounded-md border border-border bg-white px-2 py-1.5 transition-colors',
+              onItemClick && item.refId != null
+                ? 'hover:bg-slate-50'
+                : 'cursor-default',
+              item.reason === 'overdue' && 'border-red-300 bg-red-50',
+              item.deferralWarning === 'twice_or_more' &&
+                item.reason !== 'overdue' &&
+                'border-amber-300 bg-amber-50',
+            )}
+            data-testid={`week-item-${day.dayLabel.toLowerCase()}-${item.refId ?? i}`}
+          >
+            <div className="flex items-start gap-1.5">
+              {item.kind === 'task' ? (
+                <FileText size={11} className="text-slate-500 mt-0.5 flex-shrink-0" />
+              ) : (
+                <Mail size={11} className="text-slate-500 mt-0.5 flex-shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-semibold text-foreground truncate leading-snug">
+                  {item.title}
+                </div>
+                <div className="text-[10px] text-muted-foreground inline-flex items-center gap-1 mt-0.5">
+                  <span
+                    className={cn(
+                      'inline-flex items-center text-[9px] font-bold uppercase tracking-wide px-1 py-px rounded border',
+                      CATEGORY_PILL[item.category] ?? CATEGORY_PILL.ADMIN,
+                    )}
+                  >
+                    {CATEGORY_LABEL[item.category] ?? item.category}
+                  </span>
+                  <Clock size={9} />
+                  <span className="tabular-nums">{fmtMin(item.estMin)}</span>
+                </div>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function TodaysPlan({
   todaysPlan,
   overallStatus,
@@ -225,6 +333,9 @@ export default function TodaysPlan({
   onPrevDay,
   onNextDay,
   onJumpToday,
+  viewMode = 'day',
+  onChangeViewMode,
+  runway,
 }: Props) {
   const theme = STATUS_THEME[overallStatus];
   const items = todaysPlan.items;
@@ -235,21 +346,36 @@ export default function TodaysPlan({
   const visibleItemCount = items.filter((i) => i.kind !== 'unclear_gate').length;
   const idle = todaysPlan.minutesAvailable === 0;
   const isToday = dayIndex == null || dayIndex === 0;
-  const navEnabled = dayIndex != null && totalDays != null && totalDays > 1;
+  const isWeekMode = viewMode === 'week' && !!runway && !!onChangeViewMode;
+  const toggleEnabled = !!runway && !!onChangeViewMode;
+  const navEnabled = !isWeekMode && dayIndex != null && totalDays != null && totalDays > 1;
   const canPrev = navEnabled && dayIndex! > 0;
   const canNext = navEnabled && dayIndex! < totalDays! - 1;
   // Title: "Today's plan" on day 0, "Tomorrow's plan" on day 1, otherwise
   // the day label ("Wed's plan"). Empty days still get a title.
-  const headerTitle = isToday
+  const dayHeaderTitle = isToday
     ? "Today's plan"
     : dayIndex === 1
       ? "Tomorrow's plan"
       : `${todaysPlan.dayLabel}'s plan`;
+  const headerTitle = isWeekMode ? "This week's plan" : dayHeaderTitle;
+
+  // Week-mode totals across the runway.
+  const weekTotals = isWeekMode && runway
+    ? runway.reduce(
+        (a, d) => ({
+          planned: a.planned + d.totalPlannedMin,
+          available: a.available + d.minutesAvailable,
+          items: a.items + d.items.filter((i) => i.kind !== 'unclear_gate').length,
+        }),
+        { planned: 0, available: 0, items: 0 },
+      )
+    : null;
 
   return (
     <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden" data-testid="todays-plan-card">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4">
+      <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           {navEnabled && (
             <button
@@ -271,19 +397,26 @@ export default function TodaysPlan({
             <h2 className="text-base font-bold text-foreground" data-testid="day-plan-title">
               {headerTitle}
             </h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-2">
-              <span>{todaysPlan.displayLabel}</span>
-              {!isToday && onJumpToday && (
-                <button
-                  type="button"
-                  onClick={onJumpToday}
-                  className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline"
-                  data-testid="day-nav-today"
-                >
-                  ← back to today
-                </button>
-              )}
-            </p>
+            {!isWeekMode && (
+              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                <span>{todaysPlan.displayLabel}</span>
+                {!isToday && onJumpToday && (
+                  <button
+                    type="button"
+                    onClick={onJumpToday}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline"
+                    data-testid="day-nav-today"
+                  >
+                    ← back to today
+                  </button>
+                )}
+              </p>
+            )}
+            {isWeekMode && runway && (
+              <p className="text-xs text-muted-foreground">
+                {runway.length} day{runway.length === 1 ? '' : 's'} ahead
+              </p>
+            )}
           </div>
           {navEnabled && (
             <button
@@ -301,98 +434,180 @@ export default function TodaysPlan({
             </button>
           )}
         </div>
-        <div className="text-right">
-          <div className="text-xs text-muted-foreground">
-            Planned / available
-            {visibleItemCount > 0 && (
-              <span className="ml-2 text-slate-400" data-testid="day-plan-item-count">
-                · {visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}
-              </span>
-            )}
-          </div>
-          <div className="text-sm font-bold tabular-nums">
-            {fmtMin(todaysPlan.totalPlannedMin)}
-            <span className="text-slate-400 font-normal"> / </span>
-            {fmtMin(todaysPlan.minutesAvailable)}
+        <div className="flex items-center gap-3">
+          {toggleEnabled && (
+            <div
+              className="inline-flex rounded-lg border border-border bg-slate-50 p-0.5 text-[11px] font-semibold"
+              role="tablist"
+              aria-label="Plan view mode"
+              data-testid="plan-view-toggle"
+            >
+              {(['day', 'week'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={viewMode === m}
+                  onClick={() => onChangeViewMode?.(m)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-md transition-colors',
+                    viewMode === m
+                      ? 'bg-white text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  data-testid={`plan-view-toggle-${m}`}
+                >
+                  {m === 'day' ? 'Day' : 'Week'}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">
+              Planned / available
+              {!isWeekMode && visibleItemCount > 0 && (
+                <span className="ml-2 text-slate-400" data-testid="day-plan-item-count">
+                  · {visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}
+                </span>
+              )}
+              {isWeekMode && weekTotals && weekTotals.items > 0 && (
+                <span className="ml-2 text-slate-400" data-testid="week-plan-item-count">
+                  · {weekTotals.items} item{weekTotals.items === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <div className="text-sm font-bold tabular-nums">
+              {isWeekMode && weekTotals ? (
+                <>
+                  {fmtMin(weekTotals.planned)}
+                  <span className="text-slate-400 font-normal"> / </span>
+                  {fmtMin(weekTotals.available)}
+                </>
+              ) : (
+                <>
+                  {fmtMin(todaysPlan.totalPlannedMin)}
+                  <span className="text-slate-400 font-normal"> / </span>
+                  {fmtMin(todaysPlan.minutesAvailable)}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-2">
-        {idle && !hasItems && (
-          <div className="text-sm text-muted-foreground italic px-2 py-6 text-center">
-            {isToday
-              ? 'No admin time scheduled today. Items have been pushed to your next available admin day.'
-              : `No admin time scheduled on ${todaysPlan.dayLabel}.`}
-          </div>
-        )}
-
-        {!hasItems && !idle && (
-          <div className="flex items-center gap-2 text-sm text-green-700 px-2 py-4">
-            <CheckCircle2 size={18} className="text-green-600" />
-            {isToday
-              ? 'Inbox is empty for today. Use the time however you like.'
-              : `Nothing scheduled on ${todaysPlan.dayLabel} — earlier days absorbed the workload, so this slot is free.`}
-          </div>
-        )}
-
-        {hasItems && (
-          <ol className="space-y-2">
-            {items.map((item, i) => (
-              <li key={`${item.kind}:${item.refId ?? i}`}>
-                {item.kind === 'unclear_gate' ? (
-                  <UnclearGateBlock
-                    item={item}
-                    unclearEmails={unclearEmails}
-                    onTriage={onTriageUnclear}
-                  />
-                ) : (
-                  <ItemRow
-                    item={item}
-                    onClick={
-                      onItemClick && item.refId != null
-                        ? () => onItemClick(item)
-                        : undefined
-                    }
-                  />
-                )}
-              </li>
+      {isWeekMode && runway ? (
+        <div className="p-4">
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: `repeat(${runway.length}, minmax(180px, 1fr))`,
+            }}
+            data-testid="week-columns-grid"
+          >
+            {runway.map((day, i) => (
+              <WeekColumn
+                key={`${day.dayLabel}-${i}`}
+                day={day}
+                isTodayCol={i === 0}
+                onItemClick={onItemClick}
+              />
             ))}
-          </ol>
-        )}
-
-        {/* Buffer footer */}
-        {hasItems && todaysPlan.bufferMin > 10 && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 px-1">
-            <HelpCircle size={12} />
-            <span>
-              {fmtMin(todaysPlan.bufferMin)} spare after today's plan — your inbox is on track and
-              nothing else is due today.
-            </span>
           </div>
-        )}
-
-        {/* Trailing "X emails still need classifying" only makes sense on
-            today's view — the unclear gate is a today-only prompt. */}
-        {isToday && unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
-          onTriageUnclear && unclearEmails && unclearEmails[0] ? (
-            <button
-              type="button"
-              onClick={() => onTriageUnclear(unclearEmails[0].id)}
-              className="text-xs text-amber-700 hover:text-amber-900 hover:underline px-1 pt-1 inline-flex items-center gap-1"
-              data-testid="link-triage-unclear-trailing"
-            >
-              {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
-              <ChevronRight size={11} />
-            </button>
-          ) : (
-            <div className="text-xs text-amber-700 px-1 pt-1">
-              {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+          {unclearCount > 0 && (
+            onTriageUnclear && unclearEmails && unclearEmails[0] ? (
+              <button
+                type="button"
+                onClick={() => onTriageUnclear(unclearEmails[0].id)}
+                className="text-xs text-amber-700 hover:text-amber-900 hover:underline pt-3 inline-flex items-center gap-1"
+                data-testid="link-triage-unclear-week"
+              >
+                {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+                <ChevronRight size={11} />
+              </button>
+            ) : (
+              <div className="text-xs text-amber-700 pt-3">
+                {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+              </div>
+            )
+          )}
+        </div>
+      ) : (
+        <div className="p-4 space-y-2">
+          {idle && !hasItems && (
+            <div className="text-sm text-muted-foreground italic px-2 py-6 text-center">
+              {isToday
+                ? 'No admin time scheduled today. Items have been pushed to your next available admin day.'
+                : `No admin time scheduled on ${todaysPlan.dayLabel}.`}
             </div>
-          )
-        )}
-      </div>
+          )}
+
+          {!hasItems && !idle && (
+            <div className="flex items-center gap-2 text-sm text-green-700 px-2 py-4">
+              <CheckCircle2 size={18} className="text-green-600" />
+              {isToday
+                ? 'Inbox is empty for today. Use the time however you like.'
+                : `Nothing scheduled on ${todaysPlan.dayLabel} — earlier days absorbed the workload, so this slot is free.`}
+            </div>
+          )}
+
+          {hasItems && (
+            <ol className="space-y-2">
+              {items.map((item, i) => (
+                <li key={`${item.kind}:${item.refId ?? i}`}>
+                  {item.kind === 'unclear_gate' ? (
+                    <UnclearGateBlock
+                      item={item}
+                      unclearEmails={unclearEmails}
+                      onTriage={onTriageUnclear}
+                    />
+                  ) : (
+                    <ItemRow
+                      item={item}
+                      onClick={
+                        onItemClick && item.refId != null
+                          ? () => onItemClick(item)
+                          : undefined
+                      }
+                    />
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {/* Buffer footer */}
+          {hasItems && todaysPlan.bufferMin > 10 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 px-1">
+              <HelpCircle size={12} />
+              <span>
+                {fmtMin(todaysPlan.bufferMin)} spare after today's plan — your inbox is on track and
+                nothing else is due today.
+              </span>
+            </div>
+          )}
+
+          {/* Trailing "X emails still need classifying" only makes sense on
+              today's view — the unclear gate is a today-only prompt. */}
+          {isToday && unclearCount > 0 && items[0]?.kind !== 'unclear_gate' && (
+            onTriageUnclear && unclearEmails && unclearEmails[0] ? (
+              <button
+                type="button"
+                onClick={() => onTriageUnclear(unclearEmails[0].id)}
+                className="text-xs text-amber-700 hover:text-amber-900 hover:underline px-1 pt-1 inline-flex items-center gap-1"
+                data-testid="link-triage-unclear-trailing"
+              >
+                {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+                <ChevronRight size={11} />
+              </button>
+            ) : (
+              <div className="text-xs text-amber-700 px-1 pt-1">
+                {unclearCount} email{unclearCount === 1 ? '' : 's'} still need classifying.
+              </div>
+            )
+          )}
+        </div>
+      )}
     </div>
   );
 }

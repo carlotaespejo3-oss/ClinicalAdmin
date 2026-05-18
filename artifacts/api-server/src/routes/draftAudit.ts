@@ -122,16 +122,33 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
       set: {
         aiDraftText: scrubbed,
         aiDraftHash: body.aiDraftHash,
-        // Preserve sent state when this POST is just a replay of the same
-        // draft (same hash). Reset sent state ONLY when the hash differs
-        // — that's a genuine re-draft, where any stored sentHash refers
-        // to a previous draft and must not be compared against this one.
-        // This also makes us race-safe if /sent lands before /draft: the
-        // /draft POST that arrives later carries the hash the client
-        // already sent against, so the existing sentHash is preserved.
-        sentHash: sql`CASE WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentHash} ELSE NULL END`,
-        draftEdited: sql`CASE WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.draftEdited} ELSE FALSE END`,
-        sentAt: sql`CASE WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentAt} ELSE NULL END`,
+        // Three cases, evaluated atomically inside the upsert so we are
+        // race-safe against a concurrent /sent POST:
+        //   1) STUB — prior row has aiDraftHash IS NULL but a sentHash
+        //      (sent-before-draft, or a /sent that landed first). Keep
+        //      the sent fields and compute draftEdited by comparing the
+        //      stored sentHash against this incoming aiDraftHash.
+        //   2) REPLAY — prior aiDraftHash matches incoming. Preserve
+        //      everything sent-related verbatim.
+        //   3) GENUINE RE-DRAFT — prior aiDraftHash exists and differs.
+        //      Any stored sentHash refers to a previous draft and must
+        //      not be compared against this one; clear sent state.
+        sentHash: sql`CASE
+          WHEN ${draftAuditTable.aiDraftHash} IS NULL THEN ${draftAuditTable.sentHash}
+          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentHash}
+          ELSE NULL
+        END`,
+        sentAt: sql`CASE
+          WHEN ${draftAuditTable.aiDraftHash} IS NULL THEN ${draftAuditTable.sentAt}
+          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.sentAt}
+          ELSE NULL
+        END`,
+        draftEdited: sql`CASE
+          WHEN ${draftAuditTable.aiDraftHash} IS NULL AND ${draftAuditTable.sentHash} IS NOT NULL
+            THEN ${draftAuditTable.sentHash} <> ${body.aiDraftHash}
+          WHEN ${draftAuditTable.aiDraftHash} = ${body.aiDraftHash} THEN ${draftAuditTable.draftEdited}
+          ELSE FALSE
+        END`,
         evidenceSnapshot: snapshot,
         draftedAt,
         updatedAt: now,
@@ -143,9 +160,16 @@ router.post("/draft-audit/:outlookEmailId/draft", async (req, res) => {
 // POST /api/draft-audit/:outlookEmailId/sent
 // Hash-only sent-record. The full sent text never leaves the browser.
 // Server compares sentHash against the stored ai_draft_hash to derive
-// draft_edited. Defensive: if no draft row exists yet (sent-before-
-// draft, which should be impossible in practice), insert a stub with
-// just the sent fields so we still record that the send happened.
+// draft_edited.
+//
+// Race-safety: the comparison happens INSIDE the upsert (single SQL
+// statement) — no read-modify-write, so a concurrent /draft POST cannot
+// slip between a select and an update. Defensive: if no draft row
+// exists yet (sent-before-draft, which should be impossible in
+// practice), insert a stub with just the sent fields so we still
+// record that the send happened. A later /draft POST will then compute
+// draft_edited against the stored sentHash via the stub-aware merge in
+// the /draft handler.
 router.post("/draft-audit/:outlookEmailId/sent", async (req, res) => {
   const id = req.params.outlookEmailId;
   if (!id) {
@@ -161,22 +185,6 @@ router.post("/draft-audit/:outlookEmailId/sent", async (req, res) => {
   const sentAt = new Date(body.sentAt);
   const now = new Date();
 
-  const existing = await db
-    .select({ aiDraftHash: draftAuditTable.aiDraftHash })
-    .from(draftAuditTable)
-    .where(
-      and(
-        eq(draftAuditTable.clinicianId, DEFAULT_CLINICIAN_ID),
-        eq(draftAuditTable.outlookEmailId, id),
-      ),
-    )
-    .limit(1);
-  const priorHash = existing[0]?.aiDraftHash ?? null;
-  // draft_edited is meaningful only when we have both hashes. With no
-  // prior draft we default to false (we can't claim it was edited if we
-  // never saw the original).
-  const draftEdited = priorHash !== null && priorHash !== body.sentHash;
-
   await db
     .insert(draftAuditTable)
     .values({
@@ -185,7 +193,10 @@ router.post("/draft-audit/:outlookEmailId/sent", async (req, res) => {
       aiDraftText: null,
       aiDraftHash: null,
       sentHash: body.sentHash,
-      draftEdited,
+      // No prior draft on insert path → draft_edited cannot be derived;
+      // default to false. We can't claim a draft was edited if we
+      // never saw the original.
+      draftEdited: false,
       evidenceSnapshot: [],
       draftedAt: null,
       sentAt,
@@ -194,8 +205,12 @@ router.post("/draft-audit/:outlookEmailId/sent", async (req, res) => {
       target: [draftAuditTable.clinicianId, draftAuditTable.outlookEmailId],
       set: {
         sentHash: body.sentHash,
-        draftEdited,
         sentAt,
+        // Compute draft_edited atomically from the stored aiDraftHash
+        // vs the incoming sentHash. With no prior draft (NULL hash)
+        // the comparison evaluates to false — true edits require a
+        // prior known draft to compare against.
+        draftEdited: sql`${draftAuditTable.aiDraftHash} IS NOT NULL AND ${draftAuditTable.aiDraftHash} <> ${body.sentHash}`,
         updatedAt: now,
       },
     });

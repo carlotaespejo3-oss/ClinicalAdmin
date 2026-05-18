@@ -46,6 +46,10 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   // runway with prev/next chevrons to see how the AI organised the week.
   // Default = today (index 0). Clamps if the runway shrinks under us.
   const [dayIndex, setDayIndex] = useState(0);
+  // Day vs Week view for the plan card. Week mode shows all runway days
+  // as parallel columns and collapses the side-by-side My-tasks layout
+  // so the plan can take the full row width.
+  const [planView, setPlanView] = useState<'day' | 'week'>('day');
   // Inline triage modal — clicking an "emails need classifying" row
   // opens the dialog right here on the dashboard so the clinician
   // doesn't have to bounce over to the inbox and back.
@@ -481,12 +485,12 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         </div>
       </div>
 
-      {/* Today's plan + mini workload calendar — paired side-by-side on
-          wide screens so the clinician can scan upcoming load without
-          leaving the home view. Today's plan dominates (3/5); calendar
-          sits beside it (2/5). Stacks on narrow screens. */}
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-start">
-        <div className="xl:col-span-3">
+      {/* Today's/Week's plan + My tasks. In Day mode the two sit
+          side-by-side (3/5 + 2/5) on wide screens. In Week mode the
+          plan takes the full row and My tasks drops beneath so the
+          parallel-column grid has room to breathe. */}
+      {(() => {
+        const plan = (
           <TodaysPlan
             todaysPlan={currentDay}
             overallStatus={plannerOutput.overallStatus}
@@ -496,6 +500,9 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
             onPrevDay={() => setDayIndex(i => Math.max(0, i - 1))}
             onNextDay={() => setDayIndex(i => Math.min(runwayLen - 1, i + 1))}
             onJumpToday={() => setDayIndex(0)}
+            viewMode={planView}
+            onChangeViewMode={setPlanView}
+            runway={plannerOutput.runway}
             // Pass the full list so the gate banner can render every unclear
             // email as its own clickable row — the clinician can work through
             // them one after another (each classification removes its row via
@@ -516,14 +523,28 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
               }
             }}
           />
-        </div>
-        <div className="xl:col-span-2">
-          {/* My tasks — the clinician's hand-curated list. Anything
-              added here also flows into the planner and onto the
-              Week ahead grid below + the full Calendar tab. */}
+        );
+        const tasks = (
+          // My tasks — the clinician's hand-curated list. Anything
+          // added here also flows into the planner and onto the
+          // Week ahead grid below + the full Calendar tab.
           <TaskList runway={plannerOutput.runway} onOpenEmail={onOpenEmail} />
-        </div>
-      </div>
+        );
+        if (planView === 'week') {
+          return (
+            <div className="space-y-5">
+              {plan}
+              {tasks}
+            </div>
+          );
+        }
+        return (
+          <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-start">
+            <div className="xl:col-span-3">{plan}</div>
+            <div className="xl:col-span-2">{tasks}</div>
+          </div>
+        );
+      })()}
 
       {/* Week ahead — the diary view. Replaces the old mini workload
           calendar: same purpose, but actually readable and you can
