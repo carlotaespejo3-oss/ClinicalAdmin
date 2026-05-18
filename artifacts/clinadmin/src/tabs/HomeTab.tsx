@@ -9,6 +9,7 @@ import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import TodaysPlan from '@/components/TodaysPlan';
+import MiniWorkloadCalendar from '@/components/MiniWorkloadCalendar';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -495,43 +496,52 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onOpenWe
         </div>
       </div>
 
-      {/* Today's plan — the only Today's Plan on this page. Reads from
-          plannerOutput which is derived from live stores (acknowledged,
-          archived, AI classifications, manual task done state, linked doc
-          tasks, week setup), so it recomputes the moment any of those
-          change in another tab. */}
-      <TodaysPlan
-        todaysPlan={currentDay}
-        overallStatus={plannerOutput.overallStatus}
-        unclearCount={plannerOutput.unclearCount}
-        dayIndex={safeDayIndex}
-        totalDays={runwayLen}
-        onPrevDay={() => setDayIndex(i => Math.max(0, i - 1))}
-        onNextDay={() => setDayIndex(i => Math.min(runwayLen - 1, i + 1))}
-        onJumpToday={() => setDayIndex(0)}
-        // Pass the full list so the gate banner can render every unclear
-        // email as its own clickable row — the clinician can work through
-        // them one after another (each classification removes its row via
-        // live recalc).
-        unclearEmails={plannerOutput.unclearEmailIds
-          .map(id => {
-            const e = emails.find(x => x.id === id);
-            return e ? { id: e.id, subject: e.subject, from: e.from } : null;
-          })
-          .filter((e): e is { id: number; subject: string; from: string } => e !== null)}
-        onTriageUnclear={(id) => {
-          onOpenEmail(id);
-          onNavigate('Emails');
-        }}
-        onItemClick={(item) => {
-          if (typeof item.refId === 'number') {
-            onOpenEmail(item.refId);
-            onNavigate('Emails');
-          } else if (item.kind === 'task') {
-            onNavigate('Tasks');
-          }
-        }}
-      />
+      {/* Today's plan + mini workload calendar — paired side-by-side on
+          wide screens so the clinician can scan upcoming load without
+          leaving the home view. Today's plan dominates (3/5); calendar
+          sits beside it (2/5). Stacks on narrow screens. */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-start">
+        <div className="xl:col-span-3">
+          <TodaysPlan
+            todaysPlan={currentDay}
+            overallStatus={plannerOutput.overallStatus}
+            unclearCount={plannerOutput.unclearCount}
+            dayIndex={safeDayIndex}
+            totalDays={runwayLen}
+            onPrevDay={() => setDayIndex(i => Math.max(0, i - 1))}
+            onNextDay={() => setDayIndex(i => Math.min(runwayLen - 1, i + 1))}
+            onJumpToday={() => setDayIndex(0)}
+            // Pass the full list so the gate banner can render every unclear
+            // email as its own clickable row — the clinician can work through
+            // them one after another (each classification removes its row via
+            // live recalc).
+            unclearEmails={plannerOutput.unclearEmailIds
+              .map(id => {
+                const e = emails.find(x => x.id === id);
+                return e ? { id: e.id, subject: e.subject, from: e.from } : null;
+              })
+              .filter((e): e is { id: number; subject: string; from: string } => e !== null)}
+            onTriageUnclear={(id) => {
+              onOpenEmail(id);
+              onNavigate('Emails');
+            }}
+            onItemClick={(item) => {
+              if (typeof item.refId === 'number') {
+                onOpenEmail(item.refId);
+                onNavigate('Emails');
+              } else if (item.kind === 'task') {
+                onNavigate('Tasks');
+              }
+            }}
+          />
+        </div>
+        <div className="xl:col-span-2">
+          <MiniWorkloadCalendar
+            runway={plannerOutput.runway}
+            onJumpToDay={(idx) => setDayIndex(idx)}
+          />
+        </div>
+      </div>
 
       {/* Availability adjustment panel — kept on Home so the clinician can
           tweak today's hours without leaving the calm view. */}
