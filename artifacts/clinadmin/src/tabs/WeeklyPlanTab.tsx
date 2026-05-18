@@ -376,44 +376,8 @@ export default function WeeklyPlanTab({ weekSetup, plan, onPlanGenerated, onOpen
             </div>
           )}
 
-          {/* Summary stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white border border-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold">{plan.days.reduce((a, d) => a + d.blocks.length, 0)}</p>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">Items scheduled</p>
-            </div>
-            <div className="bg-white border border-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold">{fmtMins(plan.days.reduce((a, d) => a + d.totalMin, 0))}</p>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">Total admin time</p>
-            </div>
-            <div
-              className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center"
-              data-testid="weekly-buffer-stat"
-            >
-              <p className="text-2xl font-bold text-amber-700">
-                {plan.bufferMin != null ? fmtMins(plan.bufferMin) : '—'}
-              </p>
-              <p className="text-xs text-amber-700 font-medium mt-0.5 leading-snug">
-                Buffer for unexpected urgent emails
-              </p>
-            </div>
-            <div className="bg-white border border-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold">{plan.deferredItems?.length ?? 0}</p>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">Deferred items</p>
-            </div>
-          </div>
-
-          {plan.bufferMin != null && (
-            <p
-              className="text-xs text-muted-foreground text-center"
-              data-testid="weekly-buffer-line"
-            >
-              Buffer for unexpected urgent emails:{' '}
-              <strong className="text-amber-700">{fmtMins(plan.bufferMin)}</strong>
-              {' '}— each day is filled to 80% of its capacity, leaving the
-              remaining 20% free for items that arrive during the week.
-            </p>
-          )}
+          {/* Summary stats + buffer explainer now live on the Forecast tab,
+              so the whole week-level rollup sits next to the projection. */}
         </>
       )}
     </div>

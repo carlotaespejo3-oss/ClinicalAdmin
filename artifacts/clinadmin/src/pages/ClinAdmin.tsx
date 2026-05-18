@@ -324,7 +324,7 @@ export default function ClinAdmin() {
       case 'Archive': return <ArchiveTab />;
       case 'High-Risk Patients': return <HighRiskTab onNavigate={setActiveTab} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} />;
       case 'Backlog Recovery': return <CatchUpTab />;
-      case 'Forecast': return <ForecastTab weekSetup={weekSetup} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
+      case 'Forecast': return <ForecastTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Templates': return <StyleTab />;
       case 'Weekly Plan': return <WeeklyPlanTab weekSetup={weekSetup} plan={weekSetup?.plan ?? null} onPlanGenerated={handlePlanGenerated} onOpenWeeklySetup={() => setShowWeeklySetup(true)} />;
       case 'Calendar': return <CalendarTab weekSetup={weekSetup} manualTasks={manualTaskList} onOpenEmail={(id) => { setOpenEmailId(id); setActiveTab("Emails"); }} onNavigate={setActiveTab} onOpenWeeklySetup={() => setShowWeeklySetup(true)} onUpdateAvailability={handleUpdateAvailability} />;
