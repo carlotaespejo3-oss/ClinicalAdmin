@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ClipboardList, Plus, Trash2, Mail, Sparkles } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Sparkles, Phone } from 'lucide-react';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import {
   useUserPlannedItems,
   deleteUserPlannedItem,
 } from '@/lib/userPlannedItemsStore';
+import { usePromptedTasksState } from '@/lib/promptedTasksStore';
 import { cn } from '@/lib/utils';
 import { fmtMin, dateKey, startOfDay } from '@/lib/calendarHelpers';
 import AddPlannedItemDialog from './AddPlannedItemDialog';
@@ -13,27 +14,49 @@ interface Props {
   runway: DailyPlan[];
 }
 
-type Row = {
-  date: string;
-  item: PlanItem;
-};
+// A row in "My tasks" is something the clinician needs to do that
+// REPLYING TO AN EMAIL ALONE WON'T CLEAR. Three sources qualify:
+//
+//   1. Linked document tasks — auto-paired with an email
+//      ("Write NDIS report for J. Patel"). PlanItem kind='task',
+//      arrives from linkedDocTasksStore via the planner.
+//   2. Manual tasks the clinician added by hand — either from the
+//      Tasks tab (manualTasksStore) or the "Add to your week"
+//      dialog here (userPlannedItemsStore). Both reach us as
+//      kind='task' items on the runway.
+//   3. AI-extracted potential follow-ups the clinician accepted
+//      from the inbox "Possible task" prompt — phone calls,
+//      prescriptions, appointment bookings, deadlines. These live
+//      in promptedTasksStore and DO NOT pass through the planner,
+//      so we merge them in directly below.
+//
+// What's intentionally OUT: emails whose only action is "draft a
+// reply and send". They're scheduled by the planner (kind='email')
+// and visible in Today's Plan — listing them again here would mean
+// every safeguarding/clinical email shows up as a task, which is
+// noise, not work to track.
+type Row =
+  | { kind: 'plan'; date: string; item: PlanItem }
+  | {
+      kind: 'prompt';
+      date: string;
+      id: string;
+      title: string;
+      estMin: number;
+      typeLabel: string;
+      linkedEmailId: number;
+    };
 
-// Flat task list shown beside Today's Plan on Home.
+// Flat task list shown beside Today's Plan on Home. See the Row
+// type above for the precise definition of "task" used here.
 //
-// Sources: pulls EVERYTHING the planner has scheduled across the
-// 14-day runway — emails the AI extracted into actionable work,
-// existing manual tasks, AND items the clinician just added by hand
-// from the Add dialog. Sorted by date (soonest first).
-//
-// Events are intentionally excluded — they live on the calendar,
-// not in a task list.
-//
-// Delete is offered only on items the clinician added by hand
-// (matched against the user-planned-items store by refId), since
-// AI-derived rows reflect emails / linked clinical tasks that are
-// owned by the inbox/tasks tabs.
+// Delete is offered only on items the clinician added by hand from
+// the inline Add dialog. Linked-doc, manual, and AI-prompt rows
+// are owned by their respective tabs (Tasks / Inbox) and edited
+// there.
 export default function TaskList({ runway }: Props) {
   const userPlanned = useUserPlannedItems();
+  const { tasks: promptedTasks } = usePromptedTasksState();
   const [addOpen, setAddOpen] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -49,14 +72,39 @@ export default function TaskList({ runway }: Props) {
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
+    // 1 — planner-scheduled true tasks. Skip events (live on the
+    // calendar) AND emails (a reply isn't a separate task — see
+    // the Row type doc above). Unclear-gate prompts also drop out.
     for (const day of runway) {
       for (const item of day.items) {
-        if (item.kind === 'event') continue;
-        out.push({ date: day.date, item });
+        if (item.kind !== 'task') continue;
+        out.push({ kind: 'plan', date: day.date, item });
       }
     }
+    // 2 — AI-prompt follow-ups the clinician accepted. These bypass
+    // the planner, so we add them by hand with a date computed from
+    // dueDays (null → today, so the clinician sees them immediately
+    // instead of having no date at all).
+    for (const t of promptedTasks) {
+      if (t.done) continue;
+      const due = new Date(today);
+      const offset = typeof t.dueDays === 'number' ? Math.max(0, t.dueDays) : 0;
+      due.setDate(due.getDate() + offset);
+      out.push({
+        kind: 'prompt',
+        date: dateKey(due),
+        id: t.id,
+        title: t.title,
+        estMin: t.estMin,
+        typeLabel: t.type,
+        linkedEmailId: t.emailId,
+      });
+    }
+    // Sort by date soonest first so the clinician sees what's
+    // closest at the top regardless of source.
+    out.sort((a, b) => a.date.localeCompare(b.date));
     return out;
-  }, [runway]);
+  }, [runway, promptedTasks, today]);
 
   return (
     <div
@@ -71,7 +119,7 @@ export default function TaskList({ runway }: Props) {
           <div className="min-w-0">
             <h3 className="text-base font-bold leading-tight">My tasks</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Everything you're scheduled to do — AI-planned and your own.
+              Work beyond just replying — reports, calls, follow-ups.
             </p>
           </div>
         </div>
@@ -113,17 +161,21 @@ export default function TaskList({ runway }: Props) {
           className="divide-y divide-border/60 flex-1 overflow-y-auto max-h-[480px]"
           data-testid="task-list-rows"
         >
-          {rows.map((row, idx) => (
-            <li key={`${row.date}-${row.item.kind}-${row.item.refId}-${idx}`}>
-              <TaskRow
-                row={row}
-                todayKey={todayKey}
-                isUserItem={
-                  typeof row.item.refId === 'string' && userIds.has(row.item.refId)
-                }
-              />
-            </li>
-          ))}
+          {rows.map((row, idx) => {
+            const key =
+              row.kind === 'plan'
+                ? `plan-${row.date}-${row.item.refId}-${idx}`
+                : `prompt-${row.id}`;
+            const isUserItem =
+              row.kind === 'plan' &&
+              typeof row.item.refId === 'string' &&
+              userIds.has(row.item.refId);
+            return (
+              <li key={key}>
+                <TaskRow row={row} todayKey={todayKey} isUserItem={isUserItem} />
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -145,23 +197,26 @@ function TaskRow({
   todayKey: string;
   isUserItem: boolean;
 }) {
-  const { item, date } = row;
-  const isEmail = item.kind === 'email';
-  // AI-derived = anything the planner scheduled that the clinician
-  // didn't add by hand. Lets us mark these rows with the spark icon
-  // so the clinician can tell at a glance what's their list vs the
-  // AI's queue.
+  // Unpack the two row variants into a flat shape the rest of the
+  // render uses. Keeps the JSX a single template instead of two
+  // near-identical copies.
+  const title = row.kind === 'plan' ? row.item.title : row.title;
+  const estMin = row.kind === 'plan' ? row.item.estMin : row.estMin;
+  const subLabel =
+    row.kind === 'plan' ? null : row.typeLabel.toLowerCase();
+  // AI-derived = anything the clinician didn't add by hand. Covers
+  // linked doc tasks, planner-scheduled work AND prompt follow-ups.
   const isAi = !isUserItem;
-  const Icon = isEmail ? Mail : ClipboardList;
+  const Icon = row.kind === 'prompt' ? Phone : ClipboardList;
   return (
     <div className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50/60 group">
       <span
         className={cn(
           'w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 border',
-          isEmail
-            ? 'bg-sky-50 text-sky-700 border-sky-200'
-            : isUserItem
-              ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+          isUserItem
+            ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+            : row.kind === 'prompt'
+              ? 'bg-violet-50 text-violet-700 border-violet-200'
               : 'bg-slate-100 text-slate-700 border-slate-200',
         )}
       >
@@ -170,12 +225,16 @@ function TaskRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">
-            {item.title}
+            {title}
           </p>
           {isAi && (
             <span
               className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded flex-shrink-0"
-              title="Scheduled by the AI planner"
+              title={
+                row.kind === 'prompt'
+                  ? 'AI-detected follow-up — confirmed by you in the inbox'
+                  : 'Scheduled by the AI planner'
+              }
             >
               <Sparkles size={8} />
               AI
@@ -183,26 +242,26 @@ function TaskRow({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-          <span className={date === todayKey ? 'text-primary font-bold' : ''}>
-            {formatDateLabel(date, todayKey)}
+          <span className={row.date === todayKey ? 'text-primary font-bold' : ''}>
+            {formatDateLabel(row.date, todayKey)}
           </span>
           <span className="mx-1.5 text-border">·</span>
-          <span className="tabular-nums">{fmtMin(item.estMin)}</span>
-          {isEmail && (
+          <span className="tabular-nums">{fmtMin(estMin)}</span>
+          {subLabel && (
             <>
               <span className="mx-1.5 text-border">·</span>
-              <span className="truncate">{item.category.toLowerCase()}</span>
+              <span className="truncate">{subLabel}</span>
             </>
           )}
         </p>
       </div>
-      {isUserItem && typeof item.refId === 'string' && (
+      {isUserItem && row.kind === 'plan' && typeof row.item.refId === 'string' && (
         <button
           type="button"
-          onClick={() => deleteUserPlannedItem(item.refId as string)}
+          onClick={() => deleteUserPlannedItem(row.item.refId as string)}
           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-700 mt-1.5 transition-opacity"
           aria-label="Remove"
-          data-testid={`task-list-remove-${item.refId}`}
+          data-testid={`task-list-remove-${row.item.refId}`}
         >
           <Trash2 size={13} />
         </button>
