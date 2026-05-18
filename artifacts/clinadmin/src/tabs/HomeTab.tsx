@@ -11,6 +11,7 @@ import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import TodaysPlan from '@/components/TodaysPlan';
 import TaskList from '@/components/TaskList';
 import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
+import UnclearTriageDialog from '@/components/UnclearTriageDialog';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -46,6 +47,10 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   // runway with prev/next chevrons to see how the AI organised the week.
   // Default = today (index 0). Clamps if the runway shrinks under us.
   const [dayIndex, setDayIndex] = useState(0);
+  // Inline triage modal — clicking an "emails need classifying" row
+  // opens the dialog right here on the dashboard so the clinician
+  // doesn't have to bounce over to the inbox and back.
+  const [triageOpen, setTriageOpen] = useState(false);
   const runwayLen = plannerOutput.runway.length;
   const safeDayIndex = Math.min(dayIndex, Math.max(0, runwayLen - 1));
   const currentDay = plannerOutput.runway[safeDayIndex] ?? plannerOutput.todaysPlan;
@@ -407,10 +412,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
                 return e ? { id: e.id, subject: e.subject, from: e.from } : null;
               })
               .filter((e): e is { id: number; subject: string; from: string } => e !== null)}
-            onTriageUnclear={(id) => {
-              onOpenEmail(id);
-              onNavigate('Emails');
-            }}
+            onTriageUnclear={() => setTriageOpen(true)}
             onItemClick={(item) => {
               if (typeof item.refId === 'number') {
                 onOpenEmail(item.refId);
@@ -433,6 +435,19 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           calendar: same purpose, but actually readable and you can
           add to it. */}
       <WeeklyTaskOverview runway={plannerOutput.runway} />
+
+      {/* Inline unclear-email triage. Opens from Today's Plan when
+          the clinician clicks an "emails need classifying" row. Keeps
+          them on Home — no inbox round-trip. */}
+      <UnclearTriageDialog
+        open={triageOpen}
+        emailIds={plannerOutput.unclearEmailIds}
+        onClose={() => setTriageOpen(false)}
+        onOpenInInbox={(id) => {
+          onOpenEmail(id);
+          onNavigate('Emails');
+        }}
+      />
     </div>
   );
 }
