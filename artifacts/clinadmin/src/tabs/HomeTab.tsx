@@ -9,7 +9,7 @@ import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
 import { usePlannerOutput } from '@/lib/usePlannerOutput';
 import TodaysPlan from '@/components/TodaysPlan';
-import MiniWorkloadCalendar from '@/components/MiniWorkloadCalendar';
+import TaskList from '@/components/TaskList';
 import WeeklyTaskOverview from '@/components/WeeklyTaskOverview';
 
 interface Props {
@@ -422,19 +422,16 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           />
         </div>
         <div className="xl:col-span-2">
-          {/* Diary view — tasks/events only, mirrors the full Calendar
-              tab. Email work is shown in Today's Plan beside it; we
-              don't double-count it on the calendar. */}
-          <MiniWorkloadCalendar
-            runway={plannerOutput.runway}
-            onJumpToDay={(idx) => setDayIndex(idx)}
-          />
+          {/* My tasks — the clinician's hand-curated list. Anything
+              added here also flows into the planner and onto the
+              Week ahead grid below + the full Calendar tab. */}
+          <TaskList />
         </div>
       </div>
 
-      {/* Week ahead — task + event overview. Items added here flow
-          into the planner, so the mini calendar above and the full
-          Calendar tab update automatically. */}
+      {/* Week ahead — the diary view. Replaces the old mini workload
+          calendar: same purpose, but actually readable and you can
+          add to it. */}
       <WeeklyTaskOverview runway={plannerOutput.runway} />
     </div>
   );
