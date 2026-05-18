@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
@@ -105,6 +105,24 @@ export default function ClinAdmin() {
   // clicks "Generate".
   useClinicianSettingsHydration();
   const [activeTab, setActiveTab] = useState<TabType>('Home');
+  // Persist sidebar collapsed/expanded preference per browser. Reading
+  // synchronously inside useState's initialiser avoids a flash of the
+  // wrong width on first paint.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('clinadmin-sidebar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('clinadmin-sidebar-collapsed', sidebarCollapsed ? '1' : '0');
+    } catch {
+      /* ignore storage errors (private mode etc.) */
+    }
+  }, [sidebarCollapsed]);
   // Both lists now persist server-side. Sidebar is full CRUD;
   // manual tasks are seed records (lib/data.ts) overlaid with the
   // clinician's per-task overrides (done flag + optional kept-open
@@ -347,47 +365,122 @@ export default function ClinAdmin() {
       />
 
       {/* Sidebar */}
-      <aside className="w-56 border-r border-sidebar-border bg-sidebar flex flex-col">
-        {/* Logo */}
-        <div className="p-5 border-b border-sidebar-border">
-          <h1 className="text-xl font-bold text-primary flex items-center gap-2">
-            <span className="bg-primary text-white p-1 rounded text-sm">CA</span>
-            ClinAdmin
-          </h1>
-          <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wider font-semibold">CAMHS Dashboard</p>
+      <aside
+        className={cn(
+          "border-r border-sidebar-border bg-sidebar flex flex-col transition-[width] duration-200 ease-out",
+          sidebarCollapsed ? "w-14" : "w-56"
+        )}
+      >
+        {/* Logo + collapse toggle */}
+        <div className={cn(
+          "border-b border-sidebar-border flex items-start justify-between gap-2",
+          sidebarCollapsed ? "p-3 flex-col items-center" : "p-5"
+        )}>
+          {sidebarCollapsed ? (
+            <span
+              className="bg-primary text-white p-1.5 rounded text-sm font-bold"
+              title="ClinAdmin — CAMHS Dashboard"
+              aria-label="ClinAdmin"
+            >
+              CA
+            </span>
+          ) : (
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-primary flex items-center gap-2">
+                <span className="bg-primary text-white p-1 rounded text-sm">CA</span>
+                ClinAdmin
+              </h1>
+              <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wider font-semibold">CAMHS Dashboard</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(v => !v)}
+            className="text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent rounded p-1 transition-colors flex-shrink-0"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-pressed={sidebarCollapsed}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            data-testid="button-sidebar-toggle"
+          >
+            {sidebarCollapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+          </button>
         </div>
 
         {/* Nav */}
-        <nav className="p-3 space-y-0.5 border-b border-sidebar-border">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium",
-                activeTab === tab.id
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-              data-testid={`tab-${tab.id.toLowerCase().replace(/[\s-]/g, '-')}`}
-            >
-              <tab.icon size={16} />
-              {tab.label}
-              {tab.id === 'Emails' && (
-                <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">{allEmails.filter(e => !isOutOfInbox(e.id)).length}</span>
-              )}
-              {tab.id === 'Archive' && archived.size > 0 && (
-                <span className="ml-auto bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{archived.size}</span>
-              )}
-              {tab.id === 'High-Risk Patients' && allEmails.filter(e => e.risk === 'high' && !isOutOfInbox(e.id)).length > 0 && (
-                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{allEmails.filter(e => e.risk === 'high' && !isOutOfInbox(e.id)).length}</span>
-              )}
-            </button>
-          ))}
+        <nav className={cn("space-y-0.5 border-b border-sidebar-border", sidebarCollapsed ? "p-2" : "p-3")}>
+          {tabs.map((tab) => {
+            const emailCount = allEmails.filter(e => !isOutOfInbox(e.id)).length;
+            const archiveCount = archived.size;
+            const highRiskCount = allEmails.filter(e => e.risk === 'high' && !isOutOfInbox(e.id)).length;
+            const showEmails = tab.id === 'Emails';
+            const showArchive = tab.id === 'Archive' && archiveCount > 0;
+            const showHigh = tab.id === 'High-Risk Patients' && highRiskCount > 0;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "rounded-md transition-colors text-sm font-medium relative",
+                  sidebarCollapsed
+                    ? "w-10 h-10 mx-auto flex items-center justify-center"
+                    : "w-full flex items-center gap-3 px-3 py-2",
+                  activeTab === tab.id
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                )}
+                title={sidebarCollapsed ? tab.label : undefined}
+                aria-label={sidebarCollapsed ? tab.label : undefined}
+                data-testid={`tab-${tab.id.toLowerCase().replace(/[\s-]/g, '-')}`}
+              >
+                <tab.icon size={16} />
+                {!sidebarCollapsed && tab.label}
+                {showEmails && (
+                  sidebarCollapsed ? (
+                    <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none">{emailCount}</span>
+                  ) : (
+                    <span className="ml-auto bg-primary-foreground text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">{emailCount}</span>
+                  )
+                )}
+                {showArchive && (
+                  sidebarCollapsed ? (
+                    <span className="absolute -top-1 -right-1 bg-slate-200 text-slate-700 text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none">{archiveCount}</span>
+                  ) : (
+                    <span className="ml-auto bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{archiveCount}</span>
+                  )
+                )}
+                {showHigh && (
+                  sidebarCollapsed ? (
+                    <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none animate-pulse">{highRiskCount}</span>
+                  ) : (
+                    <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{highRiskCount}</span>
+                  )
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Manual Tasks Section */}
         <div className="flex-1 overflow-y-auto">
+          {sidebarCollapsed ? (
+            <div className="p-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="w-10 h-10 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors relative"
+                title={`Manual Tasks${sidebarTasks.length ? ` (${sidebarTasks.length})` : ''}`}
+                aria-label="Manual Tasks (expand sidebar to view)"
+                data-testid="button-manual-tasks-collapsed"
+              >
+                <ClipboardList size={16} />
+                {sidebarTasks.filter(t => !t.done).length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-slate-300 text-slate-800 text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none">
+                    {sidebarTasks.filter(t => !t.done).length}
+                  </span>
+                )}
+              </button>
+            </div>
+          ) : (
           <div className="p-3">
             <div className="flex items-center justify-between mb-2 px-1">
               <div className="flex items-center gap-2">
@@ -482,10 +575,11 @@ export default function ClinAdmin() {
               ))}
             </ul>
           </div>
+          )}
         </div>
 
         {/* Profile */}
-        <SidebarProfile />
+        <SidebarProfile collapsed={sidebarCollapsed} />
       </aside>
 
       {/* Main Content */}
@@ -519,8 +613,21 @@ function profileInitials(fullName: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function SidebarProfile() {
+function SidebarProfile({ collapsed = false }: { collapsed?: boolean }) {
   const { profile } = useAppSettingsCache();
+  if (collapsed) {
+    return (
+      <div className="p-2 border-t border-sidebar-border flex justify-center">
+        <div
+          className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs"
+          title={`${profile.fullName} — ${profile.role}`}
+          aria-label={`${profile.fullName}, ${profile.role}`}
+        >
+          {profileInitials(profile.fullName)}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="p-3 border-t border-sidebar-border">
       <div className="flex items-center gap-3 px-2 py-2.5 bg-sidebar-accent/50 rounded-lg">
