@@ -90,3 +90,87 @@ test('leaveBlocksForDay — returns only blocks that touch the calendar day', ()
   assert.ok(day.includes(spanning));
   assert.ok(!day.includes(before));
 });
+
+import {
+  computeReturnFromLeave,
+  nextWorkingDayAfter,
+} from './leaveBlocksStore';
+
+const MON_TO_FRI = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+
+test('computeReturnFromLeave — Mon back from Fri-only annual leave returns 1 day away', () => {
+  // 2026-05-15 is a Friday. Block covers Fri 09–17. Returning Mon 2026-05-18.
+  const b = block([2026, 5, 15, 9], [2026, 5, 15, 17]);
+  const map = computeReturnFromLeave(['2026-05-18'], [b], MON_TO_FRI);
+  const info = map.get('2026-05-18');
+  assert.ok(info, 'Mon should be flagged as return-from-leave');
+  assert.equal(info!.daysAway, 1);
+  assert.deepEqual(info!.leaveTypes, ['annual']);
+  assert.deepEqual(info!.precedingBlockIds, [b.id]);
+});
+
+test('computeReturnFromLeave — weekend between leave and return is transparent', () => {
+  // Leave runs Thu+Fri (2026-05-14, 2026-05-15). Returning Mon 2026-05-18.
+  // daysAway counts the 2 weekdays of leave but NOT Sat/Sun in between.
+  const b = block([2026, 5, 14, 9], [2026, 5, 15, 17]);
+  const map = computeReturnFromLeave(['2026-05-18'], [b], MON_TO_FRI);
+  assert.equal(map.get('2026-05-18')?.daysAway, 2);
+});
+
+test('computeReturnFromLeave — a normal working day between two leave blocks breaks the chain', () => {
+  // Leave Mon 11th, working Tue 12th, leave Wed 13th. Returning Thu 14th
+  // should report daysAway=1 (only Wed), not 2 — Tue interrupts the run.
+  const b1 = block([2026, 5, 11, 9], [2026, 5, 11, 17]);
+  const b2 = block([2026, 5, 13, 9], [2026, 5, 13, 17]);
+  const map = computeReturnFromLeave(['2026-05-14'], [b1, b2], MON_TO_FRI);
+  assert.equal(map.get('2026-05-14')?.daysAway, 1);
+});
+
+test('computeReturnFromLeave — day with leave on it is NOT a return day', () => {
+  const b = block([2026, 5, 18, 9], [2026, 5, 20, 17]);
+  const map = computeReturnFromLeave(['2026-05-18', '2026-05-19'], [b], MON_TO_FRI);
+  assert.equal(map.size, 0);
+});
+
+test('computeReturnFromLeave — non-working weekday per pattern is not a return day', () => {
+  // Clinician works only Tue/Wed/Thu. Leave Tue 12th. Mon 11th and Fri 15th
+  // are non-working — shouldn't be reported as return days.
+  const TUE_WED_THU = new Set(['Tue', 'Wed', 'Thu']);
+  const b = block([2026, 5, 12, 9], [2026, 5, 12, 17]);
+  const map = computeReturnFromLeave(
+    ['2026-05-11', '2026-05-13', '2026-05-15'],
+    [b],
+    TUE_WED_THU,
+  );
+  // Wed 13th is the next working day after Tue leave → flagged.
+  assert.equal(map.get('2026-05-13')?.daysAway, 1);
+  // Fri 15th is non-working → absent.
+  assert.equal(map.has('2026-05-15'), false);
+});
+
+test('computeReturnFromLeave — dedupes leave types and block ids across the run', () => {
+  // Two annual-leave blocks back to back: Mon and Tue. Returning Wed.
+  const b1 = block([2026, 5, 11, 9], [2026, 5, 11, 17]);
+  const b2 = block([2026, 5, 12, 9], [2026, 5, 12, 17]);
+  const map = computeReturnFromLeave(['2026-05-13'], [b1, b2], MON_TO_FRI);
+  const info = map.get('2026-05-13')!;
+  assert.equal(info.daysAway, 2);
+  assert.deepEqual(info.leaveTypes, ['annual']);
+  assert.deepEqual(info.precedingBlockIds.sort(), [b1.id, b2.id].sort());
+});
+
+test('nextWorkingDayAfter — Fri 17:00 end → next Monday', () => {
+  // Block ends Fri 2026-05-15 17:00. Next working day should be Mon 2026-05-18.
+  const endAt = new Date(2026, 5 - 1, 15, 17, 0).toISOString();
+  const next = nextWorkingDayAfter(endAt, MON_TO_FRI, []);
+  assert.equal(next, '2026-05-18');
+});
+
+test('nextWorkingDayAfter — skips a second leave block that immediately follows', () => {
+  // First block ends Fri 15th. A second block covers Mon 18th. Next clear
+  // working day is Tue 19th.
+  const endAt = new Date(2026, 5 - 1, 15, 17, 0).toISOString();
+  const second = block([2026, 5, 18, 9], [2026, 5, 18, 17]);
+  const next = nextWorkingDayAfter(endAt, MON_TO_FRI, [second]);
+  assert.equal(next, '2026-05-19');
+});

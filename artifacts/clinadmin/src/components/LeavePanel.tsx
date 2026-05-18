@@ -6,10 +6,12 @@ import {
   useLeaveBlocks,
   addLeaveBlock,
   removeLeaveBlock,
+  nextWorkingDayAfter,
   LEAVE_TYPE_LABEL,
   type LeaveType,
   type LeaveBlock,
 } from '@/lib/leaveBlocksStore';
+import type { WeekSetup } from '@/pages/ClinAdmin';
 
 // Calendar-side panel for managing clinician leave / time-off.
 //
@@ -63,8 +65,27 @@ function isoFromLocalDate(dateStr: string, time: 'start' | 'end'): string {
   return local.toISOString();
 }
 
-export default function LeavePanel() {
+// Format a 'YYYY-MM-DD' as "Mon 18 May". Used for the "Day back" line
+// on each leave entry so the clinician can see at a glance when the
+// backlog will land.
+function formatDayBack(dayKey: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return dayKey;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+interface Props {
+  weekSetup: WeekSetup | null;
+}
+
+export default function LeavePanel({ weekSetup }: Props) {
   const blocks = useLeaveBlocks();
+  const workingWeekdays = new Set(weekSetup?.days ?? []);
   const [open, setOpen] = useState(false);
   const [leaveType, setLeaveType] = useState<LeaveType>('annual');
   const [startDate, setStartDate] = useState<string>(todayKey());
@@ -239,6 +260,18 @@ export default function LeavePanel() {
                   {b.notes && (
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">{b.notes}</p>
                   )}
+                  {(() => {
+                    const back = nextWorkingDayAfter(b.endAt, workingWeekdays, blocks);
+                    if (!back) return null;
+                    return (
+                      <p
+                        className="text-[11px] text-amber-800 mt-0.5"
+                        data-testid={`leave-day-back-${b.id}`}
+                      >
+                        Day back: {formatDayBack(back)}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <button
                   type="button"

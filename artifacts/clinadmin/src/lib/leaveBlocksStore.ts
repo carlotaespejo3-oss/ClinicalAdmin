@@ -201,6 +201,146 @@ export function leaveBlocksForDay(
   });
 }
 
+// ---- Return-from-leave helpers ---------------------------------------------
+//
+// Surfaces "the first day you're back from leave" so the clinician sees
+// the backlog landing on that day instead of being ambushed by it. Pure
+// derivations from leave blocks + the working-day pattern — no planner
+// changes, no PlannerOutput shape change. The Calendar / LeavePanel
+// consume these for advisory pills only.
+
+export interface ReturnFromLeaveInfo {
+  // Count of preceding *working* days that were fully on leave. Weekends
+  // (or other non-working weekdays per the clinician's pattern) sitting
+  // between the leave and the return day are transparent — they don't
+  // count toward daysAway but don't break the chain either.
+  daysAway: number;
+  // The distinct leave types that contributed to the run, deduped in
+  // the order encountered walking backwards. Useful so the UI can say
+  // "Back from annual leave" vs a generic label.
+  leaveTypes: LeaveType[];
+  // IDs of the leave blocks that contributed. Lets the LeavePanel
+  // cross-reference "day back" against the block the user is hovering.
+  precedingBlockIds: string[];
+}
+
+// Step a 'YYYY-MM-DD' key by ±1 calendar day in local time (DST-safe via
+// the Date calendar constructor).
+function shiftDayKey(dayKey: string, deltaDays: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return dayKey;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + deltaDays, 0, 0, 0, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Format a YYYY-MM-DD key into the short weekday label the WeekSetup
+// uses ('Mon', 'Tue', ...). Matches the en-GB short weekday format used
+// elsewhere in the app so callers can pass `new Set(weekSetup.days)`
+// straight through.
+function weekdayShort(dayKey: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return '';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', {
+    weekday: 'short',
+  });
+}
+
+// For each date in `dates`, decide whether it's a "return-from-leave" day
+// and how many working days were lost to leave immediately before it.
+//
+// A date qualifies when:
+//   - it is itself a working day per the schedule pattern
+//   - it has no leave block touching it
+//   - the immediately preceding working day(s) were fully on leave
+//
+// Walks backward up to 60 calendar days (any realistic clinical leave run).
+//
+// The returned Map only contains entries for qualifying dates — callers
+// can treat absence as "not a return day".
+export function computeReturnFromLeave(
+  dates: readonly string[],
+  blocks: readonly LeaveBlock[],
+  workingWeekdays: ReadonlySet<string>,
+): Map<string, ReturnFromLeaveInfo> {
+  const out = new Map<string, ReturnFromLeaveInfo>();
+  if (workingWeekdays.size === 0 || blocks.length === 0) return out;
+  for (const dayKey of dates) {
+    if (!workingWeekdays.has(weekdayShort(dayKey))) continue;
+    if (leaveBlocksForDay(dayKey, blocks).length > 0) continue;
+    // v1 "fully on leave" heuristic: ANY block overlap with the day
+    // counts. This matches today's LeavePanel which only creates
+    // full-day 09–17 blocks. When half-day support lands the inner
+    // walk-back below will need to compare leaveMinutesForDay against
+    // the day's working minutes instead, so an afternoon-only block
+    // doesn't falsely flag the next morning as day-back.
+    let cursor = shiftDayKey(dayKey, -1);
+    let daysAway = 0;
+    const types: LeaveType[] = [];
+    const blockIds: string[] = [];
+    const seenTypes = new Set<LeaveType>();
+    const seenIds = new Set<string>();
+    for (let cap = 0; cap < 60; cap++) {
+      const onPrev = leaveBlocksForDay(cursor, blocks);
+      const isWorking = workingWeekdays.has(weekdayShort(cursor));
+      if (onPrev.length > 0) {
+        if (isWorking) {
+          daysAway++;
+          for (const b of onPrev) {
+            if (!seenIds.has(b.id)) {
+              seenIds.add(b.id);
+              blockIds.push(b.id);
+            }
+            if (!seenTypes.has(b.leaveType)) {
+              seenTypes.add(b.leaveType);
+              types.push(b.leaveType);
+            }
+          }
+        }
+        cursor = shiftDayKey(cursor, -1);
+        continue;
+      }
+      if (!isWorking) {
+        // Non-working day with no leave — transparent (weekend between
+        // a Friday leave and Monday return shouldn't break the chain).
+        cursor = shiftDayKey(cursor, -1);
+        continue;
+      }
+      // Working day with no leave — chain broken.
+      break;
+    }
+    if (daysAway > 0) {
+      out.set(dayKey, { daysAway, leaveTypes: types, precedingBlockIds: blockIds });
+    }
+  }
+  return out;
+}
+
+// First working day at-or-after `endAtIso`. Used by LeavePanel to show
+// "Day back: <weekday date>" next to each leave block so the clinician
+// can see when the backlog will land. Returns null if no working day is
+// found within the next 60 calendar days (defensive cap matching the
+// computeReturnFromLeave look-back).
+export function nextWorkingDayAfter(
+  endAtIso: string,
+  workingWeekdays: ReadonlySet<string>,
+  blocks: readonly LeaveBlock[],
+): string | null {
+  if (workingWeekdays.size === 0) return null;
+  // endAt is exclusive. Start from the local calendar day that contains
+  // endAt minus one minute (so an endAt of 17:00 Friday still anchors on
+  // Friday) and step forward from there.
+  const anchor = new Date(new Date(endAtIso).getTime() - 60_000);
+  let cursor = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-${String(anchor.getDate()).padStart(2, '0')}`;
+  cursor = shiftDayKey(cursor, 1);
+  for (let cap = 0; cap < 60; cap++) {
+    const working = workingWeekdays.has(weekdayShort(cursor));
+    const onLeave = leaveBlocksForDay(cursor, blocks).length > 0;
+    if (working && !onLeave) return cursor;
+    cursor = shiftDayKey(cursor, 1);
+  }
+  return null;
+}
+
 // Parse 'YYYY-MM-DD' to the half-open local-midnight bounds of that
 // calendar day. DST-safe — both endpoints are constructed via the
 // Date calendar constructor so the boundary lands on real local

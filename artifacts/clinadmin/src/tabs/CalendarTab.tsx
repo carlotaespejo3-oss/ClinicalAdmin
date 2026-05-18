@@ -19,9 +19,12 @@ import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
 import {
   useLeaveBlocks,
   leaveBlocksForDay,
+  computeReturnFromLeave,
   LEAVE_TYPE_LABEL,
   type LeaveBlock,
+  type ReturnFromLeaveInfo,
 } from '@/lib/leaveBlocksStore';
+import { Plane } from 'lucide-react';
 import type { ManualTask, AiCategory, TabType } from '@/lib/types';
 import type { DailyPlan, PlanItem } from '@/lib/planner';
 import type { WeekSetup } from '@/pages/ClinAdmin';
@@ -118,12 +121,14 @@ function DayColumn({
   onOpenEmail,
   onOpenTask,
   leave,
+  returnFromLeave,
 }: {
   date: Date;
   plan: DailyPlan | null;
   onOpenEmail: (id: number) => void;
   onOpenTask: (item: PlanItem) => void;
   leave: LeaveBlock[];
+  returnFromLeave: ReturnFromLeaveInfo | null;
 }) {
   const isToday = startOfDay(date).getTime() === startOfDay(new Date()).getTime();
   const weekday = date.toLocaleDateString('en-GB', { weekday: 'short' });
@@ -173,6 +178,29 @@ function DayColumn({
             data-testid="day-leave-pill"
           >
             On leave · {LEAVE_TYPE_LABEL[leave[0].leaveType]}
+          </div>
+        )}
+        {leave.length === 0 && returnFromLeave && (
+          <div
+            className="rounded-md border border-amber-200 bg-amber-50 text-amber-900 px-2 py-1.5 text-[11px] font-semibold flex items-start gap-1.5"
+            data-testid="day-return-from-leave-pill"
+            title={`Backlog from ${returnFromLeave.daysAway} ${
+              returnFromLeave.daysAway === 1 ? 'day' : 'days'
+            } of ${returnFromLeave.leaveTypes
+              .map((t) => LEAVE_TYPE_LABEL[t].toLowerCase())
+              .join(' + ')} landing today`}
+          >
+            <Plane size={11} className="mt-0.5 flex-shrink-0" />
+            <span>
+              First day back · after {returnFromLeave.daysAway}{' '}
+              {returnFromLeave.daysAway === 1 ? 'day' : 'days'} off
+              {plan && plan.items.length > 0 && (
+                <span className="font-normal">
+                  {' '}· {plan.items.length}{' '}
+                  {plan.items.length === 1 ? 'item' : 'items'} lined up
+                </span>
+              )}
+            </span>
           </div>
         )}
         {!plan && <p className="text-[11px] text-muted-foreground italic px-1 py-2">Beyond planning horizon</p>}
@@ -327,6 +355,25 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
   const columnDays = useMemo(() => {
     return Array.from({ length: colCount }, (_, i) => addDays(today, startOffset + i));
   }, [today, startOffset, colCount]);
+
+  // Return-from-leave map: keyed by 'YYYY-MM-DD' for the columns
+  // currently in view. Pure derivation from leave blocks + the working
+  // pattern — no planner change. The helper looks back up to 60 days
+  // so a return-day at the start of a long-horizon view still resolves
+  // a holiday that ran before the runway began.
+  const workingWeekdays = useMemo(
+    () => new Set(weekSetup?.days ?? []),
+    [weekSetup?.days],
+  );
+  const returnFromLeaveByDate = useMemo(
+    () =>
+      computeReturnFromLeave(
+        columnDays.map((d) => dateKey(d)),
+        leaveBlocks,
+        workingWeekdays,
+      ),
+    [columnDays, leaveBlocks, workingWeekdays],
+  );
 
   // Month grid
   const monthGrid = useMemo(() => {
@@ -483,6 +530,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
               onOpenEmail={openEmail}
               onOpenTask={openTaskOnDate(dateKey(d))}
               leave={leaveBlocksForDay(dateKey(d), leaveBlocks)}
+              returnFromLeave={returnFromLeaveByDate.get(dateKey(d)) ?? null}
             />
           ))}
         </div>
@@ -594,7 +642,7 @@ export default function CalendarTab({ weekSetup, manualTasks, onOpenEmail, onNav
       {/* Availability adjustment — lives on Calendar so the clinician
           can tweak this week's hours next to the view that visualises
           the impact. Moved here from Home to keep the dashboard calm. */}
-      <LeavePanel />
+      <LeavePanel weekSetup={weekSetup} />
 
       <AvailabilityPanel
         weekSetup={weekSetup}
