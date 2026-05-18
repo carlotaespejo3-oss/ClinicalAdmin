@@ -269,6 +269,76 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         </div>
       </div>
 
+      {/* Weekly handled + priority triage card. Sits above the status
+          banner so the clinician sees what's been handled and what's
+          pending before the week-plan reassurance copy. */}
+      <div
+        className="bg-white border border-border/50 rounded-xl p-7"
+        data-testid="weekly-handled-card"
+      >
+        {/* Hero — handled count + hours saved */}
+        {weeklyHandledCount === 0 && isMonday ? (
+          <div data-testid="weekly-handled-monday-variant">
+            <p className="text-[44px] font-medium leading-tight tracking-tight text-foreground">
+              Fresh week
+            </p>
+            <p className="text-[15px] text-muted-foreground mt-1">
+              Let&apos;s get into it. Your plan for the week is below.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-baseline flex-wrap gap-x-3">
+              <span
+                className="text-[72px] font-medium leading-none tracking-tight text-foreground tabular-nums"
+                data-testid="weekly-handled-count"
+              >
+                {weeklyHandledCount}
+              </span>
+              <span className="text-[22px] font-medium text-foreground">
+                emails handled for you this week
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-2.5 text-[14px] text-muted-foreground">
+              <Clock size={14} strokeWidth={1.75} />
+              <span data-testid="weekly-hours-saved">
+                ≈ {hoursSaved} hours of inbox time saved
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-border/50 mt-6 pt-5">
+          <p className="text-[14px] text-muted-foreground mb-3">
+            Pending, by priority
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {([
+              { key: 'High' as const, label: 'Urgent', cls: 'bg-red-50 text-red-700' },
+              { key: 'Medium' as const, label: 'Medium', cls: 'bg-amber-50 text-amber-800' },
+              { key: 'Low' as const, label: 'Low', cls: 'bg-slate-100 text-muted-foreground' },
+            ]).map(({ key, label, cls }) => {
+              const count = priorityCounts[key];
+              const numberCls = key === 'Low' ? 'text-foreground' : '';
+              return (
+                <span
+                  key={key}
+                  data-testid={`pending-pill-${label.toLowerCase()}`}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-[5px] text-[13px]',
+                    cls,
+                  )}
+                >
+                  <span className={cn('font-medium tabular-nums', numberCls)}>{count}</span>
+                  <span className="font-normal">{label}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       {/* Status + AI recommendation banner — left column is the at-a-glance
           status; right column lets the clinician top up hours directly so
           the week plan readjusts inline. */}
@@ -407,79 +477,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
                 <p><strong className="text-foreground">Buffer:</strong> {fmtMins(projectedExtra)} projected overhead based on your history.</p>
               </div>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* Weekly handled + priority triage card. Collapses what used to
-          be three separate surfaces (top priority pills, four stat
-          cards, and this region) into one card focused on celebration
-          + triage. The "On track" banner above keeps owning the
-          status / reassurance tone — this card stays neutral even
-          when there are unsafe deferrals or missed deadlines. */}
-      <div
-        className="bg-white border border-border/50 rounded-xl p-7"
-        data-testid="weekly-handled-card"
-      >
-        {/* Hero — handled count + hours saved */}
-        {weeklyHandledCount === 0 && isMonday ? (
-          <div data-testid="weekly-handled-monday-variant">
-            <p className="text-[44px] font-medium leading-tight tracking-tight text-foreground">
-              Fresh week
-            </p>
-            <p className="text-[15px] text-muted-foreground mt-1">
-              Let&apos;s get into it. Your plan for the week is below.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <div className="flex items-baseline flex-wrap gap-x-3">
-              <span
-                className="text-[72px] font-medium leading-none tracking-tight text-foreground tabular-nums"
-                data-testid="weekly-handled-count"
-              >
-                {weeklyHandledCount}
-              </span>
-              <span className="text-[22px] font-medium text-foreground">
-                emails handled for you this week
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 mt-2.5 text-[14px] text-muted-foreground">
-              <Clock size={14} strokeWidth={1.75} />
-              <span data-testid="weekly-hours-saved">
-                ≈ {hoursSaved} hours of inbox time saved
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Divider */}
-        <div className="border-t border-border/50 mt-6 pt-5">
-          <p className="text-[14px] text-muted-foreground mb-3">
-            Pending, by priority
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {([
-              { key: 'High' as const, label: 'Urgent', cls: 'bg-red-50 text-red-700' },
-              { key: 'Medium' as const, label: 'Medium', cls: 'bg-amber-50 text-amber-800' },
-              { key: 'Low' as const, label: 'Low', cls: 'bg-slate-100 text-muted-foreground' },
-            ]).map(({ key, label, cls }) => {
-              const count = priorityCounts[key];
-              const numberCls = key === 'Low' ? 'text-foreground' : '';
-              return (
-                <span
-                  key={key}
-                  data-testid={`pending-pill-${label.toLowerCase()}`}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-[5px] text-[13px]',
-                    cls,
-                  )}
-                >
-                  <span className={cn('font-medium tabular-nums', numberCls)}>{count}</span>
-                  <span className="font-normal">{label}</span>
-                </span>
-              );
-            })}
           </div>
         </div>
       </div>
