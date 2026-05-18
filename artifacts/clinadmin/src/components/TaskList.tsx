@@ -117,6 +117,14 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
   }, [manualTasks]);
 
   const rows: Row[] = useMemo(() => {
+    // Collect planner-scheduled task refIds first so we can avoid
+    // double-rendering an AI-prompted task that's now flowing through
+    // the planner (we used to merge prompted tasks in directly here —
+    // the planner ignored them, so this list was the only place they
+    // showed up. Now that usePlannerOutput feeds them in as
+    // PlannerTasks, they arrive as kind='plan' rows AND would also
+    // arrive as kind='prompt' rows below unless we dedupe).
+    const planTaskIds = new Set<string>();
     const out: Row[] = [];
     // 1 — planner-scheduled true tasks. Skip events (live on the
     // calendar) AND emails (a reply isn't a separate task — see
@@ -124,15 +132,20 @@ export default function TaskList({ runway, onOpenEmail }: Props) {
     for (const day of runway) {
       for (const item of day.items) {
         if (item.kind !== 'task') continue;
+        if (typeof item.refId === 'string') planTaskIds.add(item.refId);
         out.push({ kind: 'plan', date: day.date, item });
       }
     }
     // 2 — AI-prompt follow-ups the clinician accepted OR the
-    // auto-creator added (Tier 1/2). These bypass the planner, so
-    // we add them by hand with a date computed from dueDays (null
-    // → today, so the clinician sees them immediately).
+    // auto-creator added (Tier 1/2). The planner schedules these too
+    // (see note in usePlannerOutput), so skip any whose id already
+    // showed up as a plan row above. If the prompted task somehow
+    // didn't make it into the runway (e.g. zero capacity left in the
+    // window), fall back to the previous behaviour and render it
+    // here with a date computed from dueDays so it doesn't vanish.
     for (const t of promptedTasks) {
       if (t.done) continue;
+      if (planTaskIds.has(t.id)) continue;
       const due = new Date(today);
       const offset = typeof t.dueDays === 'number' ? Math.max(0, t.dueDays) : 0;
       due.setDate(due.getDate() + offset);

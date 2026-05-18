@@ -14,7 +14,10 @@ import {
   isoMondayOf,
 } from './deferralStore';
 import { useUserPlannedItems } from './userPlannedItemsStore';
+import { usePromptedTasksState } from './promptedTasksStore';
+import type { PotentialTaskKind } from './potentialTaskDetect';
 import { buildPlannerInput } from './plannerAdapter';
+import type { AiCategory } from './types';
 import {
   buildPlan,
   type PlannerOutput,
@@ -41,6 +44,7 @@ export function usePlannerOutput(
   const arrivals = useArrivalsConfig();
   const deferralHistory = useDeferralHistory();
   const userPlannedItems = useUserPlannedItems();
+  const { tasks: promptedTasks } = usePromptedTasksState();
 
   const weekMondayKey = isoMondayOf(new Date());
 
@@ -66,6 +70,31 @@ export function usePlannerOutput(
         estMin: it.estMin,
         deadlineDays: Math.max(0, deadlineDays),
         linkedEmailId: null,
+      });
+    }
+
+    // AI-prompted tasks the clinician accepted from inbox prompts
+    // (phone calls, prescriptions, results to review, etc.). These
+    // used to bypass the planner entirely — they appeared in the
+    // My-tasks rail but Today's Plan never knew about them, so the
+    // day looked emptier than it was and the work didn't compete for
+    // capacity with email replies. Feed them in here so the planner
+    // schedules them into the runway alongside everything else.
+    //   · linkedEmailId carries the source email so the planner can
+    //     pair the task with the email reply on the same day (and so
+    //     the My-tasks row remains clickable through to the email).
+    //   · deadlineDays defaults to 2 days when the AI couldn't pin a
+    //     date — close enough to surface in Today's plan without
+    //     forcing a same-day breach.
+    for (const t of promptedTasks) {
+      if (t.done) continue;
+      extraTasks.push({
+        id: t.id,
+        title: t.title,
+        category: promptedTaskCategory(t.kind),
+        estMin: t.estMin,
+        deadlineDays: Math.max(0, typeof t.dueDays === 'number' ? t.dueDays : 2),
+        linkedEmailId: t.emailId,
       });
     }
 
@@ -192,6 +221,7 @@ export function usePlannerOutput(
     deferralHistory,
     weekMondayKey,
     userPlannedItems,
+    promptedTasks,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's
@@ -212,6 +242,25 @@ export function usePlannerOutput(
   }, [deferredKey, weekMondayKey]);
 
   return output;
+}
+
+// Map an AI-prompted-task kind to a planner category band. Clinical
+// kinds (a script, a phone call about a patient, results to review,
+// a referral) land in CLINICAL so they share the medium-priority
+// band with clinical emails; pure scheduling/admin kinds drop to
+// ADMIN so they don't push genuine clinical work down the queue.
+function promptedTaskCategory(kind: PotentialTaskKind): AiCategory {
+  switch (kind) {
+    case 'prescription':
+    case 'phone_call':
+    case 'results_review':
+    case 'referral':
+      return 'CLINICAL';
+    case 'appointment':
+    case 'follow_up':
+    case 'deadline':
+      return 'ADMIN';
+  }
 }
 
 // Parse a 'YYYY-MM-DD' local date string into a local Date at midnight.
