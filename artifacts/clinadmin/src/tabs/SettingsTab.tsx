@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check } from 'lucide-react';
+import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check, Clock, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   RECIPIENT_TYPES,
@@ -10,13 +10,16 @@ import {
 } from '@/lib/signatures';
 import {
   type AppSettings,
+  type SlaConfig,
   type WeeklyDay,
   WEEKLY_DAYS,
   DEFAULT_APP_SETTINGS,
+  DEFAULT_SLA_CONFIG,
   useAppSettingsCache,
   setAppSettingsInternal,
   resetAppSettingsInternal,
 } from '@/lib/clinicianSettingsStore';
+import type { AiCategory } from '@/lib/types';
 
 // Profile, weekly defaults, and notifications now live in the
 // shared clinician-settings store (Postgres-backed, hydrate-once
@@ -24,6 +27,36 @@ import {
 // the other reader. Signatures use the same store via
 // useSignatures().
 const DAYS = WEEKLY_DAYS;
+
+const SLA_LABELS: Partial<Record<AiCategory, string>> = {
+  SAFEGUARDING: 'Safeguarding',
+  URGENT_CLINICAL: 'Urgent clinical',
+  LEGAL: 'Legal / medico-legal',
+  CLINICAL: 'Clinical (routine)',
+  PROFESSIONAL: 'Professional',
+  ADMIN: 'Admin',
+  CPD: 'CPD / learning',
+  NONE: 'Informational / no action',
+  UNCLEAR: 'Unclear (auto-triage)',
+};
+
+const SLA_MIN: Partial<Record<AiCategory, number>> = {
+  SAFEGUARDING: 1, URGENT_CLINICAL: 1, LEGAL: 1,
+  CLINICAL: 1, PROFESSIONAL: 1,
+  ADMIN: 1, CPD: 1, NONE: 1,
+};
+
+const SLA_MAX: Partial<Record<AiCategory, number>> = {
+  SAFEGUARDING: 3, URGENT_CLINICAL: 7, LEGAL: 7,
+  CLINICAL: 30, PROFESSIONAL: 30,
+  ADMIN: 60, CPD: 60, NONE: 60,
+};
+
+const SLA_GROUPS: { label: string; categories: AiCategory[] }[] = [
+  { label: 'Safety & urgent', categories: ['SAFEGUARDING', 'URGENT_CLINICAL', 'LEGAL'] },
+  { label: 'Clinical & professional', categories: ['CLINICAL', 'PROFESSIONAL'] },
+  { label: 'Admin & other', categories: ['ADMIN', 'CPD', 'NONE', 'UNCLEAR'] },
+];
 
 export default function SettingsTab() {
   // Subscribe to the live cache. Local state mirrors it so edits
@@ -95,6 +128,26 @@ export default function SettingsTab() {
     setSettings(DEFAULT_APP_SETTINGS);
     resetAppSettingsInternal();
     setShowSaved(true);
+  };
+
+  const effectiveSla = settings.slaConfig?.slaDaysByCategory ?? DEFAULT_SLA_CONFIG.slaDaysByCategory;
+  const effectiveRunway = settings.slaConfig?.runwayDays ?? DEFAULT_SLA_CONFIG.runwayDays;
+
+  const updateSla = (category: AiCategory, days: number) => {
+    persist({
+      ...settings,
+      slaConfig: {
+        slaDaysByCategory: { ...effectiveSla, [category]: days },
+        runwayDays: effectiveRunway,
+      },
+    });
+  };
+
+  const updateRunwayDays = (days: number) => {
+    persist({
+      ...settings,
+      slaConfig: { slaDaysByCategory: effectiveSla, runwayDays: days },
+    });
   };
 
   return (
@@ -344,6 +397,101 @@ export default function SettingsTab() {
                 );
               })}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Response time targets */}
+      <section className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
+        <header className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+          <Clock size={16} className="text-primary" />
+          <h2 className="text-sm font-bold text-foreground">Response time targets</h2>
+        </header>
+        <div className="p-5 space-y-5">
+          <p className="text-xs text-muted-foreground">
+            How many days from receipt before each item should be actioned. These drive urgency scores and runway warnings in the planner.
+          </p>
+          {SLA_GROUPS.map(group => (
+            <div key={group.label}>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">{group.label}</p>
+              <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
+                {group.categories.map(category => {
+                  const current = effectiveSla[category] ?? DEFAULT_SLA_CONFIG.slaDaysByCategory[category];
+                  const fixed = category === 'UNCLEAR';
+                  const min = SLA_MIN[category] ?? 1;
+                  const max = SLA_MAX[category] ?? 60;
+                  return (
+                    <div key={category} className="px-4 py-3 flex items-center justify-between gap-4 bg-white">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{SLA_LABELS[category]}</p>
+                        {fixed && (
+                          <p className="text-xs text-muted-foreground">Always triaged immediately — not configurable</p>
+                        )}
+                      </div>
+                      {fixed ? (
+                        <span className="text-xs font-semibold text-muted-foreground bg-slate-100 border border-border px-3 py-1 rounded-full">
+                          {current}d (fixed)
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => updateSla(category, Math.max(min, current - 1))}
+                            disabled={current <= min}
+                            className="w-7 h-7 rounded-md border border-border bg-white text-slate-700 flex items-center justify-center text-base font-bold hover:border-primary/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >−</button>
+                          <span className="w-16 text-center text-sm font-semibold text-foreground tabular-nums">
+                            {current} {current === 1 ? 'day' : 'days'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateSla(category, Math.min(max, current + 1))}
+                            disabled={current >= max}
+                            className="w-7 h-7 rounded-md border border-border bg-white text-slate-700 flex items-center justify-center text-base font-bold hover:border-primary/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >+</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          <div className="border-t border-border pt-5 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Planning horizon</p>
+              <p className="text-xs text-muted-foreground mt-0.5">How many days ahead the runway shows (7–60 days).</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => updateRunwayDays(Math.max(7, effectiveRunway - 1))}
+                disabled={effectiveRunway <= 7}
+                className="w-7 h-7 rounded-md border border-border bg-white text-slate-700 flex items-center justify-center text-base font-bold hover:border-primary/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >−</button>
+              <span className="w-16 text-center text-sm font-semibold text-foreground tabular-nums">
+                {effectiveRunway} days
+              </span>
+              <button
+                type="button"
+                onClick={() => updateRunwayDays(Math.min(60, effectiveRunway + 1))}
+                disabled={effectiveRunway >= 60}
+                className="w-7 h-7 rounded-md border border-border bg-white text-slate-700 flex items-center justify-center text-base font-bold hover:border-primary/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >+</button>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <button
+              type="button"
+              onClick={() => persist({ ...settings, slaConfig: DEFAULT_SLA_CONFIG })}
+              className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="button-reset-sla"
+            >
+              <RotateCcw size={12} />
+              Reset response time targets to defaults
+            </button>
           </div>
         </div>
       </section>

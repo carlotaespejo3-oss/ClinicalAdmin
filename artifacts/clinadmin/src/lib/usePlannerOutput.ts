@@ -17,6 +17,7 @@ import { useUserPlannedItems } from './userPlannedItemsStore';
 import { usePromptedTasksState } from './promptedTasksStore';
 import { useLeaveBlocks } from './leaveBlocksStore';
 import { useAppSettingsCache } from './clinicianSettingsStore';
+import { getMultipliers } from './timeTrackingStore';
 import {
   resolveAvailability,
   type WorkingPattern,
@@ -167,8 +168,10 @@ export function usePlannerOutput(
     // the packer never tries to place work on the protected slot in
     // the first place.
 
+    const slaConfig = appSettings.slaConfig;
     const input = buildPlannerInput({
       today,
+      now: new Date(),
       emails,
       classifications,
       manualTasks,
@@ -178,6 +181,9 @@ export function usePlannerOutput(
       extraTasks,
       busyMinutesByDate,
       leaveBlocks,
+      slaDaysByCategory: slaConfig?.slaDaysByCategory,
+      runwayDays: slaConfig?.runwayDays,
+      timeMultipliers: getMultipliers(),
     });
 
     // Run the availability resolver over the same window the planner

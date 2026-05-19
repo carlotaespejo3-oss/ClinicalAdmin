@@ -151,6 +151,11 @@ export interface PlannerInput {
   // become a 28-day-old unanswered email with no UI signal. Keyed
   // by email id; absent / 0 = never deferred before.
   deferralHistory?: ReadonlyMap<number, number>;
+  /** Clinician-specific SLA overrides. Absent categories fall back to
+   * SLA_DAYS_BY_CATEGORY. Pass the full map from AppSettings.slaConfig. */
+  slaDaysByCategory?: Partial<Record<AiCategory, number>>;
+  /** How many days ahead to plan. Defaults to RUNWAY_DAYS (14). */
+  runwayDays?: number;
   // Per-day overrides on the synthetic "unclear gate" item. The gate
   // is computed live from the current unclear-email count, but the
   // clinician can resize the time block or dismiss it for the day from
@@ -293,12 +298,12 @@ export function priorityBand(cat: AiCategory): PriorityBand {
   return 'unclear';
 }
 
-export function deriveDeadlineDays(input: {
-  category: AiCategory;
-  deadlineDays: number | null;
-}): number {
+export function deriveDeadlineDays(
+  input: { category: AiCategory; deadlineDays: number | null },
+  slaOverrides?: Partial<Record<AiCategory, number>>,
+): number {
   if (input.deadlineDays != null) return input.deadlineDays;
-  return SLA_DAYS_BY_CATEGORY[input.category];
+  return slaOverrides?.[input.category] ?? SLA_DAYS_BY_CATEGORY[input.category];
 }
 
 const CAT_RANK: Record<AiCategory, number> = {
@@ -377,7 +382,7 @@ interface Pair {
   band: PriorityBand;
 }
 
-function makeWorkItems(input: PlannerInput): WorkItem[] {
+function makeWorkItems(input: PlannerInput, sla: Partial<Record<AiCategory, number>>): WorkItem[] {
   const items: WorkItem[] = [];
   for (const e of input.emails) {
     if (e.unclear) continue; // gated separately
@@ -388,7 +393,7 @@ function makeWorkItems(input: PlannerInput): WorkItem[] {
       detail: e.from,
       category: e.category,
       estMin: e.estMin,
-      deadlineDays: deriveDeadlineDays(e),
+      deadlineDays: deriveDeadlineDays(e, sla),
       linkedEmailId: null,
       pairId: e.id,
     });
@@ -484,6 +489,13 @@ function planItemFromWork(wi: WorkItem): PlanItem {
 
 export function buildPlan(input: PlannerInput): PlannerOutput {
   const arrivals = input.arrivals ?? DEFAULT_ARRIVAL_CONFIG;
+  // Merge clinician SLA overrides over the built-in defaults so every
+  // category always resolves to a number even when only some are overridden.
+  const sla: Partial<Record<AiCategory, number>> = {
+    ...SLA_DAYS_BY_CATEGORY,
+    ...(input.slaDaysByCategory ?? {}),
+  };
+  const effectiveRunwayDays = input.runwayDays ?? RUNWAY_DAYS;
 
   // 1 — Initialise runway. recoveryReservedMin (from the availability
   //     resolver) is unpacked here in the same shape as
@@ -493,7 +505,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   //     them; the field itself is preserved on the public output so
   //     UI surfaces (and the day-status logic at step 9) can read
   //     it back.
-  const runway: DailyPlanInternal[] = input.availability.map((a, i) => {
+  const runway: DailyPlanInternal[] = input.availability.slice(0, effectiveRunwayDays).map((a, i) => {
     const recoveryReservedMin = Math.max(0, a.recoveryReservedMin ?? 0);
     const triageReservedMin = Math.max(0, a.triageReservedMin ?? 0);
     // Both reserved buckets come off the top of bookable. The packer
@@ -634,7 +646,7 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
   }
 
   // 5 — Build & group work items into pairs (linked email + task)
-  const pairs = buildPairs(makeWorkItems(input));
+  const pairs = buildPairs(makeWorkItems(input, sla));
 
   // Sort each band by deadline asc, then category rank.
   const sortPairs = (a: Pair, b: Pair) => {

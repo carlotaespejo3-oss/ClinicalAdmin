@@ -53,6 +53,13 @@ import {
   toggleSidebarTaskInternal,
 } from '@/lib/sidebarTasksStore';
 
+export interface AdminTimeBlock {
+  /** Start time in "HH:MM" 24-hour format, e.g. "09:00" or "14:30". */
+  start: string;
+  /** Duration in minutes — always a multiple of 15. */
+  durationMin: number;
+}
+
 export interface WeekSetup {
   hours: number;
   days: string[];
@@ -62,6 +69,11 @@ export interface WeekSetup {
    * over the even-split derived from `hours / days.length` for any day
    * listed here. Days not present fall back to the even split. */
   minutesByDay?: Record<string, number>;
+  /** Per-day admin time blocks (1–2 per day). When present for a day,
+   * the total minutes for that day are derived by summing block durations,
+   * and the planner uses block start times to compute how many minutes
+   * remain today given the current wall-clock time. */
+  adminBlocksByDay?: Record<string, AdminTimeBlock[]>;
 }
 
 const tabs: { id: TabType; icon: any; label: string }[] = [
@@ -270,8 +282,8 @@ export default function ClinAdmin() {
     return () => clearTimeout(t);
   }, [weekKey, weekSetup, weekHydrated]);
 
-  const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => {
-    const setup: WeekSetup = { hours, days, plan, sessionLengthMin };
+  const handleWeeklySetupComplete = (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number, adminBlocksByDay?: Record<string, import('@/pages/ClinAdmin').AdminTimeBlock[]>) => {
+    const setup: WeekSetup = { hours, days, plan, sessionLengthMin, adminBlocksByDay };
     setWeekSetupInternal(weekKey, setup);
     setShowWeeklySetup(false);
     // The Weekly Plan tab has been folded into Forecast — jump there
@@ -287,13 +299,14 @@ export default function ClinAdmin() {
     updateWeekSetupInternal(weekKey, prev => (prev ? { ...prev, plan } : prev ?? { hours: 0, days: [], plan }));
   };
 
-  const handleUpdateAvailability = (hours: number, days: string[], minutesByDay?: Record<string, number>) => {
+  const handleUpdateAvailability = (hours: number, days: string[], minutesByDay?: Record<string, number>, adminBlocksByDay?: Record<string, import('@/pages/ClinAdmin').AdminTimeBlock[]>) => {
     updateWeekSetupInternal(weekKey, prev => ({
       hours,
       days,
       plan: prev?.plan ?? null,
       sessionLengthMin: prev?.sessionLengthMin,
       minutesByDay,
+      adminBlocksByDay,
     }));
   };
 

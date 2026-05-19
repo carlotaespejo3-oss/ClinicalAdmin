@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Settings2, Minus, Plus, RotateCcw, Check, AlertTriangle } from 'lucide-react';
+import { Settings2, RotateCcw, Check, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { WeekSetup } from '@/pages/ClinAdmin';
+import type { WeekSetup, AdminTimeBlock } from '@/pages/ClinAdmin';
+import TimeBlockEditor from './TimeBlockEditor';
 
 interface Props {
   weekSetup: WeekSetup | null;
-  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>) => void;
+  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>, adminBlocksByDay?: Record<string, AdminTimeBlock[]>) => void;
   onOpenWeeklySetup: () => void;
 }
 
@@ -44,10 +45,29 @@ export default function AvailabilityPanel({ weekSetup, onUpdateAvailability, onO
   const [draftMinutesByDay, setDraftMinutesByDay] = useState<Record<string, number>>(buildInitialDraft);
   const [savedFlash, setSavedFlash] = useState(false);
 
+  // Draft time blocks — initialised from weekSetup.adminBlocksByDay,
+  // or seeded with one default block per active day if none saved yet.
+  const [draftBlocksByDay, setDraftBlocksByDay] = useState<Record<string, AdminTimeBlock[]>>(() => {
+    const saved = weekSetup?.adminBlocksByDay ?? {};
+    const initial = buildInitialDraft();
+    const result: Record<string, AdminTimeBlock[]> = {};
+    for (const d of Object.keys(initial)) {
+      result[d] = saved[d] ?? [{ start: '09:00', durationMin: Math.max(15, Math.round(initial[d] / 15) * 15) }];
+    }
+    return result;
+  });
+
   useEffect(() => {
-    setDraftMinutesByDay(buildInitialDraft());
+    const initial = buildInitialDraft();
+    setDraftMinutesByDay(initial);
+    const saved = weekSetup?.adminBlocksByDay ?? {};
+    const blocks: Record<string, AdminTimeBlock[]> = {};
+    for (const d of Object.keys(initial)) {
+      blocks[d] = saved[d] ?? [{ start: '09:00', durationMin: Math.max(15, Math.round(initial[d] / 15) * 15) }];
+    }
+    setDraftBlocksByDay(blocks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekSetup?.hours, weekSetup?.days, weekSetup?.minutesByDay]);
+  }, [weekSetup?.hours, weekSetup?.days, weekSetup?.minutesByDay, weekSetup?.adminBlocksByDay]);
 
   const draftDays = ALL_DAYS.filter(d => draftMinutesByDay[d] != null && draftMinutesByDay[d] > 0);
   const draftTotalMins = draftDays.reduce((a, d) => a + (draftMinutesByDay[d] ?? 0), 0);
@@ -72,25 +92,15 @@ export default function AvailabilityPanel({ weekSetup, onUpdateAvailability, onO
       const next = { ...prev };
       if (next[d] != null) {
         delete next[d];
+        setDraftBlocksByDay(b => { const { [d]: _omit, ...rest } = b; return rest; });
         return next;
       }
       const activeCount = Object.keys(prev).length;
       const total = Object.values(prev).reduce((a, b) => a + b, 0);
-      const def = activeCount > 0 ? Math.max(15, Math.round(total / activeCount)) : 60;
+      const def = activeCount > 0 ? Math.max(15, Math.round(total / activeCount)) : 90;
       next[d] = def;
+      setDraftBlocksByDay(b => b[d] ? b : { ...b, [d]: [{ start: '09:00', durationMin: Math.max(15, Math.round(def / 15) * 15) }] });
       return next;
-    });
-  };
-
-  const adjustDayMins = (d: string, delta: number) => {
-    setDraftMinutesByDay(prev => {
-      const cur = prev[d] ?? 0;
-      const nextVal = Math.max(0, Math.min(600, cur + delta));
-      if (nextVal === 0) {
-        const { [d]: _omit, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [d]: nextVal };
     });
   };
 
@@ -113,10 +123,16 @@ export default function AvailabilityPanel({ weekSetup, onUpdateAvailability, onO
 
   const saveAvailability = () => {
     const days = ALL_DAYS.filter(d => draftMinutesByDay[d] != null && draftMinutesByDay[d] > 0);
-    const minsMap = Object.fromEntries(days.map(d => [d, draftMinutesByDay[d]]));
-    const totalMins = days.reduce((a, d) => a + draftMinutesByDay[d], 0);
+    // Derive per-day minutes from blocks when blocks are defined for a day.
+    const minsMap: Record<string, number> = {};
+    for (const d of days) {
+      const db = draftBlocksByDay[d];
+      minsMap[d] = db?.length ? db.reduce((a, b) => a + b.durationMin, 0) : draftMinutesByDay[d];
+    }
+    const totalMins = days.reduce((a, d) => a + minsMap[d], 0);
     const hours = +(totalMins / 60).toFixed(2);
-    onUpdateAvailability(hours, days, days.length > 0 ? minsMap : undefined);
+    const blocksMap = Object.fromEntries(days.filter(d => draftBlocksByDay[d]?.length).map(d => [d, draftBlocksByDay[d]]));
+    onUpdateAvailability(hours, days, days.length > 0 ? minsMap : undefined, Object.keys(blocksMap).length ? blocksMap : undefined);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1800);
   };
@@ -204,31 +220,19 @@ export default function AvailabilityPanel({ weekSetup, onUpdateAvailability, onO
                 </button>
                 {active ? (
                   <>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => adjustDayMins(d, -15)}
-                        className="w-7 h-7 rounded-md border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors flex-shrink-0"
-                        data-testid={`day-mins-decrease-${d.toLowerCase()}`}
-                        aria-label={`Decrease ${d} by 15 min`}
-                      >
-                        <Minus size={12} />
-                      </button>
-                      <div className="flex-1 text-center">
-                        <span className="text-sm font-bold text-foreground" data-testid={`day-mins-${d.toLowerCase()}`}>
-                          {fmtMins(mins!)}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => adjustDayMins(d, 15)}
-                        className="w-7 h-7 rounded-md border border-border bg-white hover:bg-accent flex items-center justify-center transition-colors flex-shrink-0"
-                        data-testid={`day-mins-increase-${d.toLowerCase()}`}
-                        aria-label={`Increase ${d} by 15 min`}
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground text-center mt-1.5">
-                      ±15 min
+                    <TimeBlockEditor
+                      day={d}
+                      blocks={draftBlocksByDay[d] ?? [{ start: '09:00', durationMin: mins ?? 60 }]}
+                      onChange={(day, blocks) => {
+                        setDraftBlocksByDay(prev => ({ ...prev, [day]: blocks }));
+                        // Keep minutesByDay in sync with block totals.
+                        const total = blocks.reduce((a, b) => a + b.durationMin, 0);
+                        if (total > 0) setDraftMinutesByDay(prev => ({ ...prev, [day]: total }));
+                      }}
+                      compact
+                    />
+                    <p className="text-[10px] text-muted-foreground text-center mt-2">
+                      {fmtMins((draftBlocksByDay[d] ?? []).reduce((a, b) => a + b.durationMin, 0) || mins || 0)} total
                     </p>
                   </>
                 ) : (

@@ -5,7 +5,10 @@ import {
 } from '@workspace/api-client-react';
 import {
   DEFAULT_ARRIVAL_CONFIG,
+  SLA_DAYS_BY_CATEGORY,
+  RUNWAY_DAYS,
   type ArrivalConfig,
+  type AiCategory,
 } from './planner';
 import {
   RECIPIENT_TYPES,
@@ -38,6 +41,16 @@ export interface SignaturesSettings {
   perRecipient: Partial<Record<RecipientType, string>>;
 }
 
+export interface CategoryTimeStats {
+  /** Exponential moving average of (actualMin / estMin) ratios. Clamped [0.5, 3.0]. */
+  multiplier: number;
+  sampleCount: number;
+}
+
+export interface TimeTrackingSettings {
+  categoryStats: Partial<Record<AiCategory, CategoryTimeStats>>;
+}
+
 // AppSettings — profile/identity, weekly planner defaults, and
 // notification preferences. Bundled because they're all written
 // together from the Settings page and previously shared one
@@ -46,6 +59,20 @@ export interface SignaturesSettings {
 // patients or their messages.
 export type WeeklyDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri';
 export const WEEKLY_DAYS: readonly WeeklyDay[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+/** Per-category SLA in days + planning horizon. All fields optional —
+ * absent values fall back to the planner's built-in defaults so a
+ * freshly-installed clinician gets sensible behaviour out of the box. */
+export interface SlaConfig {
+  slaDaysByCategory: Record<AiCategory, number>;
+  /** How many days ahead the runway shows. Default 14. */
+  runwayDays: number;
+}
+
+export const DEFAULT_SLA_CONFIG: SlaConfig = {
+  slaDaysByCategory: { ...SLA_DAYS_BY_CATEGORY },
+  runwayDays: RUNWAY_DAYS,
+};
 
 export interface AppSettings {
   profile: {
@@ -111,6 +138,8 @@ export interface AppSettings {
     preLeaveWindDown: number[];
     triggerAfterDaysOff: number;
   };
+  /** Clinician-specific SLA overrides. Absent = use planner defaults. */
+  slaConfig?: SlaConfig;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -146,6 +175,7 @@ interface Cache {
   styleProfile: StyleProfile | null;
   signaturesSettings: SignaturesSettings | null;
   appSettings: AppSettings | null;
+  timeTracking: TimeTrackingSettings | null;
 }
 
 // Default signature is derived from the clinician's profile so changing
@@ -179,6 +209,15 @@ function normaliseAppSettings(s: Partial<AppSettings>): AppSettings {
       ...DEFAULT_APP_SETTINGS.leavePlanner,
       ...(s.leavePlanner ?? {}),
     },
+    slaConfig: s.slaConfig
+      ? {
+          slaDaysByCategory: {
+            ...DEFAULT_SLA_CONFIG.slaDaysByCategory,
+            ...s.slaConfig.slaDaysByCategory,
+          },
+          runwayDays: s.slaConfig.runwayDays ?? DEFAULT_SLA_CONFIG.runwayDays,
+        }
+      : undefined,
   };
 }
 
@@ -196,6 +235,7 @@ let cache: Cache = {
   styleProfile: null,
   signaturesSettings: null,
   appSettings: null,
+  timeTracking: null,
 };
 let hydrationStarted = false;
 let hydrationDone = false;
@@ -248,6 +288,9 @@ async function hydrate(): Promise<void> {
     if (cache.signaturesSettings === null && remote.signaturesSettings) {
       cache.signaturesSettings =
         remote.signaturesSettings as unknown as SignaturesSettings;
+    }
+    if (cache.timeTracking === null && remote.timeTracking) {
+      cache.timeTracking = remote.timeTracking as unknown as TimeTrackingSettings;
     }
     if (cache.appSettings === null && remote.appSettings) {
       cache.appSettings = normaliseAppSettings(
@@ -369,6 +412,24 @@ export function setSignaturesSettingsInternal(next: SignaturesSettings) {
   persist({ signaturesSettings: cache.signaturesSettings });
 }
 
+// ---- Time tracking (estMin learning) -----------------------------------
+
+export function getTimeTracking(): TimeTrackingSettings {
+  ensureHydrationStarted();
+  return cache.timeTracking ?? { categoryStats: {} };
+}
+
+export function setTimeTrackingInternal(next: TimeTrackingSettings) {
+  cache.timeTracking = next;
+  emit();
+  persist({ timeTracking: next });
+}
+
+export function useTimeTrackingCache(): TimeTrackingSettings {
+  useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return getTimeTracking();
+}
+
 // ---- App settings (profile / weeklyDefaults / notifications) -----------
 
 export function getAppSettings(): AppSettings {
@@ -440,6 +501,7 @@ export function _resetForTests() {
     styleProfile: null,
     signaturesSettings: null,
     appSettings: null,
+    timeTracking: null,
   };
   hydrationStarted = false;
   hydrationDone = false;

@@ -53,6 +53,9 @@ import AutoCreatedTasksStrip from '@/components/AutoCreatedTasksStrip';
 import UnresolvedTaskStrip from '@/components/UnresolvedTaskStrip';
 import { useAutoTaskCreator } from '@/lib/autoTaskCreator';
 import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
+import { useEmailTimer } from '@/hooks/useEmailTimer';
+import TimingPrompt from '@/components/TimingPrompt';
+import { resolveEmailCategory } from '@/lib/plannerAdapter';
 
 // ---- Step 3 helpers: drive UI behaviour purely from the AI category ----
 //
@@ -275,6 +278,15 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
   // at most once per email per session; URGENT_CLINICAL +
   // SAFEGUARDING are already handled by the boot-time matcher.
   useEnsureEvidenceMatch(selectedId);
+
+  // Track active reading/drafting time for the currently open email.
+  // Fires recordSample (or raises a prompt) when the clinician navigates away.
+  const selectedEmailForTimer = selectedEmail ?? null;
+  const timerCategory = selectedEmailForTimer
+    ? resolveEmailCategory(selectedEmailForTimer, classifications.get(selectedEmailForTimer.id))
+    : null;
+  useEmailTimer(selectedId, selectedEmailForTimer?.estMin ?? 0, timerCategory);
+
   // Helper: an email is "out of the inbox" if it has been acknowledged or
   // archived (acknowledged or marked done). Both flow into the Archive tab.
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
@@ -985,6 +997,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       ) : (
         <InboxAndDetail />
       )}
+      <TimingPrompt />
     </div>
   );
 

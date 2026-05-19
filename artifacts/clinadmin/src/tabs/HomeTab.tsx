@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Cloc
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, type Priority } from '@/lib/utils';
-import { WeekSetup } from '@/pages/ClinAdmin';
+import { WeekSetup, AdminTimeBlock } from '@/pages/ClinAdmin';
+import AddTimeBlockDialog from '@/components/AddTimeBlockDialog';
 import { useLinkedDocTasks } from '@/lib/linkedDocTasksStore';
 import { useAcknowledgedEmails } from '@/lib/acknowledgedStore';
 import { useArchivedEmails } from '@/lib/archivedStore';
@@ -30,7 +31,7 @@ interface Props {
   onToggleSidebarTask: (id: string) => void;
   manualTasks: ManualTask[];
   weekSetup: WeekSetup | null;
-  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>) => void;
+  onUpdateAvailability: (hours: number, days: string[], minutesByDay?: Record<string, number>, adminBlocksByDay?: Record<string, AdminTimeBlock[]>) => void;
   onNavigate: (tab: TabType) => void;
   onOpenEmail: (emailId: number) => void;
 }
@@ -188,8 +189,12 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const [showWhyRec, setShowWhyRec] = useState(false);
   const [recToast, setRecToast] = useState<string | null>(null);
 
-  type UndoSnapshot = { hours: number; days: string[]; minutesByDay?: Record<string, number> };
+  type UndoSnapshot = { hours: number; days: string[]; minutesByDay?: Record<string, number>; adminBlocksByDay?: Record<string, AdminTimeBlock[]> };
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null);
+
+  // Pending quick-add: set when the user clicks +30min / +1h so we can
+  // ask for a start time before committing the block.
+  const [pendingAdd, setPendingAdd] = useState<{ day: string; durationMin: number } | null>(null);
 
   const showRecToast = (msg: string) => {
     setRecToast(msg);
@@ -208,25 +213,52 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       hours: weekSetup.hours,
       days: [...weekSetup.days],
       minutesByDay: weekSetup.minutesByDay ? { ...weekSetup.minutesByDay } : undefined,
+      adminBlocksByDay: weekSetup.adminBlocksByDay ? { ...weekSetup.adminBlocksByDay } : undefined,
     };
   };
 
+  // Opens the start-time picker dialog instead of adding immediately.
   const handleAddMinutesToDay = (day: string, minsToAdd: number = 30) => {
+    setPendingAdd({ day, durationMin: minsToAdd });
+  };
+
+  const handleBlockConfirmed = (block: AdminTimeBlock) => {
+    if (!pendingAdd) return;
+    const { day, durationMin } = pendingAdd;
+    setPendingAdd(null);
+
     const snapshot = captureSnapshot();
     const baseDays = weekSetup?.days ?? [];
     const newDays = baseDays.includes(day)
       ? baseDays
       : [...baseDays, day].sort((a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b));
+
+    // Merge the new block into adminBlocksByDay, sorted by start.
+    const existingBlocks = weekSetup?.adminBlocksByDay?.[day] ?? [];
+    const newBlocks = [...existingBlocks, block].sort((a, b) =>
+      a.start.localeCompare(b.start),
+    );
+    const nextAdminBlocks: Record<string, AdminTimeBlock[]> = {
+      ...(weekSetup?.adminBlocksByDay ?? {}),
+      [day]: newBlocks,
+    };
+
+    // Recompute minutesByDay from block durations so both are in sync.
     const nextMinutes: Record<string, number> = {};
     for (const d of newDays) {
-      const current = minutesPerDay[d] ?? 0;
-      nextMinutes[d] = d === day ? current + minsToAdd : current;
+      const blocks = d === day ? newBlocks : (weekSetup?.adminBlocksByDay?.[d] ?? []);
+      if (blocks.length > 0) {
+        nextMinutes[d] = blocks.reduce((s, b) => s + b.durationMin, 0);
+      } else {
+        nextMinutes[d] = minutesPerDay[d] ?? 0;
+      }
     }
+
     const newTotalMins = Object.values(nextMinutes).reduce((a, b) => a + b, 0);
     const newHours = +(newTotalMins / 60).toFixed(2);
-    onUpdateAvailability(newHours, newDays, nextMinutes);
+    onUpdateAvailability(newHours, newDays, nextMinutes, nextAdminBlocks);
     setUndoSnapshot(snapshot);
-    showRecToast(`Added ${fmtMins(minsToAdd)} to every ${day} in your weekly schedule`);
+    showRecToast(`Added ${fmtMins(durationMin)} block to ${day} at ${block.start}`);
   };
 
   const handleRebalance = () => {
@@ -244,7 +276,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
 
   const handleUndoRec = () => {
     if (!undoSnapshot) return;
-    onUpdateAvailability(undoSnapshot.hours, undoSnapshot.days, undoSnapshot.minutesByDay);
+    onUpdateAvailability(undoSnapshot.hours, undoSnapshot.days, undoSnapshot.minutesByDay, undoSnapshot.adminBlocksByDay);
     setUndoSnapshot(null);
     setRecToast(null);
   };
@@ -315,12 +347,15 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   }, [plannerOutput.deferredItems, breachedEmailIds, archived, acknowledged, startOfWeekMs]);
 
   const weeklyHandledCount = handledThisWeek.size;
-  const hoursSaved = useMemo(() => {
+  const timeSavedLabel = useMemo(() => {
     let mins = 0;
     for (const e of emails) {
       if (handledThisWeek.has(e.id)) mins += e.estMin;
     }
-    return Math.round(mins / 60);
+    if (mins < 60) return `≈${mins} min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m >= 30 ? `≈${h}.5h` : `≈${h}h`;
   }, [handledThisWeek]);
 
   return (
@@ -469,18 +504,18 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
             <div className="flex items-baseline flex-wrap gap-x-3">
               <span
                 className="text-[72px] font-medium leading-none tracking-tight text-foreground tabular-nums"
-                data-testid="weekly-handled-count"
+                data-testid="weekly-hours-saved"
               >
-                {weeklyHandledCount}
+                {timeSavedLabel}
               </span>
               <span className="text-[22px] font-medium text-foreground">
-                emails handled for you this week
+                of admin time cleared this week
               </span>
             </div>
             <div className="flex items-center gap-1.5 mt-2.5 text-[14px] text-muted-foreground">
-              <Clock size={14} strokeWidth={1.75} />
-              <span data-testid="weekly-hours-saved">
-                ≈ {hoursSaved} hours of inbox time saved
+              <Check size={14} strokeWidth={2} />
+              <span data-testid="weekly-handled-count">
+                {weeklyHandledCount} email{weeklyHandledCount !== 1 ? 's' : ''} sorted
               </span>
             </div>
           </div>
@@ -761,6 +796,16 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           onNavigate('Emails');
         }}
       />
+
+      {pendingAdd && (
+        <AddTimeBlockDialog
+          day={pendingAdd.day}
+          durationMin={pendingAdd.durationMin}
+          existingBlocks={weekSetup?.adminBlocksByDay?.[pendingAdd.day] ?? []}
+          onConfirm={handleBlockConfirmed}
+          onCancel={() => setPendingAdd(null)}
+        />
+      )}
     </div>
   );
 }

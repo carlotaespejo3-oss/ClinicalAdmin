@@ -4,9 +4,11 @@ import { emails, weekHistory, manualTasks, histEmails } from '@/lib/data';
 import { GeneratedPlan } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useAppSettingsCache } from '@/lib/clinicianSettingsStore';
+import TimeBlockEditor from './TimeBlockEditor';
+import type { AdminTimeBlock } from '@/pages/ClinAdmin';
 
 interface Props {
-  onComplete: (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number) => void;
+  onComplete: (hours: number, days: string[], plan: GeneratedPlan | null, sessionLengthMin: number, adminBlocksByDay?: Record<string, AdminTimeBlock[]>) => void;
   onDismiss: () => void;
 }
 
@@ -99,6 +101,14 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
   const [selectedDays, setSelectedDays] = useState<string[]>(initialDefaults.days);
   const [sessionLengthMin, setSessionLengthMin] = useState<number>(initialDefaults.sessionLengthMin);
   const [errorMsg, setErrorMsg] = useState('');
+  // Per-day time blocks. Seeded with one default block per initially-selected day.
+  const [adminBlocksByDay, setAdminBlocksByDay] = useState<Record<string, AdminTimeBlock[]>>(() => {
+    const result: Record<string, AdminTimeBlock[]> = {};
+    for (const d of initialDefaults.days) {
+      result[d] = [{ start: '09:00', durationMin: Math.round((parseFloat(initialDefaults.hours) * 60) / Math.max(1, initialDefaults.days.length) / 15) * 15 || 90 }];
+    }
+    return result;
+  });
   // Track whether the user has touched the form. While untouched,
   // we mirror late-arriving hydrated values into the inputs;
   // once they edit anything, we stop overwriting their input.
@@ -143,9 +153,14 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
 
   const toggleDay = (day: string) => {
     setUserTouched(true);
-    setSelectedDays(prev =>
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-    );
+    setSelectedDays(prev => {
+      const next = prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day];
+      // Seed a default block for newly-added days.
+      if (!prev.includes(day)) {
+        setAdminBlocksByDay(b => b[day] ? b : { ...b, [day]: [{ start: '09:00', durationMin: 90 }] });
+      }
+      return next;
+    });
   };
 
   const handleBuild = async () => {
@@ -162,18 +177,31 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
       priority: t.risk === 'high' ? 'high' : 'normal',
     }));
 
+    // Derive total hours from block durations for days that have blocks.
+    const blocksForDays = Object.fromEntries(
+      selectedDays
+        .filter(d => adminBlocksByDay[d]?.length)
+        .map(d => [d, adminBlocksByDay[d]])
+    );
+    const totalFromBlocks = selectedDays.reduce((acc, d) => {
+      const dayBlocks = adminBlocksByDay[d];
+      if (dayBlocks?.length) return acc + dayBlocks.reduce((a, b) => a + b.durationMin, 0);
+      return acc + h * 60 / selectedDays.length;
+    }, 0);
+    const effectiveHours = totalFromBlocks / 60;
+
     try {
       const resp = await fetch('/api/clinadmin/weekly-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hours: h, days: selectedDays, emails: emailPayload, tasks: taskPayload }),
+        body: JSON.stringify({ hours: effectiveHours, days: selectedDays, emails: emailPayload, tasks: taskPayload }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json() as { plan: GeneratedPlan };
-      onComplete(h, selectedDays, data.plan, sessionLengthMin);
+      onComplete(effectiveHours, selectedDays, data.plan, sessionLengthMin, Object.keys(blocksForDays).length ? blocksForDays : undefined);
     } catch (err) {
       setErrorMsg('Could not connect to AI. Your schedule has been saved without a generated plan.');
-      onComplete(h, selectedDays, null, sessionLengthMin);
+      onComplete(effectiveHours, selectedDays, null, sessionLengthMin, Object.keys(blocksForDays).length ? blocksForDays : undefined);
     }
   };
 
@@ -395,60 +423,90 @@ export default function WeeklySetupModal({ onComplete, onDismiss }: Props) {
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Set your availability</p>
               <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    How many admin hours can you give this week?
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <div className="relative w-32">
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        step="0.5"
-                        value={hours}
-                        onChange={e => { setUserTouched(true); setHours(e.target.value); }}
-                        className="w-full border border-border rounded-xl px-4 py-2.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 text-center"
-                      />
+                {/* Total hours summary — derived from blocks, shown as read-only */}
+                {(() => {
+                  const totalMins = selectedDays.reduce((acc, d) => {
+                    const db = adminBlocksByDay[d];
+                    return acc + (db?.length ? db.reduce((a, b) => a + b.durationMin, 0) : 0);
+                  }, 0);
+                  const totalH = totalMins / 60;
+                  const belowRec = totalMins < recommendedMins;
+                  return (
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-border">
+                      <div className="flex-1">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Total admin time this week</p>
+                        <p className="text-xl font-bold text-foreground">{fmtMins(totalMins)}</p>
+                      </div>
+                      {belowRec ? (
+                        <span className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                          <AlertTriangle size={11} /> Below recommended ({fmtMins(recommendedMins)})
+                        </span>
+                      ) : (
+                        <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                          <Check size={11} /> Covers workload
+                        </span>
+                      )}
+                      {/* Keep hours state in sync with derived value */}
+                      {totalH !== parseFloat(hours) && (() => { setHours(String(totalH)); return null; })()}
                     </div>
-                    <span className="text-sm text-muted-foreground font-medium">hours / week</span>
-                    {parseFloat(hours) < recommendedMins / 60 ? (
-                      <span className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
-                        <AlertTriangle size={11} /> Below recommended
-                      </span>
-                    ) : (
-                      <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
-                        <Check size={11} /> Covers workload
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  );
+                })()}
 
                 <div>
                   <label className="text-sm font-semibold text-foreground block mb-2">
-                    Which days are your admin blocks?
+                    Which days &amp; times are your admin blocks?
                   </label>
-                  <div className="flex gap-2">
-                    {DAYS.map(day => (
-                      <button
-                        key={day}
-                        onClick={() => toggleDay(day)}
-                        className={cn(
-                          "flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border-2",
-                          selectedDays.includes(day)
-                            ? "bg-primary text-white border-primary shadow-sm"
-                            : "bg-white text-muted-foreground border-border hover:border-primary/50"
-                        )}
-                      >
-                        {day}
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    {DAYS.map(day => {
+                      const active = selectedDays.includes(day);
+                      const dayBlocks = adminBlocksByDay[day] ?? [];
+                      const dayTotal = dayBlocks.reduce((a, b) => a + b.durationMin, 0);
+                      return (
+                        <div
+                          key={day}
+                          className={cn(
+                            "rounded-xl border p-3 transition-colors",
+                            active ? "border-primary/40 bg-primary/5" : "border-border bg-white"
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            {/* Day toggle */}
+                            <button
+                              onClick={() => toggleDay(day)}
+                              className={cn(
+                                "w-12 py-1.5 rounded-lg text-xs font-bold transition-colors flex-shrink-0 mt-0.5",
+                                active
+                                  ? "bg-primary text-white"
+                                  : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                              )}
+                            >
+                              {day}
+                            </button>
+                            {active ? (
+                              <div className="flex-1 min-w-0">
+                                <TimeBlockEditor
+                                  day={day}
+                                  blocks={dayBlocks}
+                                  onChange={(d, blocks) => {
+                                    setUserTouched(true);
+                                    setAdminBlocksByDay(prev => ({ ...prev, [d]: blocks }));
+                                  }}
+                                  compact
+                                />
+                                {dayTotal > 0 && (
+                                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                                    {fmtMins(dayTotal)} total on {day}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic pt-1.5">Off — tap to add</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {selectedDays.length > 0 && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {fmtMins(Math.round((parseFloat(hours) * 60) / selectedDays.length))} per day across {selectedDays.length} day{selectedDays.length !== 1 ? 's' : ''}
-                    </p>
-                  )}
                 </div>
 
                 <div>
