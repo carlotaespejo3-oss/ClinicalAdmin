@@ -38,3 +38,5 @@ export * from "./chatAudit";
 export * from "./leaveBlocks";
 export * from "./customFolders";
 export * from "./emailFolderAssignments";
+export * from "./backlogItems";
+export * from "./dismissedBacklogItems";

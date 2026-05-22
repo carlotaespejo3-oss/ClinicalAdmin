@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock, Plane } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
-import { ManualTask, SidebarTask, TabType } from '@/lib/types';
+import { ManualTask, SidebarTask, TabType, type AiCategory } from '@/lib/types';
 import { cn, getEmailPriority, getTaskPriority, type Priority } from '@/lib/utils';
 import { WeekSetup, AdminTimeBlock } from '@/pages/ClinAdmin';
 import AddTimeBlockDialog from '@/components/AddTimeBlockDialog';
@@ -24,6 +24,7 @@ import UnclearTriageDialog from '@/components/UnclearTriageDialog';
 import CalendarTaskDetailModal from '@/components/CalendarTaskDetailModal';
 import OnLeaveDashboard from '@/components/OnLeaveDashboard';
 import CatchUpPlanCard from '@/components/CatchUpPlanCard';
+import BacklogStrip from '@/components/BacklogStrip';
 import type { PlanItem } from '@/lib/planner';
 
 interface Props {
@@ -94,6 +95,9 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   // an upcoming leave block within the next 14 days. We feed manual
   // tasks (they carry a `deadline` in days-from-today via the planner
   // pipeline) — sidebar tasks have no deadline so they're excluded.
+  // We pass `cat` as category so itemsAtRiskBeforeLeave can filter out
+  // LOW-band items (ADMIN/CPD/NONE) — routine work can wait, clinical
+  // and legal deadlines cannot.
   const atRiskItems = useMemo(() => {
     const inputs: AtRiskInput[] = manualTasks
       .filter((t) => !t.done)
@@ -101,6 +105,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
         id: t.id,
         title: t.title,
         deadlineDays: t.deadline,
+        category: t.cat as AiCategory,
       }));
     return itemsAtRiskBeforeLeave(new Date(), leaveBlocks, inputs, 14);
   }, [manualTasks, leaveBlocks]);
@@ -454,9 +459,10 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       )}
 
       {/* Pre-leave finish-line warning — distinct from the leave-context
-          banner above. Lists tasks whose deadlines land while the
-          clinician is away so they can decide to do them early, defer
-          formally, or accept the breach. Advisory; never auto-moves. */}
+          banner above. Shows the highest-priority clinical/legal tasks
+          whose deadlines land during upcoming leave so the clinician
+          can sort them before going away. Routine admin items are
+          filtered out — they can wait or be delegated. Advisory only. */}
       {atRiskItems.length > 0 && (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-3.5 flex items-start gap-3"
@@ -465,21 +471,29 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           <AlertTriangle size={18} className="text-amber-700 mt-0.5 flex-shrink-0" />
           <div className="min-w-0 text-sm leading-snug text-amber-900">
             <p className="font-bold">
-              {atRiskItems.length}{' '}
-              {atRiskItems.length === 1 ? 'task is' : 'tasks are'} due while you're away.
+              {atRiskItems.length === 1
+                ? '1 thing to sort before you go'
+                : `${atRiskItems.length} things to sort before you go`}
             </p>
-            <ul className="text-xs mt-1.5 space-y-0.5">
-              {atRiskItems.slice(0, 4).map((r) => (
+            <p className="text-xs text-amber-800 mt-0.5 mb-1.5">
+              Clinical or time-sensitive deadlines that fall during your leave.
+            </p>
+            <ul className="text-xs space-y-0.5">
+              {atRiskItems.map((r) => (
                 <li key={r.item.id} className="truncate">
                   <strong>{formatDayKey(r.deadlineKey)}</strong> — {r.item.title}
                 </li>
               ))}
-              {atRiskItems.length > 4 && (
-                <li className="text-amber-700/80">+ {atRiskItems.length - 4} more</li>
-              )}
             </ul>
           </div>
         </div>
+      )}
+
+      {/* Backlog catch-up strip — shown when there are pending catch-up
+          items from a previous inbox scan AND the clinician is not in
+          the "back today" state (CatchUpPlanCard covers that case). */}
+      {leaveStatus.state !== 'back-today' && (
+        <BacklogStrip onNavigateToBacklog={() => onNavigate('Backlog Recovery')} />
       )}
 
       {/* Weekly handled + priority triage card. Sits above the status

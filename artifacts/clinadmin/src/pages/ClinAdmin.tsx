@@ -52,6 +52,7 @@ import {
   removeSidebarTaskInternal,
   toggleSidebarTaskInternal,
 } from '@/lib/sidebarTasksStore';
+import { useBacklogQueue } from '@/lib/backlogQueueStore';
 
 export interface AdminTimeBlock {
   /** Start time in "HH:MM" 24-hour format, e.g. "09:00" or "14:30". */
@@ -142,6 +143,10 @@ export default function ClinAdmin() {
   // the seed records themselves.
   const sidebarTasks = useSidebarTasks();
   const manualTaskList = useManualTasksWithOverrides();
+  // Backlog pending count — drives the sidebar badge on "Backlog Recovery".
+  // Hydration is lazy (first subscriber triggers it) so we don't pay for
+  // it on apps that haven't run a catch-up scan yet.
+  const backlogQueue = useBacklogQueue();
   const [openEmailId, setOpenEmailId] = useState<number | null>(null);
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -428,6 +433,7 @@ export default function ClinAdmin() {
             const showEmails = tab.id === 'Emails';
             const showArchive = tab.id === 'Archive' && archiveCount > 0;
             const showHigh = tab.id === 'High-Risk Patients' && highRiskCount > 0;
+            const showBacklog = tab.id === 'Backlog Recovery' && backlogQueue.isHydrated && backlogQueue.pending > 0;
             return (
               <button
                 key={tab.id}
@@ -466,6 +472,13 @@ export default function ClinAdmin() {
                     <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none animate-pulse">{highRiskCount}</span>
                   ) : (
                     <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">{highRiskCount}</span>
+                  )
+                )}
+                {showBacklog && (
+                  sidebarCollapsed ? (
+                    <span className="absolute -top-1 -right-1 bg-amber-400 text-white text-[9px] min-w-[16px] h-[16px] px-1 rounded-full font-bold flex items-center justify-center leading-none">{backlogQueue.pending}</span>
+                  ) : (
+                    <span className="ml-auto bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{backlogQueue.pending}</span>
                   )
                 )}
               </button>

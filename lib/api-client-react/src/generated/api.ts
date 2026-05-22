@@ -5717,3 +5717,100 @@ export const useFetchEvidence = <
 > => {
   return useMutation(getFetchEvidenceMutationOptions(options));
 };
+
+// ---- Backlog items -----------------------------------------------------------
+
+export const getListBacklogItemsUrl = () => `/api/backlog-items`;
+
+export const listBacklogItems = async (
+  options?: RequestInit,
+): Promise<BacklogItem[]> => {
+  return customFetch<BacklogItem[]>(getListBacklogItemsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUpsertBacklogItemUrl = (id: string) =>
+  `/api/backlog-items/${id}`;
+
+export const upsertBacklogItem = async (
+  id: string,
+  backlogItemInput: BacklogItemInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertBacklogItemUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(backlogItemInput),
+  });
+};
+
+export const getDeleteBacklogItemUrl = (id: string) =>
+  `/api/backlog-items/${id}`;
+
+export const deleteBacklogItem = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteBacklogItemUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+// ---- Dismissed backlog items -------------------------------------------------
+
+export const getListDismissedBacklogItemsUrl = () =>
+  `/api/dismissed-backlog-items`;
+
+export const listDismissedBacklogItems = async (
+  options?: RequestInit,
+): Promise<DismissedBacklogItem[]> => {
+  return customFetch<DismissedBacklogItem[]>(
+    getListDismissedBacklogItemsUrl(),
+    { ...options, method: "GET" },
+  );
+};
+
+export const getUpsertDismissedBacklogItemUrl = (id: string) =>
+  `/api/dismissed-backlog-items/${id}`;
+
+export const upsertDismissedBacklogItem = async (
+  id: string,
+  input: DismissedBacklogItemInput,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpsertDismissedBacklogItemUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(input),
+  });
+};
+
+export const getRestoreDismissedBacklogItemUrl = (id: string) =>
+  `/api/dismissed-backlog-items/${id}/restore`;
+
+export const restoreDismissedBacklogItem = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRestoreDismissedBacklogItemUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getClearDismissedBacklogUrl = () =>
+  `/api/dismissed-backlog-items`;
+
+export const clearDismissedBacklog = async (
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getClearDismissedBacklogUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};

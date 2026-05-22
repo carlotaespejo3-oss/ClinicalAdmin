@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check, Clock, RotateCcw } from 'lucide-react';
+import { Settings as SettingsIcon, User, Calendar, Bell, PenLine, Check, Clock, RotateCcw, RefreshCcw, ChevronDown, ChevronUp, Trash2, AlertTriangle, CornerUpLeft } from 'lucide-react';
+import {
+  useDismissedBacklogItems,
+  restoreBacklogItem,
+  clearDismissedHistory,
+  type DismissedBacklogItem,
+} from '@/lib/backlogQueueStore';
+import type { DismissReason } from '@workspace/api-client-react';
 import { cn } from '@/lib/utils';
 import {
   RECIPIENT_TYPES,
@@ -495,9 +502,302 @@ export default function SettingsTab() {
           </div>
         </div>
       </section>
+
+      {/* Dismissed catch-up items — audit log */}
+      <DismissedBacklogSection />
     </div>
   );
 }
+
+// ============================================================================
+// Dismissed backlog section
+// ============================================================================
+
+const PAGE_SIZE = 20;
+
+type ReasonGroup = 'all' | 'rule' | 'ai' | 'manual';
+
+const REASON_LABEL: Record<DismissReason, string> = {
+  'rule:thread_replied':    'Already replied',
+  'rule:calendar_expired':  'Calendar expired',
+  'rule:bulk_mail':         'Bulk mail',
+  'rule:auto_reply':        'Auto-reply',
+  'rule:system_generated':  'System message',
+  'rule:non_inbox_folder':  'Not in inbox',
+  'ai:expired':             'AI: outdated',
+  'ai:noise':               'AI: noise',
+  'manual':                 'Manually dismissed',
+};
+
+const REASON_BADGE: Record<DismissReason, string> = {
+  'rule:thread_replied':    'bg-teal-50 text-teal-700 border-teal-200',
+  'rule:calendar_expired':  'bg-slate-100 text-slate-600 border-slate-200',
+  'rule:bulk_mail':         'bg-orange-50 text-orange-700 border-orange-200',
+  'rule:auto_reply':        'bg-slate-100 text-slate-600 border-slate-200',
+  'rule:system_generated':  'bg-slate-100 text-slate-600 border-slate-200',
+  'rule:non_inbox_folder':  'bg-slate-100 text-slate-600 border-slate-200',
+  'ai:expired':             'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'ai:noise':               'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'manual':                 'bg-blue-50 text-blue-700 border-blue-200',
+};
+
+function reasonGroup(r: DismissReason): ReasonGroup {
+  if (r.startsWith('rule:')) return 'rule';
+  if (r.startsWith('ai:'))   return 'ai';
+  return 'manual';
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
+
+function DismissedRow({ item, onRestore }: { item: DismissedBacklogItem; onRestore: () => void }) {
+  const isRestored = Boolean(item.restoredAt);
+  const receivedDate = fmtDate(item.receivedAt);
+  const dismissedDate = fmtDate(item.dismissedAt);
+
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-3 px-5 py-3 border-b border-border/40 last:border-0',
+        isRestored && 'opacity-50',
+      )}
+      data-testid={`dismissed-row-${item.id}`}
+    >
+      <div className="flex-1 min-w-0 space-y-0.5">
+        <p className={cn('text-xs font-semibold leading-snug', isRestored && 'line-through')}>
+          {item.subject}
+        </p>
+        <p className="text-[10px] text-muted-foreground">
+          {item.senderName}
+          {item.senderAddress ? ` · ${item.senderAddress}` : ''}
+        </p>
+        <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+          <span
+            className={cn(
+              'text-[9px] font-bold px-1.5 py-0.5 rounded-full border uppercase tracking-wide',
+              REASON_BADGE[item.dismissReason],
+            )}
+          >
+            {REASON_LABEL[item.dismissReason]}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            Received {receivedDate} · Dismissed {dismissedDate}
+          </span>
+          {isRestored && (
+            <span className="text-[10px] text-muted-foreground italic">
+              Restored {fmtDate(item.restoredAt!)}
+            </span>
+          )}
+        </div>
+      </div>
+      {!isRestored && (
+        <button
+          type="button"
+          onClick={onRestore}
+          className="flex-shrink-0 flex items-center gap-1 text-[10px] font-bold text-primary border border-primary/30 bg-white px-2.5 py-1.5 rounded-lg hover:bg-primary/8 transition-colors"
+          data-testid={`button-restore-${item.id}`}
+          title="Restore to catch-up queue"
+        >
+          <CornerUpLeft size={10} /> Restore
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DismissedBacklogSection() {
+  const [open, setOpen] = useState(false);
+  const [group, setGroup] = useState<ReasonGroup>('all');
+  const [page, setPage] = useState(0);
+  const [confirmErase, setConfirmErase] = useState(false);
+
+  // Lazy: useDismissedBacklogItems only hydrates when the first subscriber
+  // mounts. Keeping this component inside the settings tab means it only
+  // fetches when the clinician opens Settings.
+  const dismissed = useDismissedBacklogItems();
+
+  const filtered = dismissed.filter(
+    (d) => group === 'all' || reasonGroup(d.dismissReason) === group,
+  );
+  const total = dismissed.length;
+  const restoredCount = dismissed.filter((d) => d.restoredAt).length;
+  const pageItems = filtered.slice(0, (page + 1) * PAGE_SIZE);
+  const hasMore = pageItems.length < filtered.length;
+
+  const groupCounts: Record<ReasonGroup, number> = {
+    all:    dismissed.length,
+    rule:   dismissed.filter((d) => reasonGroup(d.dismissReason) === 'rule').length,
+    ai:     dismissed.filter((d) => reasonGroup(d.dismissReason) === 'ai').length,
+    manual: dismissed.filter((d) => reasonGroup(d.dismissReason) === 'manual').length,
+  };
+
+  function handleErase() {
+    clearDismissedHistory();
+    setConfirmErase(false);
+    setPage(0);
+  }
+
+  return (
+    <section
+      className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden"
+      data-testid="section-dismissed-backlog"
+    >
+      {/* Collapsible header */}
+      <button
+        type="button"
+        className="w-full px-5 py-4 flex items-center gap-3 hover:bg-slate-50/50 transition-colors text-left"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid="button-toggle-dismissed"
+      >
+        <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+          <RefreshCcw size={15} className="text-indigo-700" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-foreground">
+            Catch-up backlog — dismissed items
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {total === 0
+              ? 'No dismissed items yet. Run a catch-up scan to populate this log.'
+              : `${total} item${total !== 1 ? 's' : ''} dismissed${restoredCount > 0 ? `, ${restoredCount} restored` : ''} — audit trail of what was skipped and why.`}
+          </p>
+        </div>
+        {open
+          ? <ChevronUp size={16} className="text-muted-foreground flex-shrink-0" />
+          : <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          {total === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+              <RefreshCcw size={28} className="mx-auto mb-3 text-muted-foreground/30" />
+              <p className="font-semibold">No dismissed items yet.</p>
+              <p className="text-xs mt-1">
+                After running a catch-up scan, emails filtered by rules or dismissed manually
+                will appear here with their reason.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Toolbar — filter tabs + erase button */}
+              <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-border/60 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {((['all', 'rule', 'ai', 'manual'] as ReasonGroup[])).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => { setGroup(g); setPage(0); }}
+                      className={cn(
+                        'px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors capitalize',
+                        group === g
+                          ? 'bg-primary text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      )}
+                      data-testid={`filter-${g}`}
+                    >
+                      {g === 'all' ? 'All' : g === 'rule' ? 'Rule-based' : g === 'ai' ? 'AI' : 'Manual'}
+                      {' '}
+                      <span className="opacity-70">({groupCounts[g]})</span>
+                    </button>
+                  ))}
+                </div>
+
+                {confirmErase ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-red-700">
+                      Delete all {total} records?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleErase}
+                      className="text-[10px] font-bold text-white bg-red-600 px-2.5 py-1 rounded-lg hover:bg-red-700 transition-colors"
+                      data-testid="button-erase-confirm"
+                    >
+                      Yes, erase
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmErase(false)}
+                      className="text-[10px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmErase(true)}
+                    className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground hover:text-destructive transition-colors"
+                    data-testid="button-erase-history"
+                    title="Erase all dismissed item history (GDPR right to erase)"
+                  >
+                    <Trash2 size={11} />
+                    Erase all history
+                  </button>
+                )}
+              </div>
+
+              {/* GDPR note */}
+              <div className="px-5 py-2 flex items-start gap-1.5 bg-slate-50/60 border-b border-border/40">
+                <AlertTriangle size={11} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  This log records why each email was not surfaced to you.
+                  No email body content is stored — only subject, sender, date, and dismiss reason.
+                  Use "Erase all history" to exercise your right to erasure under UK GDPR.
+                </p>
+              </div>
+
+              {/* List */}
+              <div className="divide-y-0">
+                {filtered.length === 0 ? (
+                  <p className="px-5 py-6 text-xs text-muted-foreground text-center italic">
+                    No items in this category.
+                  </p>
+                ) : (
+                  pageItems.map((item) => (
+                    <DismissedRow
+                      key={item.id}
+                      item={item}
+                      onRestore={() => restoreBacklogItem(item.id)}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Pagination footer */}
+              {(hasMore || filtered.length > PAGE_SIZE) && (
+                <div className="px-5 py-3 border-t border-border/40 flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground">
+                    Showing {pageItems.length} of {filtered.length}
+                  </span>
+                  {hasMore && (
+                    <button
+                      type="button"
+                      onClick={() => setPage((p) => p + 1)}
+                      className="text-[10px] font-semibold text-primary hover:underline transition-colors"
+                      data-testid="button-show-more-dismissed"
+                    >
+                      Show {Math.min(PAGE_SIZE, filtered.length - pageItems.length)} more
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ============================================================================
+// Shared sub-components
+// ============================================================================
 
 function SettingRow({
   label,

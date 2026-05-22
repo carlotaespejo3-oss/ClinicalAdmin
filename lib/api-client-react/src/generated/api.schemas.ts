@@ -886,3 +886,94 @@ export interface EvidenceFetchResult {
    */
   content?: string | null;
 }
+
+// ---- Backlog items (start-mode catch-up queue) --------------------------------
+
+export type BacklogItemStatus =
+  (typeof BacklogItemStatus)[keyof typeof BacklogItemStatus];
+
+export const BacklogItemStatus = {
+  pending: "pending",
+  done: "done",
+  deferred: "deferred",
+} as const;
+
+/** Minimal recognition metadata for one email in the catch-up backlog.
+ *  No body content — the Outlook message-id is a reference back to the
+ *  original email in Graph. */
+export interface BacklogItem {
+  id: string;
+  outlookMessageId: string;
+  conversationId: string;
+  subject: string;
+  senderName: string;
+  senderAddress: string;
+  receivedAt: string;
+  priorityScore: number;
+  status: BacklogItemStatus;
+  /** @nullable */
+  linkedTaskId?: string | null;
+  createdAt: string;
+  /** @nullable */
+  resolvedAt?: string | null;
+}
+
+/** POST body for creating or updating a backlog item. */
+export interface BacklogItemInput {
+  outlookMessageId: string;
+  conversationId: string;
+  subject: string;
+  senderName: string;
+  senderAddress: string;
+  receivedAt: string;
+  priorityScore: number;
+  status: BacklogItemStatus;
+  /** @nullable */
+  linkedTaskId?: string | null;
+  /** @nullable */
+  resolvedAt?: string | null;
+}
+
+// ---- Dismissed backlog items (audit log) -------------------------------------
+
+export type DismissReason =
+  (typeof DismissReason)[keyof typeof DismissReason];
+
+export const DismissReason = {
+  "rule:thread_replied": "rule:thread_replied",
+  "rule:calendar_expired": "rule:calendar_expired",
+  "rule:bulk_mail": "rule:bulk_mail",
+  "rule:auto_reply": "rule:auto_reply",
+  "rule:system_generated": "rule:system_generated",
+  "rule:non_inbox_folder": "rule:non_inbox_folder",
+  "ai:expired": "ai:expired",
+  "ai:noise": "ai:noise",
+  "manual": "manual",
+} as const;
+
+/** Audit record of an email dismissed from the catch-up backlog. */
+export interface DismissedBacklogItem {
+  id: string;
+  outlookMessageId: string;
+  conversationId: string;
+  subject: string;
+  senderName: string;
+  senderAddress: string;
+  receivedAt: string;
+  dismissedAt: string;
+  dismissReason: DismissReason;
+  /** @nullable */
+  restoredAt?: string | null;
+}
+
+/** POST body for recording a dismissed backlog item. */
+export interface DismissedBacklogItemInput {
+  outlookMessageId: string;
+  conversationId: string;
+  subject: string;
+  senderName: string;
+  senderAddress: string;
+  receivedAt: string;
+  dismissedAt: string;
+  dismissReason: DismissReason;
+}

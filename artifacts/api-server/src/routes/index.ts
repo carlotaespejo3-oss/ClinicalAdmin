@@ -22,6 +22,8 @@ import evidenceFetchRouter from "./evidenceFetch";
 import leaveBlocksRouter from "./leaveBlocks";
 import customFoldersRouter from "./customFolders";
 import outlookFoldersRouter from "./outlookFolders";
+import backlogItemsRouter from "./backlogItems";
+import dismissedBacklogItemsRouter from "./dismissedBacklogItems";
 
 const router: IRouter = Router();
 
@@ -48,5 +50,7 @@ router.use(evidenceFetchRouter);
 router.use(leaveBlocksRouter);
 router.use(customFoldersRouter);
 router.use(outlookFoldersRouter);
+router.use(backlogItemsRouter);
+router.use(dismissedBacklogItemsRouter);
 
 export default router;
