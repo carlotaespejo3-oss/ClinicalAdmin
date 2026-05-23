@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive, ChevronsLeft, ChevronsRight, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
-import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
-import { useArchivedEmails, archiveEmail } from '@/lib/archivedStore';
+import { useAcknowledgedEmails, acknowledgeEmail, isHydrated as isAckHydrated } from '@/lib/acknowledgedStore';
+import { useArchivedEmails, archiveEmail, isHydrated as isArcHydrated } from '@/lib/archivedStore';
 import {
   setLinkedDocDone,
   setLinkedDocNote,
@@ -193,7 +193,12 @@ export default function ClinAdmin() {
   const seenAckRef = useRef<Set<number> | null>(null);
   const seenArcRef = useRef<Set<number> | null>(null);
   useEffect(() => {
+    // Don't initialise the baseline until BOTH stores have finished
+    // hydrating from the server. If we snapshot too early (empty cache)
+    // the first hydration event looks like a flood of "newly done" emails
+    // and fires the linked-task modal for every previously-completed email.
     if (seenAckRef.current === null) {
+      if (!isAckHydrated() || !isArcHydrated()) return; // wait for hydration
       seenAckRef.current = new Set(acknowledged);
       seenArcRef.current = new Set(archived.keys());
       return;
