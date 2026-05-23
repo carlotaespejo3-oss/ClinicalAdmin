@@ -60,10 +60,11 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
   // client seed list and shows the triaged inbox count). The Outlook
   // adapter's "inbox" folder is hidden — the count there isn't a real
   // unread tally.
-  const systemFolders = outlookFolders.filter(
+  const safeOutlookFolders = Array.isArray(outlookFolders) ? outlookFolders : [];
+  const systemFolders = safeOutlookFolders.filter(
     (f) => f.kind === 'system' && f.systemKind !== 'inbox',
   );
-  const userOutlookFolders = outlookFolders.filter((f) => f.kind === 'user');
+  const userOutlookFolders = safeOutlookFolders.filter((f) => f.kind === 'user');
 
   const isSelected = (kind: SelectedFolder['kind'], id?: string) => {
     if (selected.kind !== kind) return false;

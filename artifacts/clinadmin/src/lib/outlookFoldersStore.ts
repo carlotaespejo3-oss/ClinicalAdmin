@@ -55,7 +55,9 @@ export function useOutlookFolders(): { folders: OutlookFolder[]; loading: boolea
     listOutlookFolders()
       .then((rows) => {
         if (cancelled) return;
-        setFolders(rows);
+        // Guard against unexpected non-array responses (e.g. API error objects,
+        // null, or undefined) so that callers can always safely call .filter().
+        setFolders(Array.isArray(rows) ? rows : []);
       })
       .catch((err: unknown) => {
         // eslint-disable-next-line no-console
@@ -89,7 +91,7 @@ export function useOutlookFolderMessages(
     listOutlookFolderMessages(encodeURIComponent(folderId))
       .then((rows) => {
         if (cancelled) return;
-        setMessages(rows);
+        setMessages(Array.isArray(rows) ? rows : []);
       })
       .catch((err: unknown) => {
         // eslint-disable-next-line no-console
@@ -125,7 +127,7 @@ export function useCustomFolderMessages(
     listCustomFolderMessages(encodeURIComponent(folderId))
       .then((rows) => {
         if (cancelled) return;
-        setMessages(rows);
+        setMessages(Array.isArray(rows) ? rows : []);
       })
       .catch((err: unknown) => {
         // eslint-disable-next-line no-console
