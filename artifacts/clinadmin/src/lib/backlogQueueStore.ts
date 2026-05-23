@@ -468,23 +468,23 @@ function getSnapshot(): BacklogSnapshot {
   };
 }
 
+// Track the source-array identity and surfaceLimit rather than the derived
+// arrays. emit() always does `items = [...items]` (new reference), so
+// `items === _snapshotSourceItems` is the correct change signal.
+// Comparing the *derived* arrays (sortedItems(), surfacedItems()) would
+// always fail because they return new references on every call, causing
+// useSyncExternalStore to see a new snapshot on every render → infinite loop.
+let _snapshotSourceItems: BacklogItem[] = items;
+let _snapshotSurfaceLimit: number = surfaceLimit;
 let _lastSnapshot: BacklogSnapshot = getSnapshot();
+
 function stableSnapshot(): BacklogSnapshot {
-  // Avoid unnecessary re-renders: only replace the snapshot object when
-  // something actually changed. useSyncExternalStore calls this on every
-  // render pass; returning the same reference short-circuits the React
-  // subtree.
-  const next = getSnapshot();
-  if (
-    next.items === _lastSnapshot.items &&
-    next.surfaced === _lastSnapshot.surfaced &&
-    next.total === _lastSnapshot.total &&
-    next.pending === _lastSnapshot.pending &&
-    next.isHydrated === _lastSnapshot.isHydrated
-  ) {
+  if (items === _snapshotSourceItems && surfaceLimit === _snapshotSurfaceLimit) {
     return _lastSnapshot;
   }
-  _lastSnapshot = next;
+  _snapshotSourceItems = items;
+  _snapshotSurfaceLimit = surfaceLimit;
+  _lastSnapshot = getSnapshot();
   return _lastSnapshot;
 }
 
