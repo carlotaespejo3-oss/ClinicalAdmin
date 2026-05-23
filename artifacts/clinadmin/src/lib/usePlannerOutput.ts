@@ -42,9 +42,16 @@ import {
 // streams in, a linked doc task is created/completed, OR the clinician
 // adds a task/event from the "Week ahead" overview on Home, every consumer
 // re-renders together — no stale slices, no per-tab desync.
+//
+// `sessionMinutesForToday` — when a quick session is active on an
+// unscheduled day, pass the chosen session duration here. The planner
+// will treat today as having that many extra minutes of capacity, which
+// allows it to schedule pending work into today and reduce pressure on
+// the rest of the week. Omit (or pass 0) when no session is running.
 export function usePlannerOutput(
   manualTasks: ManualTask[],
   weekSetup: WeekSetup | null,
+  sessionMinutesForToday = 0,
 ): PlannerOutput {
   const classifications = useAiClassifications();
   const linkedDocTasks = useLinkedDocTasks();
@@ -247,6 +254,23 @@ export function usePlannerOutput(
       leaveContext = resolved.leaveContext;
     }
 
+    // Quick-session capacity injection. When the clinician starts a
+    // session on an unscheduled day, we add the chosen session duration
+    // to today's slot so the planner can distribute today's pending
+    // work across the day instead of piling it all onto future days.
+    // This happens AFTER the availability resolver so it can't be
+    // zeroed out by the working-pattern check. Session minutes are
+    // stable for the life of the session (we use the chosen duration,
+    // not remaining time) so the planner only recalculates on
+    // session start/end — not every timer tick.
+    if (sessionMinutesForToday > 0 && input.availability.length > 0) {
+      const today = input.availability[0];
+      input.availability[0] = {
+        ...today,
+        minutesAvailable: today.minutesAvailable + sessionMinutesForToday,
+      };
+    }
+
     const planned = buildPlan({
       ...input,
       arrivals: effectiveArrivals,
@@ -363,6 +387,7 @@ export function usePlannerOutput(
     leaveBlocks,
     unclearGateOverrides,
     recoveryConfig,
+    sessionMinutesForToday,
   ]);
 
   // Side-effect: any email the planner couldn't fit into this week's

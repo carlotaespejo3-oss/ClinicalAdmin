@@ -72,7 +72,15 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   const linkedDocTasks = useLinkedDocTasks();
   const acknowledged = useAcknowledgedEmails();
   const archived = useArchivedEmails();
-  const plannerOutput = usePlannerOutput(manualTasks, weekSetup);
+  // Must be above usePlannerOutput so we can pass session capacity in.
+  const { session: activeSession } = useQuickSession();
+  const plannerOutput = usePlannerOutput(
+    manualTasks,
+    weekSetup,
+    // Pass session capacity so the planner redistributes today's workload
+    // across the session window instead of deferring everything to later days.
+    activeSession?.durationMin ?? 0,
+  );
   const leaveBlocks = useLeaveBlocks();
 
   // Leave context for the dashboard banner. Pure derivation from the
@@ -121,7 +129,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   }, [manualTasks, leaveBlocks]);
 
   // ---- Quick session (unscheduled day) ----
-  const { session: activeSession } = useQuickSession();
+  // (activeSession is declared above, before usePlannerOutput)
   const [showSessionModal, setShowSessionModal] = useState(false);
 
   interface SessionSummary {
