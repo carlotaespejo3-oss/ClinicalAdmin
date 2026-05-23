@@ -31,6 +31,84 @@ import {
   type AdminTimeBlock,
   type EmailSignature,
 } from '@/lib/userProfileStore';
+import {
+  getAppSettings,
+  setAppSettingsInternal,
+  setSignaturesSettingsInternal,
+} from '@/lib/clinicianSettingsStore';
+import type { SignaturesSettings } from '@/lib/clinicianSettingsStore';
+
+// ============================================================================
+// Sync wizard data into the rest of the app on completion
+// ============================================================================
+
+const ROLE_DISPLAY: Record<ClinRole, string> = {
+  doctor:       'Doctor',
+  psychologist: 'Psychologist',
+  nurse:        'Nurse Practitioner',
+  social_worker:'Social Worker',
+  therapist:    'Therapist',
+  admin_staff:  'Admin Staff',
+  other:        'Clinician',
+};
+
+/**
+ * Called when the wizard completes. Copies the wizard-collected fields
+ * into the stores that the rest of the app already reads from, so the
+ * new name/role/signatures/tone all take effect immediately.
+ */
+function applyWizardToApp(params: {
+  displayName: string;
+  role: ClinRole;
+  roleOther: string;
+  specialty: string;
+  signatures: EmailSignature[];
+}) {
+  const { displayName, role, roleOther, specialty, signatures } = params;
+
+  // ── Name + role → clinicianSettingsStore (drives sidebar, header,
+  //    draft prompts, and the default email sign-off)
+  const roleLabel =
+    role === 'other' && roleOther.trim()
+      ? roleOther.trim()
+      : specialty.trim()
+      ? `${ROLE_DISPLAY[role]}, ${specialty.trim()}`
+      : ROLE_DISPLAY[role];
+
+  const current = getAppSettings();
+  setAppSettingsInternal({
+    ...current,
+    profile: {
+      ...current.profile,
+      fullName: displayName.trim() || current.profile.fullName,
+      role:     roleLabel,
+    },
+  });
+
+  // ── Signatures → clinicianSettingsStore (used by draft prompt builder)
+  // Map wizard slots to recipient types:
+  //   formal   → default + Other Professionals
+  //   informal → Families + Recurrent Families / Patients
+  //   admin    → Admin Team
+  const get = (id: string) => signatures.find((s) => s.id === id)?.body.trim() ?? '';
+  const formal   = get('formal');
+  const informal = get('informal');
+  const admin    = get('admin');
+
+  const currentSigs = { default: '', perRecipient: {} } as SignaturesSettings;
+  const newSigs: SignaturesSettings = {
+    default: formal || currentSigs.default,
+    perRecipient: {
+      ...currentSigs.perRecipient,
+      ...(formal   ? { 'Other Professionals': formal } : {}),
+      ...(informal ? { 'Families': informal, 'Recurrent Families / Patients': informal } : {}),
+      ...(admin    ? { 'Admin Team': admin } : {}),
+    },
+  };
+  if (formal || informal || admin) {
+    setSignaturesSettingsInternal(newSigs);
+  }
+}
 
 // ============================================================================
 // Step definitions
@@ -702,7 +780,10 @@ export default function OnboardingWizard({ onDismiss }: Props) {
   const goNext = () => {
     const next = step + 1;
     save(next);
-    if (STEPS[next] === 'done') completeOnboarding();
+    if (STEPS[next] === 'done') {
+      completeOnboarding();
+      applyWizardToApp({ displayName: name, role, roleOther, specialty, signatures });
+    }
     setStep(next);
   };
 
@@ -718,6 +799,10 @@ export default function OnboardingWizard({ onDismiss }: Props) {
   };
 
   const handleFinish = () => {
+    // applyWizardToApp was already called on goNext() into 'done',
+    // but call again defensively in case the user landed on done via
+    // a direct resume from a saved step.
+    applyWizardToApp({ displayName: name, role, roleOther, specialty, signatures });
     completeOnboarding();
     onDismiss();
   };

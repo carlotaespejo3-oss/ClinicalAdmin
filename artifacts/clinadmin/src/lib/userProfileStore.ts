@@ -280,3 +280,22 @@ export function resetOnboarding(): void {
 export function getProfile(): UserProfile {
   return _profile;
 }
+
+/**
+ * Returns the clinician's preferred SLA for a given email category,
+ * in whole days (rounded up). Returns null for categories with no
+ * natural SLA (NONE, CPD, UNCLEAR). Used as a fallback "Reply within"
+ * badge when an email has no explicit per-email deadline set.
+ */
+export function getSlaDays(category: string): number | null {
+  const { deadlines } = _profile;
+  switch (category) {
+    case 'SAFEGUARDING':
+    case 'URGENT_CLINICAL': return Math.ceil(deadlines.urgent / 24);
+    case 'CLINICAL':        return Math.ceil(deadlines.clinical / 24);
+    case 'ADMIN':
+    case 'PROFESSIONAL':
+    case 'LEGAL':           return Math.ceil(deadlines.admin / 24);
+    default:                return null;
+  }
+}

@@ -5,6 +5,7 @@ import {
   getAppSettings,
   getDefaultSignatureFromProfile,
 } from './clinicianSettingsStore';
+import { getProfile } from './userProfileStore';
 
 // Every prompt builder reads the clinician's profile + signature
 // settings live, so changing the name/role in Settings flows through
@@ -25,9 +26,17 @@ function styleBlockFor(email: Email): string {
     : '';
 }
 
+const TONE_INSTRUCTION: Record<string, string> = {
+  'formal':      'Write in a formal, professional tone — traditional, structured, full sentences.',
+  'semi-formal': 'Write in a warm but professional tone — friendly yet businesslike, approachable without being casual.',
+  'informal':    'Write in a relaxed, conversational tone — friendly and direct, as you would with a trusted colleague.',
+};
+
 function commonHeader(): string {
   const { profile } = getAppSettings();
-  return `You are ${profile.fullName}, ${profile.role}. You are an Australian clinician — use Australian English (no Britishisms, no NHS, no CAMHS, no "A&E", no "999", no "Samaritans"). Write the reply in the FIRST PERSON, as yourself — never refer to yourself in the third person.`;
+  const tone = getProfile().defaultReplyTone;
+  const toneInstruction = TONE_INSTRUCTION[tone] ?? TONE_INSTRUCTION['semi-formal'];
+  return `You are ${profile.fullName}, ${profile.role}. You are an Australian clinician — use Australian English (no Britishisms, no NHS, no CAMHS, no "A&E", no "999", no "Samaritans"). Write the reply in the FIRST PERSON, as yourself — never refer to yourself in the third person. ${toneInstruction}`;
 }
 
 // AU crisis numbers — used in SAFEGUARDING family drafts.

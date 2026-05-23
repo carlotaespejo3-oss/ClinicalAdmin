@@ -40,6 +40,7 @@ import { recordSent, useSentLog, lastSentByEmailId, type DraftVariant } from '@/
 import { useEmailEvidenceMap, useEvidencePending, useEvidenceSources } from '@/lib/evidenceStore';
 import { buildEvidenceSnapshot, fetchEvidenceForGrounding, buildGroundingBlock } from '@/lib/evidenceGrounding';
 import { recordDraft, recordSent as recordAuditSent } from '@/lib/draftAuditStore';
+import { getSlaDays } from '@/lib/userProfileStore';
 import { recordChatTurn } from '@/lib/chatAuditStore';
 import { extractParticipants } from '@/lib/draftParticipants';
 import type { EvidenceSnapshotEntry, EmailParticipant } from '@workspace/api-zod';
@@ -1167,7 +1168,11 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       const pillLabel = bannerVisible
                         ? `${PRIORITY_LABEL[cls.priority]} priority`
                         : `${PRIORITY_LABEL[cls.priority]} · ${CATEGORY_LABEL[cls.category]}`;
-                      const tightDeadline = selectedEmail.deadline !== null && selectedEmail.deadline <= 3;
+                      // Use per-email deadline if set; fall back to the
+                      // clinician's SLA preference for this category.
+                      const displayDeadline = selectedEmail.deadline ?? getSlaDays(cls.category);
+                      const tightDeadline = displayDeadline !== null && displayDeadline <= 3;
+                      const isSlaFallback = selectedEmail.deadline === null && displayDeadline !== null;
                       return (
                         <div className="flex gap-2 flex-wrap justify-end">
                           <span
@@ -1176,14 +1181,14 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                           >
                             {pillLabel}
                           </span>
-                          {tightDeadline && (
+                          {displayDeadline !== null && (tightDeadline || isSlaFallback) && (
                             <span className={cn(
                               "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border",
-                              selectedEmail.deadline! <= 1
+                              displayDeadline <= 1
                                 ? "bg-red-50 text-red-700 border-red-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200"
                             )}>
-                              Reply within {selectedEmail.deadline}d
+                              Reply within {displayDeadline}d
                             </span>
                           )}
                           {cls.documentDirection === 'outgoing' && (
@@ -1227,8 +1232,10 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
               {/* Quiet meta line: kind · time · complexity · (deadline if loose) */}
               {(() => {
-                const reasons = complexityReasonsFor(selectedEmail, classifications.get(selectedEmail.id));
-                const looseDeadline = selectedEmail.deadline !== null && selectedEmail.deadline > 3;
+                const cls = classifications.get(selectedEmail.id);
+                const reasons = complexityReasonsFor(selectedEmail, cls);
+                const metaDeadline = selectedEmail.deadline ?? (cls ? getSlaDays(cls.category) : null);
+                const looseDeadline = metaDeadline !== null && metaDeadline > 3;
                 const parts: import('react').ReactNode[] = [];
                 if (selectedEmail.kind) {
                   parts.push(<span key="kind">{KIND_LABEL[selectedEmail.kind]}</span>);
@@ -1246,7 +1253,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                   );
                 }
                 if (looseDeadline) {
-                  parts.push(<span key="deadline">reply within {selectedEmail.deadline}d</span>);
+                  parts.push(<span key="deadline">reply within {metaDeadline}d</span>);
                 }
                 return (
                   <div className="text-xs text-muted-foreground mb-6 pb-4 border-b border-border flex flex-wrap items-center gap-x-1.5">

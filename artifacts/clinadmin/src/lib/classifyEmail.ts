@@ -2,6 +2,7 @@ import type { Email, AiClassification, AiCategory, AiPriority } from './types';
 import { detectDocumentRequest } from './documentDetect';
 import { detectPrescriptionRequest, urgencyFor } from './prescriptionDetect';
 import { getAppSettings } from './clinicianSettingsStore';
+import { getProfile } from './userProfileStore';
 
 const VALID_CATEGORIES: readonly AiCategory[] = [
   'SAFEGUARDING',
@@ -84,6 +85,14 @@ COMPLEXITY SIGNALS (use these exact labels in complexityReasons):
 - "Clinical risk / uncertainty" — diagnostic uncertainty, medication risk, or a decision with non-trivial downside if wrong.
 - "Long detailed history" — body contains a substantial chronological/clinical history the clinician must read carefully (use this rather than just "long email").
 Do NOT invent new labels. If none of these apply, set complexity='simple' and complexityReasons=[].
+
+ALWAYS-URGENT KEYWORDS (clinician-defined, highest priority):
+${(() => {
+  const kws = getProfile().criticalKeywords;
+  return kws.length > 0
+    ? `If ANY of these words appear in the subject or body, classify as URGENT_CLINICAL (minimum) with priority URGENT: ${kws.join(', ')}`
+    : '(none configured)';
+})()}
 
 EMAIL TO CLASSIFY:
 From: ${email.from}
@@ -232,6 +241,20 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
       // Spec: default priority MEDIUM when no urgent deadline. Don't
       // downgrade an AI-determined URGENT — only nudge LOW/UNCLEAR up.
       finalPriority = 'MEDIUM';
+    }
+  }
+
+  // Critical-keyword override (clinician-defined, highest precedence).
+  // If any of the clinician's always-urgent keywords appear in the email,
+  // force URGENT_CLINICAL (minimum — doesn't downgrade SAFEGUARDING) and
+  // URGENT priority, regardless of what the AI returned.
+  const criticalKeywords = getProfile().criticalKeywords;
+  if (criticalKeywords.length > 0) {
+    const haystack = `${email.subject} ${email.body}`.toLowerCase();
+    const hit = criticalKeywords.find((kw) => haystack.includes(kw.toLowerCase()));
+    if (hit) {
+      if (finalCategory !== 'SAFEGUARDING') finalCategory = 'URGENT_CLINICAL';
+      finalPriority = 'URGENT';
     }
   }
 
