@@ -1009,7 +1009,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     return (
       <>
       {/* List Pane */}
-      <div className="flex-1 min-w-0 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm" style={{ maxWidth: '420px' }}>
+      <div className="flex-1 min-w-0 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm" style={{ maxWidth: '280px' }}>
         <div className="p-4 border-b border-border bg-muted/20">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />

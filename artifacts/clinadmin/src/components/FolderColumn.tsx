@@ -133,7 +133,7 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
 
   return (
     <div
-      className="w-56 flex-shrink-0 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm"
+      className="w-36 flex-shrink-0 flex flex-col border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm"
       data-testid="folder-column"
     >
       <div className="p-3 border-b border-border bg-muted/20">
