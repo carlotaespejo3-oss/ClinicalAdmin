@@ -263,24 +263,35 @@ export function startServerSync(): void {
     const remote = settings.onboardingProfile as Partial<UserProfile> | null;
     if (!remote) return; // server has no saved profile yet — localStorage is authoritative
 
-    // Server wins on completion flag; merge everything else with local as baseline
+    // Server is authoritative for the full profile — every local write
+    // fire-and-forgets to the server, so at app-start the server copy is
+    // always at least as fresh as localStorage. We merge (local as baseline
+    // for fields the server omits) so new schema fields keep their defaults
+    // even if the server row pre-dates them.
     const merged: UserProfile = {
       ..._profile,
       ...remote,
-      deadlines: { ..._profile.deadlines, ...(remote.deadlines ?? {}) },
+      deadlines: {
+        ...DEFAULT_PROFILE.deadlines,
+        ..._profile.deadlines,
+        ...(remote.deadlines ?? {}),
+      },
       signatures: Array.isArray(remote.signatures) && remote.signatures.length > 0
         ? mergeSignatures(remote.signatures as EmailSignature[])
         : _profile.signatures,
+      autoReplyTemplates: {
+        ...DEFAULT_AUTO_REPLY_TEMPLATES,
+        ...(_profile.autoReplyTemplates ?? {}),
+        ...(remote.autoReplyTemplates ?? {}),
+      },
     };
 
-    if (
-      merged.onboardingComplete !== _profile.onboardingComplete ||
-      merged.displayName        !== _profile.displayName
-    ) {
-      _profile = merged;
-      saveToStorage(_profile);
-      notify();
-    }
+    // Always apply — this is the cross-device sync path. startServerSync()
+    // is called once at mount before any user interaction, so there is no
+    // risk of overwriting a newer local change with a stale server copy.
+    _profile = merged;
+    saveToStorage(_profile);
+    notify();
   }).catch((err: unknown) => {
     console.warn('[userProfileStore] server hydration failed — using localStorage', err);
   });
