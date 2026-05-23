@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock, Plane } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType, type AiCategory } from '@/lib/types';
@@ -26,6 +26,16 @@ import OnLeaveDashboard from '@/components/OnLeaveDashboard';
 import CatchUpPlanCard from '@/components/CatchUpPlanCard';
 import BacklogStrip from '@/components/BacklogStrip';
 import type { PlanItem } from '@/lib/planner';
+import {
+  useQuickSession,
+  startSession,
+  endSession,
+  type ActiveSession,
+} from '@/lib/quickSessionStore';
+import UnscheduledDayBanner from '@/components/UnscheduledDayBanner';
+import QuickSessionModal from '@/components/QuickSessionModal';
+import QuickSessionBar from '@/components/QuickSessionBar';
+import QuickSessionSummaryModal from '@/components/QuickSessionSummaryModal';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -109,6 +119,62 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       }));
     return itemsAtRiskBeforeLeave(new Date(), leaveBlocks, inputs, 14);
   }, [manualTasks, leaveBlocks]);
+
+  // ---- Quick session (unscheduled day) ----
+  const { session: activeSession } = useQuickSession();
+  const [showSessionModal, setShowSessionModal] = useState(false);
+
+  interface SessionSummary {
+    session: ActiveSession;
+    actualMin: number;
+    emailsHandled: number;
+    tasksCompleted: number;
+  }
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+
+  // Detect if today is an unscheduled weekday (not in weekSetup.days).
+  const DOW_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+  const todayAbbr = DOW_ABBR[new Date().getDay()];
+  const isWeekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(todayAbbr);
+  const isUnscheduledToday =
+    weekSetup != null &&
+    isWeekday &&
+    !weekSetup.days.includes(todayAbbr) &&
+    leaveStatus.state !== 'on-leave-today' &&
+    !activeSession;
+
+  const handleSessionEnd = useCallback(() => {
+    const s = endSession();
+    if (!s) return;
+    const actualMin = Math.max(1, Math.round((Date.now() - s.startedAt) / 60000));
+    const emailsHandled = Math.max(
+      0,
+      (acknowledged.size - s.snapshot.acknowledgedCount) +
+      (archived.size - s.snapshot.archivedCount),
+    );
+    const tasksCompleted = Math.max(
+      0,
+      manualTasks.filter((t) => t.done).length - s.snapshot.doneTaskCount,
+    );
+    setSessionSummary({ session: s, actualMin, emailsHandled, tasksCompleted });
+  }, [acknowledged.size, archived.size, manualTasks]);
+
+  const handleAddDayToSchedule = () => {
+    if (!sessionSummary || !weekSetup) return;
+    const { session } = sessionSummary;
+    const newDays = [...weekSetup.days, session.dayAbbr].sort(
+      (a, b) => ALL_DAYS.indexOf(a) - ALL_DAYS.indexOf(b),
+    );
+    const sessionMins = session.durationMin;
+    const newMinutes: Record<string, number> = {
+      ...(weekSetup.minutesByDay ?? {}),
+      [session.dayAbbr]: sessionMins,
+    };
+    const newTotalMins = newDays.reduce((s, d) => s + (newMinutes[d] ?? 0), 0);
+    const newHours = +(newTotalMins / 60).toFixed(2);
+    onUpdateAvailability(newHours, newDays, newMinutes, weekSetup.adminBlocksByDay);
+    setSessionSummary(null);
+  };
 
   // Day navigation in the Home dashboard — clinician can step through the
   // runway with prev/next chevrons to see how the AI organised the week.
@@ -376,6 +442,22 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           <p className="text-sm text-muted-foreground mt-0.5">Here's your plan for today. Follow it and you're on top of your admin.</p>
         </div>
       </div>
+
+      {/* Quick-session countdown bar — shown while a session is active,
+          regardless of any other state. Stays above all dashboard content
+          so the clinician always sees the timer. */}
+      {activeSession && (
+        <QuickSessionBar session={activeSession} onEnd={handleSessionEnd} />
+      )}
+
+      {/* Unscheduled-day prompt — shown when today isn't in the
+          clinician's weekly schedule and no session is running. */}
+      {isUnscheduledToday && (
+        <UnscheduledDayBanner
+          dayAbbr={todayAbbr}
+          onStartSession={() => setShowSessionModal(true)}
+        />
+      )}
 
       {/* On-leave-today short-circuits the whole dashboard body. The
           rest of the page (banners, weekly handled card, status,
@@ -818,6 +900,34 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           existingBlocks={weekSetup?.adminBlocksByDay?.[pendingAdd.day] ?? []}
           onConfirm={handleBlockConfirmed}
           onCancel={() => setPendingAdd(null)}
+        />
+      )}
+
+      {/* Quick-session duration picker */}
+      {showSessionModal && (
+        <QuickSessionModal
+          dayAbbr={todayAbbr}
+          onStart={(durationMin) => {
+            startSession(durationMin, {
+              acknowledgedCount: acknowledged.size,
+              archivedCount: archived.size,
+              doneTaskCount: manualTasks.filter((t) => t.done).length,
+            });
+            setShowSessionModal(false);
+          }}
+          onCancel={() => setShowSessionModal(false)}
+        />
+      )}
+
+      {/* Post-session summary */}
+      {sessionSummary && (
+        <QuickSessionSummaryModal
+          result={sessionSummary}
+          alreadyScheduled={
+            weekSetup?.days.includes(sessionSummary.session.dayAbbr) ?? false
+          }
+          onAddToSchedule={handleAddDayToSchedule}
+          onClose={() => setSessionSummary(null)}
         />
       )}
     </div>
