@@ -16,7 +16,8 @@ type SettingsColumn =
   | "styleProfile"
   | "signaturesSettings"
   | "appSettings"
-  | "onboardingProfile";
+  | "onboardingProfile"
+  | "spamSettings";
 
 // GET /api/clinician-settings — single envelope. Returns nulls for
 // unset sections so the client can fall back to its built-in
@@ -34,6 +35,7 @@ router.get("/clinician-settings", async (_req, res) => {
     signaturesSettings: row?.signaturesSettings ?? null,
     appSettings: row?.appSettings ?? null,
     onboardingProfile: row?.onboardingProfile ?? null,
+    spamSettings: row?.spamSettings ?? null,
   });
 });
 
@@ -66,6 +68,7 @@ router.post("/clinician-settings", async (req, res) => {
     signaturesSettings: unknown | null;
     appSettings: unknown | null;
     onboardingProfile: unknown | null;
+    spamSettings: unknown | null;
   } = {
     clinicianId: DEFAULT_CLINICIAN_ID,
     arrivalsConfig: patch.arrivalsConfig ?? null,
@@ -73,6 +76,7 @@ router.post("/clinician-settings", async (req, res) => {
     signaturesSettings: patch.signaturesSettings ?? null,
     appSettings: patch.appSettings ?? null,
     onboardingProfile: patch.onboardingProfile ?? null,
+    spamSettings: patch.spamSettings ?? null,
   };
 
   // Build a dynamic SET clause containing only the patched columns.
@@ -96,6 +100,9 @@ router.post("/clinician-settings", async (req, res) => {
   }
   if (Object.prototype.hasOwnProperty.call(patch, "onboardingProfile")) {
     setClause.onboardingProfile = patch.onboardingProfile ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "spamSettings")) {
+    setClause.spamSettings = patch.spamSettings ?? null;
   }
 
   if (Object.keys(setClause).length === 0) {

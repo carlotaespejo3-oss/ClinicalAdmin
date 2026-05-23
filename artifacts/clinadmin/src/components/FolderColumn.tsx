@@ -10,7 +10,11 @@ import {
   Trash2,
   Check,
   X,
+  ShieldOff,
 } from 'lucide-react';
+import { useSpamState } from '@/lib/spamStore';
+import { emails } from '@/lib/data';
+import { isSpam } from '@/lib/spamStore';
 import { cn } from '@/lib/utils';
 import {
   useCustomFolders,
@@ -34,6 +38,7 @@ import { useOutlookFolders, type OutlookFolder } from '@/lib/outlookFoldersStore
 
 export type SelectedFolder =
   | { kind: 'system-inbox' }
+  | { kind: 'system-spam' }
   | { kind: 'outlook'; folderId: string; folderName: string; systemKind: OutlookFolder['systemKind'] }
   | { kind: 'custom'; folderId: string; folderName: string };
 
@@ -47,6 +52,7 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
   const customFolders = useCustomFolders();
   const assignments = useEmailFolderAssignments();
   const { folders: outlookFolders } = useOutlookFolders();
+  const spam = useSpamState();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -54,6 +60,13 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const customCounts = useMemo(() => countByFolder(assignments), [assignments]);
+
+  // Count spam emails (manually marked + sender-pattern matches)
+  const spamCount = useMemo(
+    () => emails.filter((e) => isSpam(e.id, e.from)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [spam],
+  );
 
   // Split Outlook folders into system (Inbox/Sent/Drafts) and user.
   // Inbox is replaced by our own ClinAdmin Inbox row (which uses the
@@ -69,6 +82,7 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
   const isSelected = (kind: SelectedFolder['kind'], id?: string) => {
     if (selected.kind !== kind) return false;
     if (kind === 'system-inbox') return true;
+    if (kind === 'system-spam') return true;
     if (kind === 'outlook' && selected.kind === 'outlook')
       return selected.folderId === id;
     if (kind === 'custom' && selected.kind === 'custom')
@@ -150,6 +164,16 @@ export function FolderColumn({ selected, onSelect, inboxCount }: Props) {
           selected={isSelected('system-inbox')}
           onClick={() => onSelect({ kind: 'system-inbox' })}
           testId="folder-inbox"
+        />
+        {/* Spam folder (system, pinned) */}
+        <FolderRow
+          icon={<ShieldOff size={14} className="text-red-500" />}
+          label="Spam"
+          count={spamCount}
+          selected={isSelected('system-spam')}
+          onClick={() => onSelect({ kind: 'system-spam' })}
+          testId="folder-spam"
+          countColour="bg-red-100 text-red-700"
         />
         {/* Other Outlook system folders (Sent, Drafts) */}
         {systemFolders.map((f) => (
@@ -355,6 +379,7 @@ function FolderRow({
   onClick,
   testId,
   trailing,
+  countColour,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -363,6 +388,7 @@ function FolderRow({
   onClick: () => void;
   testId: string;
   trailing?: React.ReactNode;
+  countColour?: string;
 }) {
   return (
     <button
@@ -379,7 +405,10 @@ function FolderRow({
       <span className="text-muted-foreground flex-shrink-0">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count > 0 && (
-        <span className="text-[10px] tabular-nums text-muted-foreground font-medium">
+        <span className={cn(
+          'text-[10px] tabular-nums font-medium',
+          countColour ? `${countColour} rounded-full px-1.5 py-0.5` : 'text-muted-foreground',
+        )}>
           {count}
         </span>
       )}

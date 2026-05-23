@@ -42,6 +42,7 @@ import SettingsTab from '../tabs/SettingsTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
 import OnboardingWizard from '../components/OnboardingWizard';
 import { useUserProfile, startServerSync } from '@/lib/userProfileStore';
+import { startSpamSync } from '@/lib/spamStore';
 import { TabType, GeneratedPlan } from '@/lib/types';
 import {
   useManualTasksWithOverrides,
@@ -156,7 +157,8 @@ export default function ClinAdmin() {
   // startServerSync() fetches the server copy so a clinician who finished on
   // another device won't see the wizard again here.
   const { profile: userProfile } = useUserProfile();
-  startServerSync(); // idempotent — only runs the fetch once per session
+  startServerSync();  // idempotent — only runs the fetch once per session
+  startSpamSync();    // idempotent — hydrates spam list from server
   const [wizardDismissed, setWizardDismissed] = useState(false);
   const showWizard = !userProfile.onboardingComplete && !wizardDismissed;
   const [openEmailId, setOpenEmailId] = useState<number | null>(null);

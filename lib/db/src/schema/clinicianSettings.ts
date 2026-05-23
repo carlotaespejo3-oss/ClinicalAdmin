@@ -41,6 +41,11 @@ export const clinicianSettingsTable = pgTable("clinician_settings", {
   // Cross-device by nature: the same clinician must not see the
   // wizard again on a second device.
   onboardingProfile: jsonb("onboarding_profile").$type<unknown | null>(),
+  // SpamSettings — clinician-managed spam list.
+  // { emailIds: number[], senderPatterns: string[] }
+  // emailIds: email IDs the clinician has marked as spam.
+  // senderPatterns: sender substrings that auto-flag new arrivals.
+  spamSettings: jsonb("spam_settings").$type<unknown | null>(),
 });
 
 export type ClinicianSettingsRow = typeof clinicianSettingsTable.$inferSelect;
@@ -99,6 +104,9 @@ const AppSettingsSchema = z
 // that it's an object; richer checks live in the frontend store.
 const OnboardingProfileSchema = z.record(z.string(), z.unknown()).passthrough();
 
+// SpamSettings — loose passthrough; client owns inner shape.
+const SpamSettingsSchema = z.record(z.string(), z.unknown()).passthrough();
+
 // Patch envelope: every section is independently optional. `null`
 // explicitly clears a section; `undefined` (omitted) leaves it
 // alone. Keeping the two distinct lets the UI "reset" arrivals
@@ -109,6 +117,7 @@ export const upsertClinicianSettingsSchema = z.object({
   signaturesSettings: SignaturesSettingsSchema.nullable().optional(),
   appSettings: AppSettingsSchema.nullable().optional(),
   onboardingProfile: OnboardingProfileSchema.nullable().optional(),
+  spamSettings: SpamSettingsSchema.nullable().optional(),
 });
 
 export type UpsertClinicianSettings = z.infer<

@@ -303,6 +303,77 @@ function mergeCurves(curves: RecoveryConfig[]): RecoveryConfig {
   };
 }
 
+// ---- Duration-scaled recovery tiers ----------------------------------------
+//
+// A 3-day ramp is adequate for a short break but inadequate after 4–6 weeks
+// of annual leave. These tiers stretch both the post-leave ramp and the
+// pre-leave wind-down in proportion to how long the clinician was away.
+//
+// Ordering: tiers are applied BEFORE per-leave-type overrides so that type-
+// specific behaviour (sick's empty wind-down, conference's lighter ramp) can
+// still adjust the duration-scaled baseline. Highest minDays first so the
+// Array.find() short-circuits at the most specific tier.
+//
+// The 14-day runway means any ramp longer than ~10 working days extends
+// beyond what the planner can currently see — but that's fine: the reserved
+// slots and reduced capacity still protect the first two weeks correctly, and
+// a longer runway is a separate conversation.
+const RECOVERY_TIERS: ReadonlyArray<{
+  minDays: number;
+  rampMultipliers: number[];
+  recoveryReservedMin: number[];
+  triageReservedMin: number[];
+  preLeaveWindDown: number[];
+}> = [
+  {
+    // 29+ calendar days (5+ weeks). 10 working-day ramp.
+    // The clinician has been fully disconnected; the backlog is large and
+    // urgent items will have escalated. 4-day wind-down so hand-over is
+    // thorough. Day-1 reserved slots: 120 min admin catch-up + 60 min
+    // triage — that leaves very little plannable time on day 1, intentionally.
+    minDays: 29,
+    rampMultipliers:     [0.25, 0.35, 0.45, 0.55, 0.65, 0.73, 0.82, 0.90, 0.96, 1.00],
+    recoveryReservedMin: [120,   90,   75,   60,   45,   30,   20,   10,    0,    0],
+    triageReservedMin:   [ 60,   45,   30,   20,   10,    0,    0,    0,    0,    0],
+    preLeaveWindDown:    [0.80, 0.65, 0.55, 0.45],
+  },
+  {
+    // 15–28 calendar days (2–4 weeks). 8 working-day ramp.
+    // Significant backlog; some patients will have needed cover decisions.
+    // Same 4-day wind-down — anything over 2 weeks warrants a proper hand-over.
+    minDays: 15,
+    rampMultipliers:     [0.30, 0.42, 0.54, 0.66, 0.78, 0.88, 0.95, 1.00],
+    recoveryReservedMin: [120,   90,   75,   60,   45,   30,    0,    0],
+    triageReservedMin:   [ 45,   30,   20,   10,    0,    0,    0,    0],
+    preLeaveWindDown:    [0.80, 0.65, 0.55, 0.45],
+  },
+  {
+    // 8–14 calendar days (1–2 weeks). 5 working-day ramp.
+    // Moderate backlog; 3-day wind-down to brief whoever covers.
+    minDays: 8,
+    rampMultipliers:     [0.40, 0.55, 0.70, 0.85, 1.00],
+    recoveryReservedMin: [ 90,   60,   45,   20,    0],
+    triageReservedMin:   [ 30,   15,    0,    0,    0],
+    preLeaveWindDown:    [0.80, 0.65, 0.50],
+  },
+  // < 8 days: base config applies unchanged (the existing 3-day defaults).
+];
+
+/** Overlay duration-appropriate ramp/reserved/wind-down arrays onto the
+ *  base config. byLeaveType and triggerAfterDaysOff are preserved via
+ *  spread so per-leave-type overrides still apply on top of this result. */
+function scaleCurveForDuration(base: RecoveryConfig, leaveDays: number): RecoveryConfig {
+  const tier = RECOVERY_TIERS.find(t => leaveDays >= t.minDays);
+  if (!tier) return base; // < 8 days: existing defaults are appropriate
+  return {
+    ...base,                               // keeps byLeaveType, triggerAfterDaysOff
+    rampMultipliers:     tier.rampMultipliers,
+    recoveryReservedMin: tier.recoveryReservedMin,
+    triageReservedMin:   tier.triageReservedMin,
+    preLeaveWindDown:    tier.preLeaveWindDown,
+  };
+}
+
 function applyWindDownAndRecovery(
   days: DayInternal[],
   input: ResolveAvailabilityInput
@@ -341,23 +412,53 @@ function applyWindDownAndRecovery(
       // conference/PD use a lighter ramp, etc). We accumulate one
       // curve per *type* (not per block) so two annual blocks that
       // touch the same stretch don't double-count.
-      let leaveDays = 0;
       const contributingTypes = new Set<LeaveType>();
+      const intervals: Array<[number, number]> = [];
       for (const block of leaveBlocks) {
         const bs = new Date(block.startAt).getTime();
         const be = new Date(block.endAt).getTime();
         if (bs < stretchEndMs && be > stretchStartMs) {
-          leaveDays += Math.ceil((be - bs) / MS_PER_DAY);
+          intervals.push([bs, be]);
           contributingTypes.add(block.type);
         }
       }
+      // Union overlapping intervals before counting leave days so that two
+      // blocks covering identical (or overlapping) dates count as one
+      // duration, not two — otherwise the tier threshold can be wrongly
+      // crossed (e.g. annual + conference on the same week = 12 days instead
+      // of 6, spuriously activating the 8-day tier).
+      intervals.sort((a, b) => a[0] - b[0]);
+      let leaveDays = 0;
+      if (intervals.length > 0) {
+        let [mergeStart, mergeEnd] = intervals[0];
+        for (let ii = 1; ii < intervals.length; ii++) {
+          const [s, e] = intervals[ii];
+          if (s <= mergeEnd) {
+            mergeEnd = Math.max(mergeEnd, e);
+          } else {
+            leaveDays += Math.ceil((mergeEnd - mergeStart) / MS_PER_DAY);
+            mergeStart = s;
+            mergeEnd = e;
+          }
+        }
+        leaveDays += Math.ceil((mergeEnd - mergeStart) / MS_PER_DAY);
+      }
 
-      // Resolve the effective curve: one type → use its curve directly;
-      // multiple types → merge to the strongest per dimension.
-      const curves = Array.from(contributingTypes).map(t => curveForType(recoveryConfig, t));
+      // Scale the base config to the leave duration FIRST, then apply
+      // per-leave-type overrides on top. This order means:
+      //   · a 6-week annual leave gets a 10-day ramp (duration tier),
+      //     with no per-type override → keeps the tiered values.
+      //   · a 6-week sick leave gets the same 10-day ramp for recovery
+      //     but sick's preLeaveWindDown: [] override still removes
+      //     wind-down (sick days aren't planned in advance).
+      //   · conference/PD override rampMultipliers explicitly, so their
+      //     lighter 2-day ramp wins over the duration tier — the
+      //     clinician was professionally engaged throughout.
+      const durationScaled = scaleCurveForDuration(recoveryConfig, leaveDays);
+      const curves = Array.from(contributingTypes).map(t => curveForType(durationScaled, t));
       const stretchCurve: RecoveryConfig =
         curves.length === 0
-          ? recoveryConfig
+          ? durationScaled
           : curves.length === 1
             ? curves[0]
             : mergeCurves(curves);

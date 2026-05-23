@@ -2,20 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leaveMinutesForDay, leaveBlocksForDay, type LeaveBlock } from './leaveBlocksStore';
 
-// Helper — build a LeaveBlock from local-time year/month/day/hour
-// tuples. The store stores ISO strings, so we wrap Date#toISOString
-// here just like the API client would.
+// Helper — build a LeaveBlock from year/month/day/hour tuples.
+// Hours are interpreted as UTC (not local time) so tests are
+// timezone-independent — the store convention anchors all day
+// boundaries to UTC midnight and parseDayBounds uses UTC, so the
+// block timestamps must also be UTC-aligned for overlap arithmetic
+// to be exact regardless of the machine's locale.
 function block(
-  startLocal: [number, number, number, number?, number?],
-  endLocal: [number, number, number, number?, number?],
+  start: [number, number, number, number?, number?],
+  end: [number, number, number, number?, number?],
   leaveType: LeaveBlock['leaveType'] = 'annual',
 ): LeaveBlock {
-  const [sy, sm, sd, sh = 9, smin = 0] = startLocal;
-  const [ey, em, ed, eh = 17, emin = 0] = endLocal;
+  const [sy, sm, sd, sh = 9, smin = 0] = start;
+  const [ey, em, ed, eh = 17, emin = 0] = end;
+  const pad = (n: number) => String(n).padStart(2, '0');
   return {
     id: `lv_${sy}${sm}${sd}_${ey}${em}${ed}`,
-    startAt: new Date(sy, sm - 1, sd, sh, smin, 0, 0).toISOString(),
-    endAt: new Date(ey, em - 1, ed, eh, emin, 0, 0).toISOString(),
+    startAt: `${sy}-${pad(sm)}-${pad(sd)}T${pad(sh)}:${pad(smin)}:00.000Z`,
+    endAt:   `${ey}-${pad(em)}-${pad(ed)}T${pad(eh)}:${pad(emin)}:00.000Z`,
     leaveType,
     notes: null,
   };

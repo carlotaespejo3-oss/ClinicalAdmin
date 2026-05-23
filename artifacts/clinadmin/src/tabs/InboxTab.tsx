@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
-import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Archive as ArchiveIcon, AlertTriangle, Scale, MessageSquare, Plus, ChevronDown, Info } from 'lucide-react';
+import { Mail, Search, Sparkles, Send, CheckCircle2, Loader2, RefreshCcw, Clock, ListChecks, Link2, ShieldAlert, Archive as ArchiveIcon, AlertTriangle, Scale, MessageSquare, Plus, ChevronDown, Info, ShieldOff } from 'lucide-react';
 import { emails, manualTasks } from '@/lib/data';
 import type { Email } from '@/lib/data';
 import type { AiCategory, AiClassification } from '@/lib/types';
@@ -12,6 +12,8 @@ import { FolderColumn, type SelectedFolder } from '@/components/FolderColumn';
 import { OutlookFolderView } from '@/components/OutlookFolderView';
 import { MoveToFolderButton } from '@/components/MoveToFolderMenu';
 import { CustomFolderView } from '@/components/CustomFolderView';
+import SpamFolderView from '@/components/SpamFolderView';
+import { useSpamState, markAsSpam, isSpam } from '@/lib/spamStore';
 import { useEmailFolderAssignments } from '@/lib/emailFolderAssignmentsStore';
 import { manualTasks as seedManualTasks } from '@/lib/data';
 import { requestLinkedTaskPrompt } from '@/lib/linkedTaskPromptStore';
@@ -290,6 +292,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
 
   // Helper: an email is "out of the inbox" if it has been acknowledged or
   // archived (acknowledged or marked done). Both flow into the Archive tab.
+  const spamState = useSpamState();
   const isOutOfInbox = (id: number) => acknowledged.has(id) || archived.has(id);
 
   // Inbox list = anything not yet archived/acknowledged. Archived items live
@@ -331,7 +334,7 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
       for (const ids of customAssignmentsByFolder.values()) {
         for (const id of ids) filed.add(id);
       }
-      pool = emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id));
+      pool = emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id) && !isSpam(e.id, e.from));
     }
     const q = searchQuery.trim().toLowerCase();
     const filtered = q
@@ -356,9 +359,9 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
     for (const ids of customAssignmentsByFolder.values()) {
       for (const id of ids) filed.add(id);
     }
-    return emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id)).length;
+    return emails.filter(e => !isOutOfInbox(e.id) && !filed.has(e.id) && !isSpam(e.id, e.from)).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acknowledged, archived, customAssignmentsByFolder]);
+  }, [acknowledged, archived, customAssignmentsByFolder, spamState]);
 
   // Move to the next remaining inbox email so the list flows naturally
   // after the current one leaves.
@@ -995,6 +998,8 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
           folderName={selectedFolder.folderName}
           onSelectSeedEmail={(id) => setSelectedId(id)}
         />
+      ) : selectedFolder.kind === 'system-spam' ? (
+        <SpamFolderView />
       ) : (
         <InboxAndDetail />
       )}
@@ -1069,13 +1074,19 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                       )}
                       data-testid={`email-row-${e.id}`}
                     >
-                      {/* Row-level "Move to folder" — appears on hover
-                          so the row stays calm in normal scanning but
-                          the action is one click away when triaging. */}
+                      {/* Row-level hover actions: spam flag + move to folder */}
                       <div
-                        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1"
                         onClick={(ev) => ev.stopPropagation()}
                       >
+                        <button
+                          type="button"
+                          title="Mark as spam"
+                          onClick={() => markAsSpam(e.id)}
+                          className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <ShieldOff size={13} />
+                        </button>
                         <MoveToFolderButton outlookEmailId={e.id} />
                       </div>
                       {/* Outlook-style compact row: sender + time on
@@ -1494,6 +1505,15 @@ export default function InboxTab({ initialSelectedId }: InboxTabProps = {}) {
                     </button>
                     <div className="ml-auto flex items-center gap-2">
                       <MoveToFolderButton outlookEmailId={selectedEmail.id} variant="text" />
+                      <button
+                        onClick={() => markAsSpam(selectedEmail.id)}
+                        className="flex items-center gap-1.5 bg-red-50 text-red-600 font-medium text-xs px-3 py-2.5 rounded-lg border border-red-200 hover:bg-red-100 transition-colors"
+                        title="Move to Spam — removes from inbox"
+                        data-testid="button-mark-spam"
+                      >
+                        <ShieldOff size={13} />
+                        Spam
+                      </button>
                       <button
                         onClick={handleClassify}
                         disabled={aiComplete.isPending}

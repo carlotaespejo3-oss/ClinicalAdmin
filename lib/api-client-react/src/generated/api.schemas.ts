@@ -411,12 +411,15 @@ export type ClinicianSettingsAppSettings = { [key: string]: unknown } | null;
  */
 export type ClinicianSettingsOnboardingProfile = { [key: string]: unknown } | null;
 
+export type ClinicianSettingsSpamSettings = { [key: string]: unknown } | null;
+
 export interface ClinicianSettings {
   arrivalsConfig: ClinicianSettingsArrivalsConfig;
   styleProfile: ClinicianSettingsStyleProfile;
   signaturesSettings: ClinicianSettingsSignaturesSettings;
   appSettings: ClinicianSettingsAppSettings;
   onboardingProfile: ClinicianSettingsOnboardingProfile;
+  spamSettings: ClinicianSettingsSpamSettings;
 }
 
 export type UpsertClinicianSettingsInputArrivalsConfig = {
@@ -442,12 +445,17 @@ export type UpsertClinicianSettingsInputOnboardingProfile = {
   [key: string]: unknown;
 } | null;
 
+export type UpsertClinicianSettingsInputSpamSettings = {
+  [key: string]: unknown;
+} | null;
+
 export interface UpsertClinicianSettingsInput {
   arrivalsConfig?: UpsertClinicianSettingsInputArrivalsConfig;
   styleProfile?: UpsertClinicianSettingsInputStyleProfile;
   signaturesSettings?: UpsertClinicianSettingsInputSignaturesSettings;
   appSettings?: UpsertClinicianSettingsInputAppSettings;
   onboardingProfile?: UpsertClinicianSettingsInputOnboardingProfile;
+  spamSettings?: UpsertClinicianSettingsInputSpamSettings;
 }
 
 /**
