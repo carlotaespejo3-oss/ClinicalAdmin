@@ -1037,23 +1037,24 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
     // per-day status so the headline and the day chips stay consistent.
     // SLA breaches above already short-circuit to red; this branch only
     // fires when nothing actually breaches a deadline but the week is
-    // genuinely full.
+    // genuinely full. Nothing is overdue — the plan carries itself
+    // forward, it's just tight on capacity. Keep copy matter-of-fact.
     weeklyCapacityMin > 0 && weeklyDemandMin > weeklyCapacityMin * 1.10
   ) {
     overallStatus = 'red';
-    statusHeadline = 'A bit more on your plate than the week can hold';
-    statusDetail = `There is about ${fmtH(weeklyDemandMin)} of work and ${fmtH(weeklyCapacityMin)} set aside for it — a little short of where it needs to be.`;
+    statusHeadline = 'Your week is packed — nothing is overdue yet';
+    statusDetail = `About ${fmtH(weeklyDemandMin)} of work across ${fmtH(weeklyCapacityMin)} of admin time. Everything stays within its deadline for now — the plan adjusts as you work through it.`;
     recommendation =
-      'A small top-up of time, or letting a low-priority email wait, would settle things — reception can also take the routine admin if helpful.';
+      'Adding 30 minutes somewhere mid-week would give the plan more room. Low-priority emails can also safely wait until next week.';
   } else if (
     week1Days.some((d) => d.status === 'tight') ||
     (weeklyCapacityMin > 0 && weeklyDemandMin >= weeklyCapacityMin * 0.90)
   ) {
     overallStatus = 'amber';
-    statusHeadline = 'A close-run week, but doable';
+    statusHeadline = 'Full week — you\'re on top of it';
     statusDetail =
-      "Everything fits if the week goes to plan — just no slack if a couple of urgent emails land on top.";
-    recommendation = 'Tucking an extra 30 minutes in mid-week would give you a bit of breathing room.';
+      "Everything is scheduled and within its deadline. The plan carries itself forward — just work through today's list.";
+    recommendation = 'An extra 30 minutes mid-week would give you some breathing room if something urgent comes in.';
   } else {
     overallStatus = 'green';
     statusHeadline = 'Nicely on top of things';
@@ -1061,8 +1062,8 @@ export function buildPlan(input: PlannerInput): PlannerOutput {
       (d) => d.dayIndex > 0 && d.minutesAvailable > 0,
     );
     statusDetail = nextAdminDay
-      ? `This week is well within reach — clear today's list and you can ease off until ${nextAdminDay.dayLabel}.`
-      : 'Your inbox is steady — nothing else needs your attention this week.';
+      ? `This week is well within reach — clear today's list and everything else is comfortably scheduled ahead. Anything you don't finish today moves to ${nextAdminDay.dayLabel} automatically.`
+      : 'Your inbox is steady — nothing else needs your attention this week. If something new lands, the plan will slot it in.';
   }
 
   // Step 9b — Annotate items with prior-deferral history. An email

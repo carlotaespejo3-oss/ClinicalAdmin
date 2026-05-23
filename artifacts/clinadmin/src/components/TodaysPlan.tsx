@@ -576,13 +576,33 @@ export default function TodaysPlan({
             </ol>
           )}
 
-          {/* Buffer footer */}
+          {/* Buffer footer — three states:
+               • comfortable buffer (>10 min): show spare time
+               • tight but within capacity (safe/tight, small buffer): neutral
+               • over-capacity (breach, today only): calm rollover note          */}
           {hasItems && todaysPlan.bufferMin > 10 && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 px-1">
               <HelpCircle size={12} />
               <span>
-                {fmtMin(todaysPlan.bufferMin)} spare after today's plan — your inbox is on track and
-                nothing else is due today.
+                {fmtMin(todaysPlan.bufferMin)} spare — your inbox is on track and nothing else is due today.
+              </span>
+            </div>
+          )}
+          {hasItems && isToday && todaysPlan.status === 'breach' &&
+            !items.some((i) => i.reason === 'overdue') && (
+            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-slate-50 border border-border/60 rounded-lg px-3 py-2.5 mt-2">
+              <HelpCircle size={13} className="mt-0.5 flex-shrink-0 text-slate-400" />
+              <span>
+                Today's plan runs a bit over your session length. Whatever you don't get to will
+                move to your next admin day automatically — no action needed. Your plan updates itself.
+              </span>
+            </div>
+          )}
+          {hasItems && isToday && todaysPlan.status === 'tight' && todaysPlan.bufferMin <= 10 && (
+            <div className="flex items-start gap-2 text-xs text-muted-foreground pt-2 px-1">
+              <HelpCircle size={12} className="mt-0.5 flex-shrink-0" />
+              <span>
+                Today's plan is full. If anything runs over time, it'll shift to your next session — your plan adjusts automatically.
               </span>
             </div>
           )}
