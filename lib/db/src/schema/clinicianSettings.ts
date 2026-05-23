@@ -33,6 +33,14 @@ export const clinicianSettingsTable = pgTable("clinician_settings", {
   // because they're written together from a single Settings page
   // and previously lived under one localStorage key.
   appSettings: jsonb("app_settings").$type<unknown | null>(),
+  // OnboardingProfile — collected during the first-run wizard.
+  // Stores: displayName, role, specialty, setting, criticalKeywords,
+  // deadlines, adminTimeBlocks, defaultReplyTone, signatures,
+  // coverContact, onboardingComplete, onboardingStep.
+  // Nullable — null means the wizard has never been completed.
+  // Cross-device by nature: the same clinician must not see the
+  // wizard again on a second device.
+  onboardingProfile: jsonb("onboarding_profile").$type<unknown | null>(),
 });
 
 export type ClinicianSettingsRow = typeof clinicianSettingsTable.$inferSelect;
@@ -86,6 +94,11 @@ const AppSettingsSchema = z
   })
   .passthrough();
 
+// Loose passthrough for onboardingProfile — the client owns the
+// inner shape (UserProfile from userProfileStore). We validate only
+// that it's an object; richer checks live in the frontend store.
+const OnboardingProfileSchema = z.record(z.string(), z.unknown()).passthrough();
+
 // Patch envelope: every section is independently optional. `null`
 // explicitly clears a section; `undefined` (omitted) leaves it
 // alone. Keeping the two distinct lets the UI "reset" arrivals
@@ -95,6 +108,7 @@ export const upsertClinicianSettingsSchema = z.object({
   styleProfile: StyleProfileSchema.nullable().optional(),
   signaturesSettings: SignaturesSettingsSchema.nullable().optional(),
   appSettings: AppSettingsSchema.nullable().optional(),
+  onboardingProfile: OnboardingProfileSchema.nullable().optional(),
 });
 
 export type UpsertClinicianSettings = z.infer<

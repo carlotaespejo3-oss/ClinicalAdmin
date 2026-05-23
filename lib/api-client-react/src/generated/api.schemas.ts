@@ -409,11 +409,14 @@ export type ClinicianSettingsAppSettings = { [key: string]: unknown } | null;
 /**
  * Envelope of all clinician-wide settings. Each section is a free-form object so the client owns the inner shape; null means the section has never been customised.
  */
+export type ClinicianSettingsOnboardingProfile = { [key: string]: unknown } | null;
+
 export interface ClinicianSettings {
   arrivalsConfig: ClinicianSettingsArrivalsConfig;
   styleProfile: ClinicianSettingsStyleProfile;
   signaturesSettings: ClinicianSettingsSignaturesSettings;
   appSettings: ClinicianSettingsAppSettings;
+  onboardingProfile: ClinicianSettingsOnboardingProfile;
 }
 
 export type UpsertClinicianSettingsInputArrivalsConfig = {
@@ -435,11 +438,16 @@ export type UpsertClinicianSettingsInputAppSettings = {
 /**
  * Partial patch. Each section is independently optional; omitted leaves the existing value alone, explicit null clears it. The server merges the patch over the row.
  */
+export type UpsertClinicianSettingsInputOnboardingProfile = {
+  [key: string]: unknown;
+} | null;
+
 export interface UpsertClinicianSettingsInput {
   arrivalsConfig?: UpsertClinicianSettingsInputArrivalsConfig;
   styleProfile?: UpsertClinicianSettingsInputStyleProfile;
   signaturesSettings?: UpsertClinicianSettingsInputSignaturesSettings;
   appSettings?: UpsertClinicianSettingsInputAppSettings;
+  onboardingProfile?: UpsertClinicianSettingsInputOnboardingProfile;
 }
 
 /**
