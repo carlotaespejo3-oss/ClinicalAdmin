@@ -132,7 +132,7 @@ const TOTAL_DATA_STEPS = 8; // steps 1–8 (name → cover)
 const STEP_META: Partial<Record<StepId, { title: string; subtitle?: string }>> = {
   name:         { title: 'What should we call you?' },
   role:         { title: 'Your role & setting',        subtitle: 'Helps ClinAdmin tailor labels and AI suggestions.' },
-  keywords:     { title: 'Always-urgent keywords',     subtitle: 'These override the AI — flagged instantly, no questions asked.' },
+  keywords:     { title: 'Always-urgent topics',        subtitle: 'Describe concerns, not just words — ClinAdmin reads for meaning.' },
   deadlines:    { title: 'Response time expectations', subtitle: 'ClinAdmin will show countdown badges on flagged emails.' },
   'admin-time': { title: 'Admin time blocks',          subtitle: 'When do you usually tackle your inbox?' },
   tone:         { title: 'Your reply style',           subtitle: 'Used as the baseline for AI-drafted replies.' },
@@ -161,10 +161,20 @@ const SETTINGS: { value: ClinSetting; label: string; desc: string }[] = [
   { value: 'community',  label: 'Community',       desc: 'Home visits / community care' },
 ];
 
-const SUGGESTED_KEYWORDS = [
-  'dialysis', 'infection', 'safeguarding', 'overdose', 'crisis',
-  'collapse', 'sepsis', 'deteriorating', 'self-harm', 'suicidal',
-  'psychosis', 'pus', 'redness', 'abscess', 'bleeding',
+// These are topic/concept descriptors, not single words.
+// They feed the AI as semantic concepts — so "self-harm or thoughts of hurting oneself"
+// catches "not feeling herself", "hurting himself", "can't stop cutting" etc.
+const SUGGESTED_TOPICS = [
+  'self-harm or thoughts of hurting oneself',
+  'suicidal thoughts or intent',
+  'clinical deterioration',
+  'dialysis or kidney-related crisis',
+  'overdose or poisoning',
+  'safeguarding or risk to a child',
+  'acute infection or sepsis',
+  'psychosis or loss of reality',
+  'collapse or loss of consciousness',
+  'abscess, wound infection or signs of pus',
 ];
 
 const DEADLINE_OPTIONS = [
@@ -373,17 +383,22 @@ function StepKeywords({ keywords, onChange }: { keywords: string[]; onChange: (k
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground leading-relaxed">
-        Are there words in emails that <strong>always</strong> mean urgent for you? When
-        ClinAdmin spots these it flags the email immediately — regardless of what the AI thinks.
+        Are there <strong>topics or clinical concerns</strong> that should always trigger an urgent flag,
+        no matter how the email is worded? Describe the concept — not just one word.
+      </p>
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        For example: <em>"self-harm or thoughts of hurting oneself"</em> will also catch
+        "not feeling herself", "can't stop hurting himself", "been cutting again" — because
+        ClinAdmin reads for meaning, not just exact matches.
       </p>
       <TagInput
         tags={keywords}
         onChange={onChange}
-        placeholder="Type a word and press Enter…"
-        suggestions={SUGGESTED_KEYWORDS}
+        placeholder="Describe a concern and press Enter…"
+        suggestions={SUGGESTED_TOPICS}
       />
       <p className="text-xs text-muted-foreground/60 italic">
-        Leave empty to rely on ClinAdmin's AI classifier. You can add keywords at any time in Settings.
+        Leave empty to rely on ClinAdmin's AI classifier. You can edit these at any time in Settings.
       </p>
     </div>
   );

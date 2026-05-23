@@ -86,12 +86,13 @@ COMPLEXITY SIGNALS (use these exact labels in complexityReasons):
 - "Long detailed history" — body contains a substantial chronological/clinical history the clinician must read carefully (use this rather than just "long email").
 Do NOT invent new labels. If none of these apply, set complexity='simple' and complexityReasons=[].
 
-ALWAYS-URGENT KEYWORDS (clinician-defined, highest priority):
+ALWAYS-URGENT TOPICS (clinician-defined, highest priority):
 ${(() => {
-  const kws = getProfile().criticalKeywords;
-  return kws.length > 0
-    ? `If ANY of these words appear in the subject or body, classify as URGENT_CLINICAL (minimum) with priority URGENT: ${kws.join(', ')}`
-    : '(none configured)';
+  const topics = getProfile().criticalKeywords;
+  if (topics.length === 0) return '(none configured by this clinician)';
+  return `The following clinical concerns must ALWAYS be classified as URGENT_CLINICAL (minimum) with priority URGENT, even if the rest of the email seems routine. These are CONCEPTS, not exact words — look for the meaning. Someone might describe the same concern in many different ways (e.g. "not feeling herself", "really struggling", "things have got a lot worse" can all indicate clinical deterioration):
+${topics.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
+If the email content matches or strongly implies any of these topics, override your category/priority assessment and flag as URGENT_CLINICAL + URGENT.`;
 })()}
 
 EMAIL TO CLASSIFY:
@@ -244,16 +245,22 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
     }
   }
 
-  // Critical-keyword override (clinician-defined, highest precedence).
-  // If any of the clinician's always-urgent keywords appear in the email,
-  // force URGENT_CLINICAL (minimum — doesn't downgrade SAFEGUARDING) and
-  // URGENT priority, regardless of what the AI returned.
-  const criticalKeywords = getProfile().criticalKeywords;
-  if (criticalKeywords.length > 0) {
+  // Critical-topic safety-net override (clinician-defined, highest precedence).
+  // The AI prompt already instructs semantic matching for these topics, so the
+  // primary detection path is the AI itself. This deterministic pass is a
+  // safety net for cases where the topic description contains a very specific
+  // term that appeared literally in the email (e.g. "dialysis" → "dialysis").
+  // It splits each topic description into individual words and checks for any
+  // word of 6+ characters (to avoid false positives from short common words
+  // like "not", "and", "she"). Semantic/paraphrase detection relies on the AI.
+  const criticalTopics = getProfile().criticalKeywords;
+  if (criticalTopics.length > 0 && finalCategory !== 'SAFEGUARDING' && finalCategory !== 'URGENT_CLINICAL') {
     const haystack = `${email.subject} ${email.body}`.toLowerCase();
-    const hit = criticalKeywords.find((kw) => haystack.includes(kw.toLowerCase()));
+    const hit = criticalTopics.some((topic) =>
+      topic.toLowerCase().split(/\W+/).filter((w) => w.length >= 6).some((word) => haystack.includes(word))
+    );
     if (hit) {
-      if (finalCategory !== 'SAFEGUARDING') finalCategory = 'URGENT_CLINICAL';
+      finalCategory = 'URGENT_CLINICAL';
       finalPriority = 'URGENT';
     }
   }

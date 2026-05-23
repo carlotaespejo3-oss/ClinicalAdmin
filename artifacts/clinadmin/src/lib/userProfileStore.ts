@@ -64,7 +64,10 @@ export interface UserProfile {
   setting: ClinSetting;
 
   // Priority rules
-  criticalKeywords: string[]; // always-urgent regardless of AI score
+  // Each entry is a topic/concept description (not necessarily a single word).
+  // e.g. "self-harm or thoughts of hurting oneself", "clinical deterioration".
+  // The AI classifies for meaning; the deterministic pass catches literal sub-words.
+  criticalKeywords: string[];
 
   // SLA / response expectations (hours)
   deadlines: {
