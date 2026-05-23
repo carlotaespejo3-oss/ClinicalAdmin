@@ -55,6 +55,16 @@ export interface EmailSignature {
   body: string;
 }
 
+export interface AutoReplyTemplates {
+  // Three tiers shown when clinician enters a leave block.
+  // Placeholders: {returnDate}  → first working day back (e.g. "Mon 1 Jun")
+  //               {coverContact} → cover clinician name/email from profile
+  //               {displayName}  → clinician's own display name
+  urgent: string;    // SAFEGUARDING / URGENT_CLINICAL emails
+  clinical: string;  // CLINICAL / PROFESSIONAL / LEGAL emails
+  admin: string;     // ADMIN / CPD / general
+}
+
 export interface UserProfile {
   // Identity
   displayName: string;
@@ -84,6 +94,9 @@ export interface UserProfile {
   signatures: EmailSignature[];
   coverContact: string; // name or email of cover clinician
 
+  // Leave mode auto-reply templates (editable per-leave-block at save time)
+  autoReplyTemplates: AutoReplyTemplates;
+
   // Wizard state
   onboardingComplete: boolean;
   onboardingStep: number; // last reached step index — for resume later
@@ -99,6 +112,21 @@ const DEFAULT_SIGNATURES: EmailSignature[] = [
   { id: 'admin',    label: 'Admin',    body: '' },
 ];
 
+export const DEFAULT_AUTO_REPLY_TEMPLATES: AutoReplyTemplates = {
+  urgent:
+    'I am currently on leave and unable to respond to emails.\n\n' +
+    'If this is an urgent clinical matter or involves patient safety, please contact {coverContact} immediately. ' +
+    'If you cannot reach cover, please escalate through your usual urgent referral pathway.\n\n' +
+    'I will be returning on {returnDate}.',
+  clinical:
+    'Thank you for your email. I am currently on leave and will return on {returnDate}.\n\n' +
+    'For clinical queries during my absence, please contact {coverContact}.\n\n' +
+    'I will respond to your email on my return.',
+  admin:
+    'Thank you for your email. I am currently on leave and will return on {returnDate}.\n\n' +
+    'I will respond to your message when I am back. If your query is urgent, please contact {coverContact}.',
+};
+
 export const DEFAULT_PROFILE: UserProfile = {
   displayName: '',
   role: 'doctor',
@@ -111,6 +139,7 @@ export const DEFAULT_PROFILE: UserProfile = {
   defaultReplyTone: 'semi-formal',
   signatures: DEFAULT_SIGNATURES,
   coverContact: '',
+  autoReplyTemplates: DEFAULT_AUTO_REPLY_TEMPLATES,
   onboardingComplete: false,
   onboardingStep: 0,
 };
@@ -133,6 +162,11 @@ function loadFromStorage(): UserProfile {
       deadlines: { ...DEFAULT_PROFILE.deadlines, ...(parsed.deadlines ?? {}) },
       // Ensure built-in signature slots always exist
       signatures: mergeSignatures(parsed.signatures ?? []),
+      // Merge templates so new fields added in future get their defaults
+      autoReplyTemplates: {
+        ...DEFAULT_AUTO_REPLY_TEMPLATES,
+        ...(parsed.autoReplyTemplates ?? {}),
+      },
     };
   } catch {
     return { ...DEFAULT_PROFILE, signatures: DEFAULT_SIGNATURES.map(s => ({ ...s })) };

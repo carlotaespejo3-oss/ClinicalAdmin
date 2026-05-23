@@ -18,7 +18,9 @@ import {
   setAppSettingsInternal,
 } from '@/lib/clinicianSettingsStore';
 import { useManualTasksWithOverrides } from '@/lib/manualTaskOverridesStore';
+import LeaveAutoReplyModal from '@/components/LeaveAutoReplyModal';
 import type { WeekSetup } from '@/pages/ClinAdmin';
+import type { AiCategory } from '@/lib/types';
 
 // Calendar-side panel for managing clinician leave / time-off.
 //
@@ -129,6 +131,12 @@ export default function LeavePanel({ weekSetup }: Props) {
     block: { startAt: string; endAt: string };
     conflicts: ReturnType<typeof itemsAtRiskBeforeLeave>;
   } | null>(null);
+  // Auto-reply modal: shown after a leave block is saved so the clinician
+  // can configure tiered OOF messages immediately.
+  const [autoReplyBlock, setAutoReplyBlock] = useState<{
+    leaveEndAt: string;
+    returnDateLabel: string;
+  } | null>(null);
 
   const isMultiDay = Boolean(startDate && endDate && startDate !== endDate);
   // Half-day only makes sense on a single-day entry. When the
@@ -178,8 +186,19 @@ export default function LeavePanel({ weekSetup }: Props) {
       leaveType,
       notes: notes.trim() ? notes.trim() : null,
     });
+    // Compute first working day back so the auto-reply modal can fill it in.
+    const dayBackKey = nextWorkingDayAfter(range.endAt, workingWeekdays, blocks);
+    const returnDateLabel = dayBackKey
+      ? new Date(dayBackKey + 'T12:00:00Z').toLocaleDateString('en-GB', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })
+      : '';
     resetForm();
     setOpen(false);
+    setAutoReplyBlock({ leaveEndAt: range.endAt, returnDateLabel });
   };
 
   const handleSave = () => {
@@ -224,8 +243,13 @@ export default function LeavePanel({ weekSetup }: Props) {
         id: t.id,
         title: t.title,
         deadlineDays: t.deadline,
+        category: t.cat as AiCategory,
       }));
-    const conflicts = itemsAtRiskBeforeLeave(new Date(), [candidateBlock], inputs, 365);
+    // horizonDays=365 covers all leave lengths; maxItems=5 caps noise.
+    // LOW-band items (admin, CPD) are filtered inside itemsAtRiskBeforeLeave
+    // because they can wait or be delegated — only clinical/legal deadlines
+    // genuinely require action before leaving.
+    const conflicts = itemsAtRiskBeforeLeave(new Date(), [candidateBlock], inputs, 365, 5);
     if (conflicts.length > 0) {
       setPendingConflicts({ block: range, conflicts });
       return;
@@ -246,6 +270,14 @@ export default function LeavePanel({ weekSetup }: Props) {
   };
 
   return (
+    <>
+    {autoReplyBlock && (
+      <LeaveAutoReplyModal
+        leaveEndAt={autoReplyBlock.leaveEndAt}
+        returnDateLabel={autoReplyBlock.returnDateLabel}
+        onClose={() => setAutoReplyBlock(null)}
+      />
+    )}
     <Card className="border-border/60" data-testid="leave-panel">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -430,23 +462,21 @@ export default function LeavePanel({ weekSetup }: Props) {
               <AlertTriangle size={16} className="text-amber-700 mt-0.5 flex-shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-amber-900">
-                  {pendingConflicts.conflicts.length}{' '}
-                  {pendingConflicts.conflicts.length === 1 ? 'task is' : 'tasks are'} due during this leave.
+                  {pendingConflicts.conflicts.length === 1
+                    ? '1 thing to sort before you go'
+                    : `${pendingConflicts.conflicts.length} things to sort before you go`}
                 </p>
                 <p className="text-xs text-amber-800 mt-0.5">
-                  You can save the leave anyway — they'll appear as breached on the planner so you can rearrange or defer them.
+                  Clinical or time-sensitive deadlines that fall during your leave. You can save the leave anyway — they'll appear as breached on the planner so you can rearrange or defer them.
                 </p>
               </div>
             </div>
             <ul className="text-xs space-y-1 text-amber-900" data-testid="leave-conflict-list">
-              {pendingConflicts.conflicts.slice(0, 6).map((c) => (
+              {pendingConflicts.conflicts.map((c) => (
                 <li key={c.item.id} className="truncate">
                   <strong>{formatDayBack(c.deadlineKey)}</strong> — {c.item.title}
                 </li>
               ))}
-              {pendingConflicts.conflicts.length > 6 && (
-                <li className="text-amber-700/80">+ {pendingConflicts.conflicts.length - 6} more</li>
-              )}
             </ul>
             <div className="flex justify-end gap-2">
               <button
@@ -526,5 +556,6 @@ export default function LeavePanel({ weekSetup }: Props) {
 
       </CardContent>
     </Card>
+    </>
   );
 }

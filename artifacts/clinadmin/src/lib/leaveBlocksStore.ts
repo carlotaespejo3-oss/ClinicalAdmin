@@ -4,6 +4,7 @@ import {
   upsertLeaveBlock,
   deleteLeaveBlock,
 } from '@workspace/api-client-react';
+import type { AiCategory } from '@/lib/types';
 
 // Clinician leave / time-off blocks. v1 minimal — add / list / delete.
 //
@@ -105,7 +106,7 @@ export function addLeaveBlock(input: {
     leaveType: input.leaveType,
     notes: input.notes ?? null,
   };
-  cache = [...cache, block].sort((a, b) => a.startAt.localeCompare(b.startAt));
+  cache = [...cache, block].sort((a, b) => (a.startAt ?? '').localeCompare(b.startAt ?? ''));
   listeners.forEach((l) => l());
   persist(block);
   return block;
@@ -156,13 +157,9 @@ export function leaveMinutesForDay(
   workingMinutes: number,
 ): number {
   if (workingMinutes <= 0 || blocks.length === 0) return 0;
-  // Local midnight to next local midnight. We construct dayEnd via the
-  // calendar (year/month/day+1) rather than dayStart + 24h so DST
-  // transitions don't shift the boundary by an hour. On the spring/
-  // autumn DST days the local day length is 23h/25h respectively;
-  // adding 86_400_000 ms would land at 23:00 or 01:00 of the next
-  // local day and misattribute an hour of overlap. parseDayKey returns
-  // an exclusive next-midnight too.
+  // UTC midnight to next UTC midnight. parseDayBounds uses setUTCDate
+  // for dayEnd so the boundary is always exactly 86_400_000 ms later —
+  // UTC has no DST, so there are no 23h or 25h days to worry about.
   const bounds = parseDayBounds(dayKey);
   if (!bounds) return 0;
   const { dayStart, dayEnd } = bounds;
@@ -224,23 +221,24 @@ export interface ReturnFromLeaveInfo {
   precedingBlockIds: string[];
 }
 
-// Step a 'YYYY-MM-DD' key by ±1 calendar day in local time (DST-safe via
-// the Date calendar constructor).
+// Step a 'YYYY-MM-DD' key by ±1 calendar day. UTC-anchored to match
+// availability.ts's addDays — setUTCDate handles month/year rollovers
+// correctly and is immune to DST because UTC has no DST.
 function shiftDayKey(dayKey: string, deltaDays: number): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
-  if (!m) return dayKey;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + deltaDays, 0, 0, 0, 0);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const d = new Date(dayKey + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
 }
 
 // Format a YYYY-MM-DD key into the short weekday label the WeekSetup
-// uses ('Mon', 'Tue', ...). Matches the en-GB short weekday format used
-// elsewhere in the app so callers can pass `new Set(weekSetup.days)`
-// straight through.
+// uses ('Mon', 'Tue', ...). We anchor to noon UTC (T12:00:00Z) before
+// calling toLocaleDateString — noon UTC is well within every timezone's
+// version of the same calendar day (offsets range ±14h; noon UTC lands
+// between 10pm the previous day and 2am the next, so for all practical
+// UTC offsets the local date matches the key). Using midnight UTC would
+// risk returning the previous day's name for zones west of UTC.
 function weekdayShort(dayKey: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
-  if (!m) return '';
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', {
+  return new Date(dayKey + 'T12:00:00Z').toLocaleDateString('en-GB', {
     weekday: 'short',
   });
 }
@@ -421,17 +419,13 @@ export function currentLeaveStatus(
     }
   }
   if (upcoming) {
-    const startDate = new Date(upcoming.startAt);
-    // Days-until is computed by calendar-day delta in LOCAL time, not
-    // raw 24h chunks — DST or sub-day differences shouldn't show as
-    // "in 0 days" when the start is e.g. 23h away in clock time but a
-    // calendar day apart. We zero hours on both sides before diffing.
-    const startMidnight = new Date(
-      startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0, 0,
-    );
-    const todayMidnight = new Date(
-      today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0,
-    );
+    // Days-until is a calendar-day delta, not a raw 24h count — a leave
+    // block starting at 23:59 today is "0 days away", not "in 24 hours".
+    // We anchor both sides to UTC midnight (matching parseDayBounds and
+    // availability.ts) so the subtraction is always an exact multiple of
+    // 86_400_000 ms with no DST jitter.
+    const startMidnight = new Date(upcoming.startAt.slice(0, 10) + 'T00:00:00Z');
+    const todayMidnight = new Date(todayKey + 'T00:00:00Z');
     const daysUntil = Math.round((startMidnight.getTime() - todayMidnight.getTime()) / 86_400_000);
     return { state: 'leave-starts-soon', block: upcoming, daysUntil };
   }
@@ -463,10 +457,13 @@ export function dayWithinLeave(
   if (onDay.length === 0) return null;
   let best: DayWithinLeaveInfo | null = null;
   for (const b of onDay) {
-    const s = new Date(b.startAt);
-    const e = new Date(new Date(b.endAt).getTime() - 60_000); // inclusive last day
-    const startKey = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`;
-    const endKey = `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`;
+    // Use UTC getters — startAt/endAt are UTC-midnight ISO timestamps
+    // so toISOString().slice(0,10) gives the correct UTC date string.
+    const startKey = b.startAt.slice(0, 10);
+    // endAt is exclusive; subtract one minute to land on the last covered
+    // day, then take the UTC date.
+    const e = new Date(new Date(b.endAt).getTime() - 60_000);
+    const endKey = e.toISOString().slice(0, 10);
     const totalMs = parseDayBounds(endKey)!.dayStart.getTime() - parseDayBounds(startKey)!.dayStart.getTime();
     const total = Math.round(totalMs / 86_400_000) + 1;
     const indexMs = parseDayBounds(dayKey)!.dayStart.getTime() - parseDayBounds(startKey)!.dayStart.getTime();
@@ -498,6 +495,28 @@ export interface AtRiskInput {
   deadlineDays?: number;
   /** 'YYYY-MM-DD' local. Mutually exclusive with deadlineDays. */
   deadlineDate?: string;
+  /**
+   * The item's clinical category. When present, items in the LOW priority band
+   * (ADMIN, CPD, NONE, UNCLEAR) are excluded from pre-leave warnings — a 4-week
+   * leave would otherwise surface every routine email as "at risk", which is noise.
+   * Leave category undefined to include all items regardless of band (legacy behaviour).
+   */
+  category?: AiCategory;
+}
+
+// Priority bands used to sort and filter at-risk items.
+// HIGH  → always surface, most urgent first.
+// MEDIUM → surface, lower rank than HIGH.
+// LOW   → filtered out when category is known (routine work can wait / be delegated).
+const HIGH_BAND = new Set<AiCategory>(['SAFEGUARDING', 'URGENT_CLINICAL', 'LEGAL']);
+const MEDIUM_BAND = new Set<AiCategory>(['CLINICAL', 'PROFESSIONAL']);
+const LOW_BAND = new Set<AiCategory>(['ADMIN', 'CPD', 'NONE', 'UNCLEAR']);
+
+function bandRank(cat: AiCategory | undefined): number {
+  if (!cat) return 1; // unknown → treat as medium so it still surfaces
+  if (HIGH_BAND.has(cat)) return 0;
+  if (MEDIUM_BAND.has(cat)) return 1;
+  return 2; // LOW_BAND
 }
 
 export interface AtRiskResult {
@@ -512,23 +531,39 @@ export function itemsAtRiskBeforeLeave(
   blocks: readonly LeaveBlock[],
   items: readonly AtRiskInput[],
   horizonDays = 14,
+  maxItems = 5,
 ): AtRiskResult[] {
   if (blocks.length === 0 || items.length === 0) return [];
-  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+  // Anchor to UTC midnight so deadline comparisons use the same epoch
+  // reference as parseDayBounds and availability.ts. UTC days are always
+  // exactly 86_400_000 ms, so adding deadlineDays * 86_400_000 is exact.
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayMid = new Date(todayStr + 'T00:00:00Z');
   const horizonMs = todayMid.getTime() + horizonDays * 86_400_000;
   const out: AtRiskResult[] = [];
+
   for (const it of items) {
+    // When the category is known, skip LOW-band items entirely. A 4-week
+    // leave would otherwise surface every routine admin email as "at risk"
+    // — clinical deadlines and legal items are what the clinician actually
+    // needs to clear before going away.
+    if (it.category && LOW_BAND.has(it.category)) continue;
+
     let deadlineMid: Date | null = null;
     if (typeof it.deadlineDays === 'number') {
       deadlineMid = new Date(todayMid.getTime() + it.deadlineDays * 86_400_000);
     } else if (it.deadlineDate) {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(it.deadlineDate);
-      if (m) deadlineMid = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+      if (m) deadlineMid = new Date(it.deadlineDate + 'T00:00:00Z');
     }
     if (!deadlineMid) continue;
     if (deadlineMid.getTime() < todayMid.getTime()) continue; // already overdue — separate problem
     if (deadlineMid.getTime() > horizonMs) continue;
-    const deadlineKey = `${deadlineMid.getFullYear()}-${String(deadlineMid.getMonth() + 1).padStart(2, '0')}-${String(deadlineMid.getDate()).padStart(2, '0')}`;
+
+    // deadlineMid is UTC-midnight anchored — use toISOString to get the
+    // UTC date string, matching parseDayBounds and leaveBlocksForDay.
+    const deadlineKey = deadlineMid.toISOString().slice(0, 10);
+
     // Does the deadline day fall within an upcoming leave block?
     // Only count blocks that START AFTER today — leave already in
     // progress isn't the "finish-line" we're warning about.
@@ -542,9 +577,19 @@ export function itemsAtRiskBeforeLeave(
       }
     }
   }
-  // Sort by deadline soonest-first so the UI shows the most urgent first.
-  out.sort((a, b) => a.deadlineKey.localeCompare(b.deadlineKey));
-  return out;
+
+  // Sort: clinical urgency band first (HIGH → MEDIUM → LOW/unknown),
+  // then deadline soonest-first within each band. This surfaces a
+  // safeguarding deadline before a routine clinical one even if the
+  // latter is slightly sooner, so the "3 things to sort before you go"
+  // list reads in priority order rather than calendar order.
+  out.sort((a, b) => {
+    const bandDiff = bandRank(a.item.category) - bandRank(b.item.category);
+    if (bandDiff !== 0) return bandDiff;
+    return a.deadlineKey.localeCompare(b.deadlineKey);
+  });
+
+  return out.slice(0, maxItems);
 }
 
 // First working day at-or-after `endAtIso`. Used by LeavePanel to show
@@ -558,12 +603,23 @@ export function nextWorkingDayAfter(
   blocks: readonly LeaveBlock[],
 ): string | null {
   if (workingWeekdays.size === 0) return null;
-  // endAt is exclusive. Start from the local calendar day that contains
-  // endAt minus one minute (so an endAt of 17:00 Friday still anchors on
-  // Friday) and step forward from there.
-  const anchor = new Date(new Date(endAtIso).getTime() - 60_000);
-  let cursor = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-${String(anchor.getDate()).padStart(2, '0')}`;
-  cursor = shiftDayKey(cursor, 1);
+  // endAt is exclusive and stored as a UTC-midnight ISO timestamp
+  // (e.g. "2026-06-13T00:00:00Z" = leave covers up to, not including,
+  // June 13th → first candidate day IS June 13th).
+  // For robustness with legacy or partial-day endAt values that are not
+  // exactly UTC midnight, subtract one minute so we anchor on the last
+  // covered day, then shift forward one day to the first candidate.
+  const endMs = new Date(endAtIso).getTime();
+  const endDateStr = endAtIso.slice(0, 10);
+  const isExactMidnight = endMs === new Date(endDateStr + 'T00:00:00Z').getTime();
+  // Exact UTC midnight: the endAt date itself is the first candidate.
+  // Non-midnight (legacy): subtract a minute, take UTC date, shift +1.
+  let cursor: string;
+  if (isExactMidnight) {
+    cursor = endDateStr;
+  } else {
+    cursor = shiftDayKey(new Date(endMs - 60_000).toISOString().slice(0, 10), 1);
+  }
   for (let cap = 0; cap < 60; cap++) {
     const working = workingWeekdays.has(weekdayShort(cursor));
     const onLeave = leaveBlocksForDay(cursor, blocks).length > 0;
@@ -573,18 +629,16 @@ export function nextWorkingDayAfter(
   return null;
 }
 
-// Parse 'YYYY-MM-DD' to the half-open local-midnight bounds of that
-// calendar day. DST-safe — both endpoints are constructed via the
-// Date calendar constructor so the boundary lands on real local
-// midnight even when the day is 23h or 25h long.
+// Parse 'YYYY-MM-DD' to the half-open UTC-midnight bounds of that
+// calendar day. UTC-anchored (T00:00:00Z) to match availability.ts
+// throughout — leave blocks are stored as UTC-midnight ISO timestamps,
+// so day boundaries must use the same epoch reference or overlap checks
+// can mis-attribute a day by one hour for BST clinicians. setUTCDate
+// handles month/year rollovers without DST interference (UTC has no DST).
 function parseDayBounds(s: string): { dayStart: Date; dayEnd: Date } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  return {
-    dayStart: new Date(y, mo - 1, d, 0, 0, 0, 0),
-    dayEnd: new Date(y, mo - 1, d + 1, 0, 0, 0, 0),
-  };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const dayStart = new Date(s + 'T00:00:00Z');
+  const dayEnd = new Date(s + 'T00:00:00Z');
+  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+  return { dayStart, dayEnd };
 }
