@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Home, Mail, Shield, PenTool, RefreshCcw, Plus, X, ClipboardList, BarChart2, Settings, User, CalendarDays, LogOut, Archive, ChevronsLeft, ChevronsRight, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { emails as allEmails } from '@/lib/data';
 import { useAcknowledgedEmails, acknowledgeEmail } from '@/lib/acknowledgedStore';
@@ -40,6 +40,8 @@ import StyleTab from '../tabs/StyleTab';
 import CatchUpTab from '../tabs/CatchUpTab';
 import SettingsTab from '../tabs/SettingsTab';
 import WeeklySetupModal from '../components/WeeklySetupModal';
+import OnboardingWizard from '../components/OnboardingWizard';
+import { useUserProfile } from '@/lib/userProfileStore';
 import { TabType, GeneratedPlan } from '@/lib/types';
 import {
   useManualTasksWithOverrides,
@@ -147,6 +149,13 @@ export default function ClinAdmin() {
   // Hydration is lazy (first subscriber triggers it) so we don't pay for
   // it on apps that haven't run a catch-up scan yet.
   const backlogQueue = useBacklogQueue();
+
+  // Onboarding wizard — shown on first launch until the clinician completes
+  // or explicitly dismisses ("Save & exit"). wizardDismissed is session-only:
+  // refreshing the page re-shows the wizard until onboardingComplete is set.
+  const { profile: userProfile } = useUserProfile();
+  const [wizardDismissed, setWizardDismissed] = useState(false);
+  const showWizard = !userProfile.onboardingComplete && !wizardDismissed;
   const [openEmailId, setOpenEmailId] = useState<number | null>(null);
   const [addingTask, setAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -369,7 +378,13 @@ export default function ClinAdmin() {
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
 
-      {showWeeklySetup && (
+      {/* Onboarding wizard — full-screen, blocks app until dismissed */}
+      {showWizard && (
+        <OnboardingWizard onDismiss={() => setWizardDismissed(true)} />
+      )}
+
+      {/* Weekly setup modal — suppressed while onboarding is in progress */}
+      {showWeeklySetup && !showWizard && (
         <WeeklySetupModal
           onComplete={handleWeeklySetupComplete}
           onDismiss={handleWeeklySetupDismiss}
@@ -617,6 +632,17 @@ export default function ClinAdmin() {
             <span className="text-xs text-muted-foreground font-medium">CAMHS Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Resume-setup nudge — shown when wizard was dismissed before completing */}
+            {wizardDismissed && !userProfile.onboardingComplete && (
+              <button
+                type="button"
+                onClick={() => setWizardDismissed(false)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-full transition-colors"
+              >
+                <Sparkles size={11} />
+                Complete setup
+              </button>
+            )}
             <ProfileMenu onOpenSettings={() => setActiveTab('Settings')} />
           </div>
         </header>
