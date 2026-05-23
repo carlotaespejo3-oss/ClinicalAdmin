@@ -386,17 +386,19 @@ export function usePlannerOutput(
 }
 
 // Map an AI-prompted-task kind to a planner category band. Clinical
-// kinds (a script, a phone call about a patient, results to review,
-// a referral) land in CLINICAL so they share the medium-priority
-// band with clinical emails; pure scheduling/admin kinds drop to
-// ADMIN so they don't push genuine clinical work down the queue.
+// kinds (a script, a phone call about a patient, results to review)
+// land in CLINICAL so they share the medium-priority band with clinical
+// emails. Referrals and pure scheduling/admin kinds drop to ADMIN so
+// they don't push genuine clinical work down the queue.
+// NOTE: referral was previously mapped to CLINICAL but referrals are
+// admin work by policy — they go in the admin queue, not clinical.
 function promptedTaskCategory(kind: PotentialTaskKind): AiCategory {
   switch (kind) {
     case 'prescription':
     case 'phone_call':
     case 'results_review':
-    case 'referral':
       return 'CLINICAL';
+    case 'referral':
     case 'appointment':
     case 'follow_up':
     case 'deadline':

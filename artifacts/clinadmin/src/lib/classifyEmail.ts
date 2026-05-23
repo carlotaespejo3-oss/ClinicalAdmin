@@ -30,12 +30,12 @@ Classify ONE incoming email into the categories and priorities below. Return ONL
 CATEGORIES (pick exactly one):
 - SAFEGUARDING — any mention of self-harm, suicidal ideation, abuse, neglect, risk to a child or vulnerable person, or a family expressing acute distress about safety. If there is ANY doubt about safety, choose SAFEGUARDING.
 - URGENT_CLINICAL — severe symptoms, severe behavioural escalation, family in crisis, but NO safeguarding concern.
-- CLINICAL — clinical questions about symptoms, medication doses, script renewals, dose checks, simple clinical advice, routine clinical decisions.
+- CLINICAL — clinical questions about symptoms, medication doses, script renewals, dose checks, simple clinical advice, routine clinical decisions. Do NOT use for incoming referral requests — those are ADMIN.
 - PROFESSIONAL — emails from colleagues (psychology, GP, school MH lead, allied health, other doctors) who are waiting on the clinician. Detect sub-type:
     * clinical_input — they want a clinical opinion or input
     * document_request — they want a report, letter, or referral document
     * meeting — coordinating a meeting/joint appointment
-- ADMIN — bookings, room changes, rota changes, forms, scheduling.
+- ADMIN — bookings, room changes, rota changes, forms, scheduling, and ALL incoming referral requests (new patients being referred to you, requests to accept/review a referral, NP referrals, GP referrals, MSFM referrals — any email asking the clinician to take on or process a new patient). Referrals are always ADMIN even when they contain clinical details about the patient.
 - LEGAL — medico-legal correspondence, complaints with legal implications, court-related.
 - NONE — no action required: newsletters, bulletins, FYI cc'd threads, marketing.
 - CPD — meetings, conferences, courses, or other continuing professional development. Extract any registration deadline.
@@ -232,6 +232,27 @@ export async function classifyEmail(email: Email, runPrompt: RunPrompt): Promise
       // Spec: default priority MEDIUM when no urgent deadline. Don't
       // downgrade an AI-determined URGENT — only nudge LOW/UNCLEAR up.
       finalPriority = 'MEDIUM';
+    }
+  }
+
+  // Referral override (deterministic rule, always wins).
+  // Incoming referrals are always ADMIN regardless of what the AI returns.
+  // Logic: subject or body mentions "referral" AND the email is NOT asking
+  // the clinician to *write* a document (requiresDocument handles that path)
+  // AND it's not a safeguarding/urgent-clinical concern (don't downgrade safety).
+  const REFERRAL_RE = /\breferral\b/i;
+  const isReferral =
+    !requiresDocument &&
+    finalCategory !== 'SAFEGUARDING' &&
+    finalCategory !== 'URGENT_CLINICAL' &&
+    (REFERRAL_RE.test(email.subject) || REFERRAL_RE.test(email.body));
+  if (isReferral) {
+    finalCategory = 'ADMIN';
+    // Referrals are LOW priority by default — they go in the admin queue,
+    // not the urgent clinical one. Don't override an URGENT signal though
+    // (a referral with a very urgent safety concern should stay URGENT).
+    if (finalPriority === 'UNCLEAR' || finalPriority === 'MEDIUM') {
+      finalPriority = 'LOW';
     }
   }
 
