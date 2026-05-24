@@ -177,12 +177,15 @@ const SUGGESTED_TOPICS = [
 
 // Values in hours (stored as-is; planner converts via Math.ceil(h/24)).
 // Kept day/week-granular — nobody realistically responds in under a day
-// during scheduled admin time.
+// during scheduled admin time. 0 is the sentinel for "Custom".
+const CUSTOM_SENTINEL = 0;
+
 const DEADLINE_OPTIONS_URGENT = [
   { value: 24,  label: '1 day' },
   { value: 48,  label: '2 days' },
   { value: 72,  label: '3 days' },
   { value: 120, label: '5 days' },
+  { value: CUSTOM_SENTINEL, label: 'Custom' },
 ];
 const DEADLINE_OPTIONS_CLINICAL = [
   { value: 48,  label: '2 days' },
@@ -190,12 +193,15 @@ const DEADLINE_OPTIONS_CLINICAL = [
   { value: 120, label: '5 days' },
   { value: 168, label: '1 week' },
   { value: 336, label: '2 weeks' },
+  { value: CUSTOM_SENTINEL, label: 'Custom' },
 ];
 const DEADLINE_OPTIONS_ADMIN = [
   { value: 72,  label: '3 days' },
   { value: 120, label: '5 days' },
   { value: 168, label: '1 week' },
   { value: 336, label: '2 weeks' },
+  { value: 672, label: '4 weeks' },
+  { value: CUSTOM_SENTINEL, label: 'Custom' },
 ];
 
 const DAYS: WeekDay[] = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -421,6 +427,12 @@ function StepDeadlines({
   deadlines: { urgent: number; clinical: number; admin: number };
   onChange: (d: { urgent: number; clinical: number; admin: number }) => void;
 }) {
+  // Track which rows are in "custom" mode (select value === CUSTOM_SENTINEL).
+  // customDays stores the raw day input string so the number field stays
+  // editable while the clinician types; on blur / change we commit hours.
+  const [customMode, setCustomMode] = useState<Partial<Record<'urgent' | 'clinical' | 'admin', boolean>>>({});
+  const [customDays, setCustomDays] = useState<Partial<Record<'urgent' | 'clinical' | 'admin', string>>>({});
+
   const rows = [
     {
       key: 'urgent'   as const,
@@ -448,6 +460,24 @@ function StepDeadlines({
     },
   ];
 
+  const handleSelectChange = (key: 'urgent' | 'clinical' | 'admin', raw: string) => {
+    const v = Number(raw);
+    if (v === CUSTOM_SENTINEL) {
+      setCustomMode((m) => ({ ...m, [key]: true }));
+      setCustomDays((d) => ({ ...d, [key]: '' }));
+    } else {
+      setCustomMode((m) => ({ ...m, [key]: false }));
+      onChange({ ...deadlines, [key]: v });
+    }
+  };
+
+  const commitCustomDays = (key: 'urgent' | 'clinical' | 'admin') => {
+    const days = parseInt(customDays[key] ?? '', 10);
+    if (!isNaN(days) && days > 0) {
+      onChange({ ...deadlines, [key]: days * 24 });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -456,23 +486,49 @@ function StepDeadlines({
         is approaching its window.
       </p>
       <div className="space-y-3">
-        {rows.map((row) => (
-          <div key={row.key} className={cn('flex items-center gap-4 p-3 rounded-xl border', row.bg)}>
-            <div className="flex-1 min-w-0">
-              <p className={cn('text-xs font-bold', row.color)}>{row.label}</p>
-              <p className="text-[10px] text-muted-foreground">{row.desc}</p>
+        {rows.map((row) => {
+          const isCustom = customMode[row.key];
+          // Determine select value: if current stored value matches a preset,
+          // show it; otherwise show CUSTOM_SENTINEL.
+          const knownValues = row.options.map((o) => o.value).filter((v) => v !== CUSTOM_SENTINEL);
+          const selectVal = knownValues.includes(deadlines[row.key]) ? deadlines[row.key] : CUSTOM_SENTINEL;
+
+          return (
+            <div key={row.key} className={cn('p-3 rounded-xl border space-y-2', row.bg)}>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-xs font-bold', row.color)}>{row.label}</p>
+                  <p className="text-[10px] text-muted-foreground">{row.desc}</p>
+                </div>
+                <select
+                  value={isCustom ? CUSTOM_SENTINEL : selectVal}
+                  onChange={(e) => handleSelectChange(row.key, e.target.value)}
+                  className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[110px]"
+                >
+                  {row.options.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {isCustom && (
+                <div className="flex items-center gap-2 pl-0.5">
+                  <label className="text-[10px] text-muted-foreground whitespace-nowrap">Number of days:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={customDays[row.key] ?? ''}
+                    onChange={(e) => setCustomDays((d) => ({ ...d, [row.key]: e.target.value }))}
+                    onBlur={() => commitCustomDays(row.key)}
+                    placeholder="e.g. 10"
+                    className="w-20 text-xs border border-border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <span className="text-[10px] text-muted-foreground">days</span>
+                </div>
+              )}
             </div>
-            <select
-              value={deadlines[row.key]}
-              onChange={(e) => onChange({ ...deadlines, [row.key]: Number(e.target.value) })}
-              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[110px]"
-            >
-              {row.options.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

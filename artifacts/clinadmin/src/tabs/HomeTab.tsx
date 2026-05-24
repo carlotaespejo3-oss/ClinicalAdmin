@@ -367,7 +367,7 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
   // nextSessionLabel: first future day in the runway that has capacity.
   const nextSessionLabel = useMemo(() => {
     const next = plannerOutput.runway.find((d) => d.dayIndex > 0 && d.minutesAvailable > 0);
-    if (!next) return 'your next session';
+    if (!next) return 'next session';
     if (next.dayIndex === 1) return 'tomorrow';
     return next.dayLabel;
   }, [plannerOutput.runway]);
@@ -512,21 +512,6 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       )}
 
       {leaveStatus.state !== 'on-leave-today' && (<>
-
-      {/* Breach notice strip — shown whenever there are SLA-overrun
-          items today. Admin breaches get a soft dismissible slate strip;
-          clinical/urgent breaches get an amber strip with per-item
-          Review-now / Defer-to-next-session actions. */}
-      {plannerOutput.breaches.length > 0 && (
-        <BreachNoticeStrip
-          breaches={plannerOutput.breaches}
-          nextSessionLabel={nextSessionLabel}
-          onOpenEmail={(id) => {
-            onOpenEmail(id);
-            onNavigate('Emails');
-          }}
-        />
-      )}
 
       {/* Leave-context surfaces. The on-leave-today variant is folded
           into OnLeaveDashboard above. Back-today gets the richer
@@ -843,6 +828,20 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
           </div>
         </div>
       </div>
+
+      {/* Breach notice strip — sits directly under the status banner so
+          the clinician sees it in context. Admin breaches: soft dismissible
+          slate strip. Clinical/urgent: amber strip with per-item actions. */}
+      {plannerOutput.breaches.length > 0 && (
+        <BreachNoticeStrip
+          breaches={plannerOutput.breaches}
+          nextSessionLabel={nextSessionLabel}
+          onOpenEmail={(id) => {
+            onOpenEmail(id);
+            onNavigate('Emails');
+          }}
+        />
+      )}
 
       {/* Today's/Week's plan + My tasks. In Day mode the two sit
           side-by-side (3/5 + 2/5) on wide screens. In Week mode the
