@@ -177,15 +177,27 @@ const SUGGESTED_TOPICS = [
   'abscess, wound infection or signs of pus',
 ];
 
-const DEADLINE_OPTIONS = [
-  { value: 1,   label: '1 hour' },
-  { value: 2,   label: '2 hours' },
-  { value: 4,   label: '4 hours' },
-  { value: 8,   label: '8 hours' },
-  { value: 24,  label: '24 hours' },
-  { value: 48,  label: '48 hours' },
+// Values in hours (stored as-is; planner converts via Math.ceil(h/24)).
+// Kept day/week-granular — nobody realistically responds in under a day
+// during scheduled admin time.
+const DEADLINE_OPTIONS_URGENT = [
+  { value: 24,  label: '1 day' },
+  { value: 48,  label: '2 days' },
   { value: 72,  label: '3 days' },
+  { value: 120, label: '5 days' },
+];
+const DEADLINE_OPTIONS_CLINICAL = [
+  { value: 48,  label: '2 days' },
+  { value: 72,  label: '3 days' },
+  { value: 120, label: '5 days' },
   { value: 168, label: '1 week' },
+  { value: 336, label: '2 weeks' },
+];
+const DEADLINE_OPTIONS_ADMIN = [
+  { value: 72,  label: '3 days' },
+  { value: 120, label: '5 days' },
+  { value: 168, label: '1 week' },
+  { value: 336, label: '2 weeks' },
 ];
 
 const DAYS: WeekDay[] = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -412,16 +424,38 @@ function StepDeadlines({
   onChange: (d: { urgent: number; clinical: number; admin: number }) => void;
 }) {
   const rows = [
-    { key: 'urgent'   as const, label: 'Urgent / safety',    desc: 'Patient risk, immediate clinical need',           color: 'text-red-600',    bg: 'bg-red-50 border-red-200' },
-    { key: 'clinical' as const, label: 'Clinical question',  desc: 'Non-urgent queries, results, referrals',          color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200' },
-    { key: 'admin'    as const, label: 'Admin / general',    desc: 'Scheduling, forms, general correspondence',       color: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200' },
+    {
+      key: 'urgent'   as const,
+      label: 'Urgent / safety',
+      desc: 'Patient risk, immediate clinical need',
+      color: 'text-red-600',
+      bg: 'bg-red-50 border-red-200',
+      options: DEADLINE_OPTIONS_URGENT,
+    },
+    {
+      key: 'clinical' as const,
+      label: 'Clinical question',
+      desc: 'Non-urgent queries, results, referrals',
+      color: 'text-amber-600',
+      bg: 'bg-amber-50 border-amber-200',
+      options: DEADLINE_OPTIONS_CLINICAL,
+    },
+    {
+      key: 'admin'    as const,
+      label: 'Admin / general',
+      desc: 'Scheduling, forms, general correspondence',
+      color: 'text-slate-600',
+      bg: 'bg-slate-50 border-slate-200',
+      options: DEADLINE_OPTIONS_ADMIN,
+    },
   ];
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        What's your acceptable response window for each type of email?
-        ClinAdmin will use these to show countdown badges.
+        How long do you aim to take responding to each type of email?
+        ClinAdmin uses these to prioritise your plan and show you when something
+        is approaching its window.
       </p>
       <div className="space-y-3">
         {rows.map((row) => (
@@ -433,9 +467,9 @@ function StepDeadlines({
             <select
               value={deadlines[row.key]}
               onChange={(e) => onChange({ ...deadlines, [row.key]: Number(e.target.value) })}
-              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[100px]"
+              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[110px]"
             >
-              {DEADLINE_OPTIONS.map((o) => (
+              {row.options.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

@@ -134,7 +134,7 @@ export const DEFAULT_PROFILE: UserProfile = {
   specialty: '',
   setting: 'outpatient',
   criticalKeywords: [],
-  deadlines: { urgent: 4, clinical: 24, admin: 72 },
+  deadlines: { urgent: 24, clinical: 72, admin: 168 }, // 1 day / 3 days / 1 week
   adminTimeBlocks: [],
   defaultReplyTone: 'semi-formal',
   signatures: DEFAULT_SIGNATURES,
