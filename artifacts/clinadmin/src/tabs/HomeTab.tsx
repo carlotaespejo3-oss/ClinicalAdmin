@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, Sun, ShieldAlert, Check, ChevronDown, Clock, Plane } from 'lucide-react';
 import { emails, weekData, CAT } from '@/lib/data';
 import { ManualTask, SidebarTask, TabType, type AiCategory } from '@/lib/types';
@@ -36,6 +36,9 @@ import UnscheduledDayBanner from '@/components/UnscheduledDayBanner';
 import QuickSessionModal from '@/components/QuickSessionModal';
 import QuickSessionBar from '@/components/QuickSessionBar';
 import QuickSessionSummaryModal from '@/components/QuickSessionSummaryModal';
+import BreachNoticeStrip from '@/components/BreachNoticeStrip';
+import { updateBreachSignal, hasActiveClinicalBreaches } from '@/lib/currentBreachStore';
+import { getDeferredEmails } from '@/lib/manualDeferStore';
 
 interface Props {
   sidebarTasks: SidebarTask[];
@@ -360,6 +363,34 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
     setRecToast(null);
   };
 
+  // ---- Breach notice strip ----
+  // nextSessionLabel: first future day in the runway that has capacity.
+  const nextSessionLabel = useMemo(() => {
+    const next = plannerOutput.runway.find((d) => d.dayIndex > 0 && d.minutesAvailable > 0);
+    if (!next) return 'your next session';
+    if (next.dayIndex === 1) return 'tomorrow';
+    return next.dayLabel;
+  }, [plannerOutput.runway]);
+
+  // Write breach signal synchronously so the beforeunload handler always
+  // reads fresh data (module-level write, not a React state update).
+  useEffect(() => {
+    updateBreachSignal(plannerOutput.breaches);
+  }, [plannerOutput.breaches]);
+
+  // beforeunload guard — only fires if there are un-deferred clinical
+  // breaches. Shows the browser's native "Leave site?" dialog.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasActiveClinicalBreaches(getDeferredEmails())) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
   // ---- Status banner ----
   const status = plannerOutput.overallStatus;
   const statusStyles = {
@@ -481,6 +512,21 @@ export default function HomeTab({ sidebarTasks, manualTasks, weekSetup, onUpdate
       )}
 
       {leaveStatus.state !== 'on-leave-today' && (<>
+
+      {/* Breach notice strip — shown whenever there are SLA-overrun
+          items today. Admin breaches get a soft dismissible slate strip;
+          clinical/urgent breaches get an amber strip with per-item
+          Review-now / Defer-to-next-session actions. */}
+      {plannerOutput.breaches.length > 0 && (
+        <BreachNoticeStrip
+          breaches={plannerOutput.breaches}
+          nextSessionLabel={nextSessionLabel}
+          onOpenEmail={(id) => {
+            onOpenEmail(id);
+            onNavigate('Emails');
+          }}
+        />
+      )}
 
       {/* Leave-context surfaces. The on-leave-today variant is folded
           into OnLeaveDashboard above. Back-today gets the richer
