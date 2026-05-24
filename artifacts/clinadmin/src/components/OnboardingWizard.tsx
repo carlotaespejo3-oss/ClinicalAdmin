@@ -2,7 +2,7 @@
 //
 // Full-screen modal wizard shown to clinicians on first launch.
 // Collects: name · role/specialty/setting · critical keywords · deadline
-// expectations · admin time blocks · reply tone · email signatures · cover contact.
+// expectations · admin time blocks · reply tone · email signatures.
 //
 // Persistence: every Back/Next/Skip saves the current draft to userProfileStore
 // (localStorage), so "Save & exit" can be resumed at the exact step where the
@@ -123,11 +123,10 @@ const STEPS = [
   'admin-time',
   'tone',
   'signatures',
-  'cover',
   'done',
 ] as const;
 type StepId = (typeof STEPS)[number];
-const TOTAL_DATA_STEPS = 8; // steps 1–8 (name → cover)
+const TOTAL_DATA_STEPS = 7; // steps 1–7 (name → signatures)
 
 const STEP_META: Partial<Record<StepId, { title: string; subtitle?: string }>> = {
   name:         { title: 'What should we call you?' },
@@ -137,7 +136,6 @@ const STEP_META: Partial<Record<StepId, { title: string; subtitle?: string }>> =
   'admin-time': { title: 'Admin time blocks',          subtitle: 'When do you usually tackle your inbox?' },
   tone:         { title: 'Your reply style',           subtitle: 'Used as the baseline for AI-drafted replies.' },
   signatures:   { title: 'Email signatures',           subtitle: 'Appended automatically based on email type.' },
-  cover:        { title: 'Cover clinician',            subtitle: 'Who handles your patients when you\'re on leave?' },
 };
 
 // ============================================================================
@@ -720,31 +718,6 @@ function StepSignatures({
   );
 }
 
-function StepCover({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        Who covers your patients when you're on leave? ClinAdmin can remind you to notify
-        them when you log an absence block.
-      </p>
-      <div className="space-y-2">
-        <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          Cover clinician (name or email)
-        </label>
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. Dr. Sarah Okonkwo  or  s.okonkwo@nhs.net"
-          className="w-full border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </div>
-      <p className="text-xs text-muted-foreground/60 italic">
-        Optional — you can add or change this later in Settings.
-      </p>
-    </div>
-  );
-}
 
 function StepDone({ name }: { name: string }) {
   const first = name.split(/\s+/)[0];
@@ -789,7 +762,7 @@ export default function OnboardingWizard({ onDismiss }: Props) {
   // Local draft state — written to store on every navigation
   const [step, setStep] = useState<number>(
     // Resume at the saved step, but clamp so we never land on 'done'
-    Math.min(profile.onboardingStep, STEPS.indexOf('cover')),
+    Math.min(profile.onboardingStep, STEPS.indexOf('signatures')),
   );
   const [name,         setName]         = useState(profile.displayName);
   const [role,         setRole]         = useState(profile.role);
@@ -801,7 +774,6 @@ export default function OnboardingWizard({ onDismiss }: Props) {
   const [adminBlocks,  setAdminBlocks]  = useState<AdminTimeBlock[]>(profile.adminTimeBlocks);
   const [tone,         setTone]         = useState<ReplyTone>(profile.defaultReplyTone);
   const [signatures,   setSignatures]   = useState<EmailSignature[]>(profile.signatures);
-  const [coverContact, setCoverContact] = useState(profile.coverContact);
 
   const stepId   = STEPS[step];
   const isWelcome = stepId === 'welcome';
@@ -821,7 +793,6 @@ export default function OnboardingWizard({ onDismiss }: Props) {
       adminTimeBlocks:  adminBlocks,
       defaultReplyTone: tone,
       signatures,
-      coverContact,
       onboardingStep:   nextStep,
     });
   };
@@ -925,7 +896,6 @@ export default function OnboardingWizard({ onDismiss }: Props) {
           {stepId === 'admin-time' && <StepAdminTime blocks={adminBlocks} onChange={setAdminBlocks} />}
           {stepId === 'tone'       && <StepTone tone={tone} onChange={setTone} />}
           {stepId === 'signatures' && <StepSignatures signatures={signatures} onChange={setSignatures} />}
-          {stepId === 'cover'      && <StepCover value={coverContact} onChange={setCoverContact} />}
           {stepId === 'done'       && <StepDone name={name} />}
         </div>
 

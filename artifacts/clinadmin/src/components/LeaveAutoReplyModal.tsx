@@ -3,7 +3,7 @@
 // Shown immediately after a clinician saves a leave block.
 // Presents three editable auto-reply messages — one per urgency tier —
 // pre-filled from the profile's autoReplyTemplates with real placeholders
-// resolved (returnDate, coverContact, displayName).
+// resolved (returnDate, displayName).
 //
 // The clinician can copy each message and paste it into Outlook's
 // Out-of-Office settings. We surface a direct link to the Outlook Web
@@ -86,11 +86,10 @@ const TIERS: {
 
 function renderTemplate(
   template: string,
-  vars: { returnDate: string; coverContact: string; displayName: string },
+  vars: { returnDate: string; displayName: string },
 ): string {
   return template
     .replace(/\{returnDate\}/g, vars.returnDate || 'my return date')
-    .replace(/\{coverContact\}/g, vars.coverContact || 'your usual cover contact')
     .replace(/\{displayName\}/g, vars.displayName || 'your clinician');
 }
 
@@ -145,7 +144,6 @@ export default function LeaveAutoReplyModal({ returnDateLabel, onClose }: Props)
 
   const vars = {
     returnDate: returnDateLabel,
-    coverContact: profile.coverContact,
     displayName: profile.displayName,
   };
 
@@ -219,11 +217,6 @@ export default function LeaveAutoReplyModal({ returnDateLabel, onClose }: Props)
           <div className="inline-flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-1.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">First day back:</span>
             {returnDateLabel || 'not set'}
-            {!profile.coverContact && (
-              <span className="text-amber-600 font-medium ml-2">
-                · No cover contact set — add one in Settings
-              </span>
-            )}
           </div>
         </div>
 

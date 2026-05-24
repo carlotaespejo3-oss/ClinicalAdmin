@@ -58,7 +58,6 @@ export interface EmailSignature {
 export interface AutoReplyTemplates {
   // Three tiers shown when clinician enters a leave block.
   // Placeholders: {returnDate}  → first working day back (e.g. "Mon 1 Jun")
-  //               {coverContact} → cover clinician name/email from profile
   //               {displayName}  → clinician's own display name
   urgent: string;    // SAFEGUARDING / URGENT_CLINICAL emails
   clinical: string;  // CLINICAL / PROFESSIONAL / LEGAL emails
@@ -92,7 +91,6 @@ export interface UserProfile {
   // Communication
   defaultReplyTone: ReplyTone;
   signatures: EmailSignature[];
-  coverContact: string; // name or email of cover clinician
 
   // Leave mode auto-reply templates (editable per-leave-block at save time)
   autoReplyTemplates: AutoReplyTemplates;
@@ -115,16 +113,14 @@ const DEFAULT_SIGNATURES: EmailSignature[] = [
 export const DEFAULT_AUTO_REPLY_TEMPLATES: AutoReplyTemplates = {
   urgent:
     'I am currently on leave and unable to respond to emails.\n\n' +
-    'If this is an urgent clinical matter or involves patient safety, please contact {coverContact} immediately. ' +
-    'If you cannot reach cover, please escalate through your usual urgent referral pathway.\n\n' +
+    'If this is an urgent clinical matter or involves patient safety, please escalate through your usual urgent referral pathway.\n\n' +
     'I will be returning on {returnDate}.',
   clinical:
     'Thank you for your email. I am currently on leave and will return on {returnDate}.\n\n' +
-    'For clinical queries during my absence, please contact {coverContact}.\n\n' +
     'I will respond to your email on my return.',
   admin:
     'Thank you for your email. I am currently on leave and will return on {returnDate}.\n\n' +
-    'I will respond to your message when I am back. If your query is urgent, please contact {coverContact}.',
+    'I will respond to your message when I am back.',
 };
 
 export const DEFAULT_PROFILE: UserProfile = {
@@ -138,7 +134,6 @@ export const DEFAULT_PROFILE: UserProfile = {
   adminTimeBlocks: [],
   defaultReplyTone: 'semi-formal',
   signatures: DEFAULT_SIGNATURES,
-  coverContact: '',
   autoReplyTemplates: DEFAULT_AUTO_REPLY_TEMPLATES,
   onboardingComplete: false,
   onboardingStep: 0,
