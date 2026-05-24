@@ -197,7 +197,7 @@ function DayColumn({
             title={`Backlog from ${returnFromLeave.daysAway} ${
               returnFromLeave.daysAway === 1 ? 'day' : 'days'
             } of ${returnFromLeave.leaveTypes
-              .map((t) => LEAVE_TYPE_LABEL[t].toLowerCase())
+              .map((t) => (LEAVE_TYPE_LABEL[t] ?? t).toLowerCase())
               .join(' + ')} landing today`}
           >
             <Plane size={11} className="mt-0.5 flex-shrink-0" />

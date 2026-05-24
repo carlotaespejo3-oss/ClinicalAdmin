@@ -68,6 +68,15 @@ function persist(b: LeaveBlock) {
   );
 }
 
+const VALID_LEAVE_TYPES = new Set<string>(['annual', 'sick', 'conference', 'pd', 'unpaid']);
+
+function isValidRow(r: { startAt?: unknown; endAt?: unknown; leaveType?: unknown }): boolean {
+  if (typeof r.startAt !== 'string' || isNaN(Date.parse(r.startAt))) return false;
+  if (typeof r.endAt   !== 'string' || isNaN(Date.parse(r.endAt)))   return false;
+  if (typeof r.leaveType !== 'string' || !VALID_LEAVE_TYPES.has(r.leaveType)) return false;
+  return true;
+}
+
 async function hydrate(): Promise<void> {
   if (hydrationStarted) return;
   hydrationStarted = true;
@@ -76,11 +85,19 @@ async function hydrate(): Promise<void> {
     const existingIds = new Set(cache.map((t) => t.id));
     for (const r of rows) {
       if (existingIds.has(r.id)) continue;
+      // Auto-purge rows that were saved with a stale/invalid schema so
+      // they don't crash components expecting valid dates and leaveType.
+      if (!isValidRow(r)) {
+        // eslint-disable-next-line no-console
+        console.warn('[leaveBlocksStore] purging corrupt leave block', r.id, r);
+        deleteLeaveBlock(encodeURIComponent(r.id)).catch(() => undefined);
+        continue;
+      }
       cache.push({
         id: r.id,
-        startAt: r.startAt,
-        endAt: r.endAt,
-        leaveType: r.leaveType,
+        startAt: r.startAt as string,
+        endAt: r.endAt as string,
+        leaveType: r.leaveType as LeaveType,
         notes: r.notes ?? null,
       });
     }

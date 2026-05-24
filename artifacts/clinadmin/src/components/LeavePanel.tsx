@@ -263,8 +263,9 @@ export default function LeavePanel({ weekSetup }: Props) {
   };
 
   const handleDelete = (b: LeaveBlock) => {
+    const label = (LEAVE_TYPE_LABEL[b.leaveType] ?? 'leave').toLowerCase();
     const ok = window.confirm(
-      `Remove ${LEAVE_TYPE_LABEL[b.leaveType].toLowerCase()} for ${formatRange(b)}? The week will be replanned.`,
+      `Remove ${label} for ${formatRange(b)}? The week will be replanned.`,
     );
     if (ok) removeLeaveBlock(b.id);
   };
